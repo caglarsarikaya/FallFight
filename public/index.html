@@ -79,12 +79,24 @@
             color: white;
             text-shadow: 1px 1px 2px black;
         }
+        #crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <!-- Game Screen (should be first for proper z-indexing) -->
-    <div id="game-screen" class="hidden">
+    <div id="game-screen" class="screen hidden">
         <canvas id="game-canvas"></canvas>
+        <div id="crosshair">+</div>
         <div id="game-ui">
             <div id="players-list"></div>
             <div id="game-stats"></div>
