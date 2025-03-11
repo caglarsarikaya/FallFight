@@ -29,6 +29,56 @@ class FallFight {
         this.groundFriction = 0.8;
         this.airFriction = 0.93;
         
+        // Character designs as a class property
+        this.characterDesigns = {
+            cowboy: {
+                body: { color: 0x8B4513, height: 1.8 }, // Brown
+                hat: { color: 0x8B4513, size: 0.4 }, // Brown cowboy hat
+                weapon: {
+                    type: 'revolver',
+                    color: 0x696969,
+                    scale: { x: 0.15, y: 0.3, z: 0.1 }
+                }
+            },
+            legolas: {
+                body: { color: 0x90EE90, height: 1.9 }, // Light green
+                hair: { color: 0xFFD700, length: 0.4 }, // Golden hair
+                weapon: {
+                    type: 'bow',
+                    color: 0x8B4513,
+                    scale: { x: 0.1, y: 0.5, z: 0.05 }
+                }
+            },
+            witcher: {
+                body: { color: 0x2F4F4F, height: 1.85 }, // Dark slate gray
+                armor: { color: 0x696969, thickness: 0.1 }, // Gray armor
+                weapon: {
+                    type: 'sword',
+                    color: 0xC0C0C0,
+                    scale: { x: 0.08, y: 0.6, z: 0.02 }
+                }
+            },
+            mario: {
+                body: { color: 0xFF0000, height: 1.6 }, // Red
+                overalls: { color: 0x0000FF, width: 0.7 }, // Blue
+                hat: { color: 0xFF0000, size: 0.3 } // Red cap
+            },
+            squirrel: {
+                body: { color: 0xDEB887, height: 1.5 }, // Burlywood
+                tail: { color: 0xDEB887, length: 0.6 }, // Matching tail
+                ears: { color: 0xDEB887, size: 0.2 }
+            },
+            zeus: {
+                body: { color: 0xFFFFFF, height: 2.0 }, // White
+                beard: { color: 0xF0F0F0, length: 0.3 }, // White beard
+                weapon: {
+                    type: 'thunderbolt',
+                    color: 0xFFFF00,
+                    scale: { x: 0.1, y: 0.7, z: 0.1 }
+                }
+            }
+        };
+        
         this.setupSocketListeners();
         this.setupEventListeners();
     }
@@ -96,6 +146,9 @@ class FallFight {
             if (waitingScreen) waitingScreen.classList.add('hidden');
             if (gameScreen) gameScreen.classList.remove('hidden');
             
+            // Create player list UI
+            this.createPlayerListUI();
+            
             // Initialize the game
             console.log('Initializing game...');
             this.init();
@@ -107,6 +160,9 @@ class FallFight {
                     this.addPlayer(player);
                 }
             });
+
+            // Update player list
+            this.updatePlayerList(data.players);
 
             // Position players around the arena
             console.log('Positioning players...');
@@ -377,16 +433,16 @@ class FallFight {
     handleClick(event) {
         if (!this.playerObject || !this.raycaster || !this.isGameStarted) return;
 
-        // Create a raycaster from camera center (where crosshair is)
+        // Update raycaster to use exact center of screen
         const breakingRaycaster = new THREE.Raycaster();
         breakingRaycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+        breakingRaycaster.far = 4; // Set maximum breaking distance
 
-        // Check for intersections with blocks within axe reach
-        const intersects = breakingRaycaster.intersectObjects(
-            Array.from(this.blocks.values())
-        );
+        // Get all blocks that can be broken
+        const blocks = Array.from(this.blocks.values());
+        const intersects = breakingRaycaster.intersectObjects(blocks, false);
 
-        if (intersects.length > 0 && intersects[0].distance <= 4) { // Axe reach of 4 units
+        if (intersects.length > 0) {
             const block = intersects[0].object;
             const pos = block.position;
             
@@ -405,9 +461,6 @@ class FallFight {
                 y: pos.y,
                 z: pos.z
             });
-
-            // Visual feedback for block targeting
-            console.log('Breaking block at:', pos);
         } else {
             // Swing axe even if no block is hit
             this.swingAxe();
@@ -437,16 +490,17 @@ class FallFight {
             // Check for players above this block
             const blockPosition = block.position;
             const checkHeight = 2.0; // Maximum height to check for players
+            const checkRadius = 0.75; // Increased radius for better detection
             
             // Check local player
             if (this.playerObject) {
                 const playerPos = this.playerObject.position;
-                if (Math.abs(playerPos.x - blockPosition.x) < 0.5 &&
-                    Math.abs(playerPos.z - blockPosition.z) < 0.5 &&
-                    playerPos.y <= blockPosition.y + checkHeight) {
-                    // Force player to fall by removing ground detection temporarily
+                if (Math.abs(playerPos.x - blockPosition.x) < checkRadius &&
+                    Math.abs(playerPos.z - blockPosition.z) < checkRadius &&
+                    Math.abs(playerPos.y - (blockPosition.y + 1)) < 0.1) {
+                    // Force player to fall
                     this.isOnGround = false;
-                    this.velocity.y = -0.1; // Small downward push
+                    this.velocity.y = -0.1;
                 }
             }
             
@@ -454,13 +508,15 @@ class FallFight {
             this.players.forEach((player, id) => {
                 if (player.mesh) {
                     const otherPos = player.mesh.position;
-                    if (Math.abs(otherPos.x - blockPosition.x) < 0.5 &&
-                        Math.abs(otherPos.z - blockPosition.z) < 0.5 &&
-                        otherPos.y <= blockPosition.y + checkHeight) {
-                        // Apply falling to other players
-                        player.mesh.position.y -= 0.1; // Small downward push
-                        // Notify server about the forced fall
-                        this.socket.emit('playerForceFall', { playerId: id });
+                    if (Math.abs(otherPos.x - blockPosition.x) < checkRadius &&
+                        Math.abs(otherPos.z - blockPosition.z) < checkRadius &&
+                        Math.abs(otherPos.y - (blockPosition.y + 1)) < 0.1) {
+                        // Apply immediate fall and notify server
+                        player.mesh.position.y -= 0.2; // Stronger initial push
+                        this.socket.emit('playerForceFall', {
+                            playerId: id,
+                            position: player.mesh.position
+                        });
                     }
                 }
             });
@@ -474,7 +530,7 @@ class FallFight {
                 setTimeout(() => {
                     particles.forEach(p => this.scene.remove(p));
                 }, 1000);
-            }, 250);
+            }, 100); // Reduced delay for more responsive feel
         }
     }
 
@@ -502,60 +558,122 @@ class FallFight {
         return particles;
     }
 
-    createPlayerCharacter() {
-        // Character designs
-        const characterDesigns = {
-            cowboy: {
-                body: { color: 0x8B4513, height: 1.8 }, // Brown
-                hat: { color: 0x8B4513, size: 0.4 }, // Brown cowboy hat
-                weapon: {
-                    type: 'revolver',
-                    color: 0x696969,
-                    scale: { x: 0.15, y: 0.3, z: 0.1 }
-                }
-            },
-            legolas: {
-                body: { color: 0x90EE90, height: 1.9 }, // Light green
-                hair: { color: 0xFFD700, length: 0.4 }, // Golden hair
-                weapon: {
-                    type: 'bow',
-                    color: 0x8B4513,
-                    scale: { x: 0.1, y: 0.5, z: 0.05 }
-                }
-            },
-            witcher: {
-                body: { color: 0x2F4F4F, height: 1.85 }, // Dark slate gray
-                armor: { color: 0x696969, thickness: 0.1 }, // Gray armor
-                weapon: {
-                    type: 'sword',
-                    color: 0xC0C0C0,
-                    scale: { x: 0.08, y: 0.6, z: 0.02 }
-                }
-            },
-            mario: {
-                body: { color: 0xFF0000, height: 1.6 }, // Red
-                overalls: { color: 0x0000FF, width: 0.7 }, // Blue
-                hat: { color: 0xFF0000, size: 0.3 } // Red cap
-            },
-            squirrel: {
-                body: { color: 0xDEB887, height: 1.5 }, // Burlywood
-                tail: { color: 0xDEB887, length: 0.6 }, // Matching tail
-                ears: { color: 0xDEB887, size: 0.2 }
-            },
-            zeus: {
-                body: { color: 0xFFFFFF, height: 2.0 }, // White
-                beard: { color: 0xF0F0F0, length: 0.3 }, // White beard
-                weapon: {
-                    type: 'thunderbolt',
-                    color: 0xFFFF00,
-                    scale: { x: 0.1, y: 0.7, z: 0.1 }
-                }
-            }
-        };
+    createPlayerListUI() {
+        const gameUI = document.getElementById('game-ui');
+        
+        // Create player list container
+        const playerList = document.createElement('div');
+        playerList.id = 'player-list';
+        playerList.style.position = 'fixed';
+        playerList.style.top = '20px';
+        playerList.style.right = '20px';
+        playerList.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        playerList.style.padding = '10px';
+        playerList.style.borderRadius = '5px';
+        playerList.style.color = 'white';
+        playerList.style.fontFamily = 'Arial, sans-serif';
+        playerList.style.minWidth = '200px';
+        
+        // Add title
+        const title = document.createElement('div');
+        title.textContent = 'Players';
+        title.style.fontWeight = 'bold';
+        title.style.marginBottom = '5px';
+        title.style.borderBottom = '1px solid white';
+        playerList.appendChild(title);
+        
+        // Add list container
+        const listContainer = document.createElement('div');
+        listContainer.id = 'player-list-container';
+        playerList.appendChild(listContainer);
+        
+        gameUI.appendChild(playerList);
+    }
 
+    updatePlayerList(players) {
+        const listContainer = document.getElementById('player-list-container');
+        if (!listContainer) return;
+
+        listContainer.innerHTML = '';
+        players.forEach(player => {
+            const playerEntry = document.createElement('div');
+            playerEntry.style.margin = '3px 0';
+            const playerType = player.id === this.socket.id ? 
+                this.characterType : 
+                (this.players.get(player.id)?.characterType || 'unknown');
+            playerEntry.textContent = `${player.username} (${playerType})`;
+            listContainer.appendChild(playerEntry);
+        });
+    }
+
+    addPlayer(player) {
+        const characterType = this.getRandomCharacterType();
+        const design = this.characterDesigns[characterType];
+        
+        // Create main body
+        const geometry = new THREE.BoxGeometry(0.6, design.body.height, 0.6);
+        const material = new THREE.MeshPhongMaterial({ color: design.body.color });
+        const playerMesh = new THREE.Mesh(geometry, material);
+        
+        // Add character features
+        this.addCharacterFeatures(playerMesh, characterType, design);
+        
+        // Add player name label
+        const nameLabel = this.createPlayerLabel(player.username);
+        nameLabel.position.y = design.body.height + 0.3; // Position above head
+        playerMesh.add(nameLabel);
+        
+        playerMesh.position.set(0, 2, 0);
+        this.scene.add(playerMesh);
+        this.players.set(player.id, {
+            mesh: playerMesh,
+            username: player.username,
+            characterType: characterType
+        });
+    }
+
+    createPlayerLabel(username) {
+        // Create canvas for the text
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 64;
+
+        // Set text properties
+        context.font = 'bold 32px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        // Add background with border
+        context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add text
+        context.fillStyle = 'white';
+        context.fillText(username, canvas.width / 2, canvas.height / 2);
+
+        // Create texture
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+
+        // Create sprite material
+        const spriteMaterial = new THREE.SpriteMaterial({ 
+            map: texture,
+            transparent: true
+        });
+
+        // Create sprite
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(1, 0.25, 1);
+
+        return sprite;
+    }
+
+    createPlayerCharacter() {
         // Create player mesh with character design
         const characterType = this.getRandomCharacterType();
-        const design = characterDesigns[characterType];
+        this.characterType = characterType; // Store character type for player list
+        const design = this.characterDesigns[characterType];
         
         // Create main body
         const bodyGeometry = new THREE.BoxGeometry(0.6, design.body.height, 0.6);
@@ -663,37 +781,14 @@ class FallFight {
     }
 
     createWeaponView(type, design) {
-        if (!design.weapon) return;
-
-        const weaponGroup = new THREE.Group();
-        let weapon;
-
-        switch(design.weapon.type) {
-            case 'revolver':
-                weapon = this.createRevolver(design.weapon);
-                break;
-            case 'bow':
-                weapon = this.createBow(design.weapon);
-                break;
-            case 'sword':
-                weapon = this.createSword(design.weapon);
-                break;
-            case 'thunderbolt':
-                weapon = this.createThunderbolt(design.weapon);
-                break;
-            default:
-                // Default axe for other characters
-                weapon = this.createAxe();
-        }
-
-        weaponGroup.add(weapon);
+        // Always create an axe for first person view, regardless of character type
+        const axeGroup = this.createAxe();
         
         // Position weapon in view
-        weaponGroup.position.set(0.5, -0.5, -0.8);
-        weaponGroup.rotation.set(0.3, -Math.PI / 6, 0.1);
-        this.weapon = weaponGroup;
-        
-        // Add weapon to camera
+        axeGroup.position.set(0.5, -0.5, -0.8);
+        axeGroup.rotation.set(0.3, -Math.PI / 6, 0.1);
+        this.weapon = axeGroup;
+        this.axe = axeGroup; // Store axe reference for animations
         this.camera.add(this.weapon);
     }
 
@@ -799,27 +894,6 @@ class FallFight {
         axeGroup.add(handle);
         axeGroup.add(head);
         return axeGroup;
-    }
-
-    addPlayer(player) {
-        const characterType = this.getRandomCharacterType();
-        const design = this.characterDesigns[characterType];
-        
-        // Create main body
-        const geometry = new THREE.BoxGeometry(0.6, design.body.height, 0.6);
-        const material = new THREE.MeshPhongMaterial({ color: design.body.color });
-        const playerMesh = new THREE.Mesh(geometry, material);
-        
-        // Add character features
-        this.addCharacterFeatures(playerMesh, characterType, design);
-        
-        playerMesh.position.set(0, 2, 0);
-        this.scene.add(playerMesh);
-        this.players.set(player.id, {
-            mesh: playerMesh,
-            username: player.username,
-            characterType: characterType
-        });
     }
 
     updatePlayerPosition(data) {
@@ -936,14 +1010,14 @@ class FallFight {
     }
 
     swingAxe(hitDirection = null) {
-        if (this.isSwinging) return;
+        if (!this.axe || this.isSwinging) return;
         this.isSwinging = true;
 
         const startRotation = this.axe.rotation.clone();
         const swingDuration = 200; // milliseconds
         const startTime = Date.now();
 
-        // If we have a hit direction, align the axe swing with it
+        // If we have a hit direction, align the swing with it
         if (hitDirection) {
             const targetRotation = new THREE.Euler().setFromVector3(hitDirection);
             this.axe.rotation.x = targetRotation.x;
@@ -964,7 +1038,7 @@ class FallFight {
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
-                // Reset axe position with smooth transition
+                // Reset position with smooth transition
                 this.axe.rotation.copy(startRotation);
                 this.isSwinging = false;
             }
