@@ -1,0 +1,21 @@
+version: '3'
+services:
+  redis-server:
+    image: "redis"
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+  
+  game-server:
+    build: .
+    container_name: game-server
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis-server
+    environment:
+      - REDIS_URL=redis://redis-server:6379
+      - NODE_ENV=development
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules 

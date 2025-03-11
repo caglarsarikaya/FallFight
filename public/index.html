@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FallFight</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="login-screen" class="screen">
+            <h1>FallFight</h1>
+            <div class="login-form">
+                <input type="text" id="username" placeholder="Enter your nickname" maxlength="15">
+                <button id="play-button">Play</button>
+            </div>
+        </div>
+
+        <div id="waiting-screen" class="screen hidden">
+            <div class="waiting-content">
+                <h2>Waiting for Players</h2>
+                <div class="players-list">
+                    <h3>Players in Room:</h3>
+                    <ul id="waiting-players-list"></ul>
+                </div>
+                <div class="waiting-status">
+                    <p>Waiting for <span id="players-needed">6</span> more players...</p>
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="game-screen" class="screen hidden">
+            <canvas id="game-canvas"></canvas>
+            <div id="game-ui">
+                <div id="players-list"></div>
+                <div id="game-stats"></div>
+            </div>
+        </div>
+
+        <div id="menu-screen" class="screen hidden">
+            <div class="menu-content">
+                <h2>Menu</h2>
+                <button id="resume-button">Resume</button>
+                <div class="sound-settings">
+                    <label>Sound Volume: <input type="range" id="sound-volume" min="0" max="100" value="100"></label>
+                    <label>Music Volume: <input type="range" id="music-volume" min="0" max="100" value="100"></label>
+                </div>
+                <button id="exit-button">Exit Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/three.min.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html> 
