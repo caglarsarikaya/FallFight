@@ -5,16 +5,21 @@ const path = require('path');
 const Redis = require('redis');
 const rateLimit = require('express-rate-limit');
 const winston = require('winston');
+require('dotenv').config();
 
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
+// Environment variables
+const DEV_MODE = process.env.DEV_MODE === 'true';
+const REQUIRED_PLAYERS = DEV_MODE ? 1 : (process.env.REQUIRED_PLAYERS || 6);
+
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100
 });
 
 // Logger setup
@@ -45,13 +50,24 @@ redisClient.on('error', (err) => logger.error('Redis Client Error', err));
     await redisClient.connect();
 })();
 
+// Bot players for development
+const createBotPlayers = () => {
+    return Array.from({ length: 3 }, (_, i) => ({
+        id: `bot_${i}`,
+        username: `Bot ${i + 1}`,
+        isBot: true,
+        position: new Array(3).fill(0).map(() => Math.random() * 10 - 5),
+        rotation: { y: Math.random() * Math.PI * 2 }
+    }));
+};
+
 // Room Management Functions
 async function findAvailableRoom() {
     const rooms = await redisClient.hGetAll('rooms');
     
     for (const [roomId, roomData] of Object.entries(rooms)) {
         const room = JSON.parse(roomData);
-        if (room.players.length < 6 && room.status === 'waiting') {
+        if (room.players.length < REQUIRED_PLAYERS && room.status === 'waiting') {
             return roomId;
         }
     }
@@ -65,6 +81,11 @@ async function findAvailableRoom() {
         started_at: null
     };
     
+    // In dev mode, add bot players immediately
+    if (DEV_MODE) {
+        newRoom.players.push(...createBotPlayers());
+    }
+    
     await redisClient.hSet('rooms', newRoomId, JSON.stringify(newRoom));
     return newRoomId;
 }
@@ -76,14 +97,36 @@ async function joinRoom(roomId, player) {
     const room = JSON.parse(roomData);
     room.players.push(player);
     
-    // Check if room is full
-    if (room.players.length === 6) {
+    // Check if room should start
+    const shouldStart = DEV_MODE || room.players.length === REQUIRED_PLAYERS;
+    if (shouldStart) {
         room.status = 'starting';
         room.started_at = Date.now();
     }
     
     await redisClient.hSet('rooms', roomId, JSON.stringify(room));
     return room;
+}
+
+// Bot movement simulation
+function updateBotPositions(room) {
+    if (!DEV_MODE) return;
+
+    room.players.forEach(player => {
+        if (player.isBot) {
+            // Random movement
+            player.position[0] += (Math.random() - 0.5) * 0.2;
+            player.position[2] += (Math.random() - 0.5) * 0.2;
+            player.rotation.y += (Math.random() - 0.5) * 0.1;
+
+            // Broadcast bot movement
+            io.to(room.id).emit('playerMoved', {
+                playerId: player.id,
+                position: { x: player.position[0], y: player.position[1], z: player.position[2] },
+                rotation: { y: player.rotation.y }
+            });
+        }
+    });
 }
 
 // Middleware
@@ -97,47 +140,60 @@ app.get('/', (req, res) => {
 });
 
 // Socket.IO connection handling
-io.on('connection', (socket) => {
-    logger.info(`User connected: ${socket.id}`);
+io.on('connection', async (socket) => {
+    console.log('New player connected:', socket.id);
     let currentRoom = null;
 
-    // Handle player join
-    socket.on('joinGame', async (username) => {
+    socket.on('joinGame', async (nickname) => {
         try {
-            const roomId = await findAvailableRoom();
+            console.log(`Player ${nickname} attempting to join game`);
             const player = {
                 id: socket.id,
-                username: username,
-                joined_at: Date.now()
+                nickname: nickname,
+                position: { x: 0, y: 0, z: 0 },
+                rotation: { x: 0, y: 0, z: 0 }
             };
+
+            // Get or create a room for the player
+            const roomId = await findAvailableRoom();
+            currentRoom = roomId;
+            console.log(`Found room ${roomId} for player ${nickname}`);
             
+            // Add player to the room
             const room = await joinRoom(roomId, player);
-            if (room) {
-                currentRoom = roomId;
-                socket.join(roomId);
-                
-                // Notify all players in the room
-                io.to(roomId).emit('roomUpdate', {
-                    roomId: roomId,
-                    players: room.players,
-                    status: room.status,
-                    playersNeeded: 6 - room.players.length
-                });
-                
-                // If room is full, start the game
-                if (room.status === 'starting') {
-                    setTimeout(() => {
-                        io.to(roomId).emit('gameStart', {
-                            players: room.players,
-                            startTime: room.started_at
-                        });
-                    }, 3000); // Give players 3 seconds to prepare
+            socket.join(roomId);
+            
+            // Send room update to all players in the room
+            console.log('Sending room update:', room);
+            io.to(roomId).emit('roomUpdate', room);
+
+            // In development mode, add bot players and start immediately
+            if (DEV_MODE) {
+                console.log('Development mode: Adding bot players');
+                const botPlayers = [];
+                // Add 3 bot players
+                for (let i = 1; i <= 3; i++) {
+                    const botPlayer = {
+                        id: `bot-${i}`,
+                        nickname: `Bot ${i}`,
+                        position: { x: 0, y: 0, z: 0 },
+                        rotation: { x: 0, y: 0, z: 0 },
+                        isBot: true
+                    };
+                    botPlayers.push(botPlayer);
                 }
-                
-                logger.info(`Player ${username} joined room ${roomId}`);
+
+                // Add bots to room
+                room.players.push(...botPlayers);
+                await redisClient.hSet('rooms', roomId, JSON.stringify(room));
+
+                // Send final update and start game
+                console.log('Development mode: Starting game with room data:', room);
+                io.to(roomId).emit('roomUpdate', room);
+                io.to(roomId).emit('gameStart', room);
             }
         } catch (error) {
-            logger.error('Error in joinGame:', error);
+            console.error('Error joining game:', error);
             socket.emit('error', { message: 'Failed to join game' });
         }
     });
@@ -177,12 +233,7 @@ io.on('connection', (socket) => {
                     } else {
                         // Update room
                         await redisClient.hSet('rooms', currentRoom, JSON.stringify(room));
-                        io.to(currentRoom).emit('roomUpdate', {
-                            roomId: currentRoom,
-                            players: room.players,
-                            status: room.status,
-                            playersNeeded: 6 - room.players.length
-                        });
+                        io.to(currentRoom).emit('roomUpdate', room);
                     }
                 }
             } catch (error) {
@@ -191,10 +242,28 @@ io.on('connection', (socket) => {
         }
         logger.info(`User disconnected: ${socket.id}`);
     });
+
+    // Handle player elimination
+    socket.on('playerEliminated', async () => {
+        if (currentRoom) {
+            try {
+                const roomData = await redisClient.hGet('rooms', currentRoom);
+                if (roomData) {
+                    const room = JSON.parse(roomData);
+                    room.players = room.players.filter(p => p.id !== socket.id);
+                    await redisClient.hSet('rooms', currentRoom, JSON.stringify(room));
+                    io.to(currentRoom).emit('roomUpdate', room);
+                }
+            } catch (error) {
+                logger.error('Error handling player elimination:', error);
+            }
+        }
+    });
 });
 
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+    logger.info(`Dev mode: ${DEV_MODE ? 'enabled' : 'disabled'}`);
 }); 

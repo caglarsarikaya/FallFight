@@ -4,55 +4,118 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FallFight</title>
-    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10;
+        }
+        .hidden {
+            display: none !important;
+        }
+        #game-screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .title {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #fff;
+        }
+        input {
+            padding: 10px;
+            font-size: 18px;
+            margin-bottom: 10px;
+            width: 200px;
+            border: none;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #waiting-players-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+        #waiting-players-list li {
+            margin: 5px 0;
+        }
+        #game-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
 </head>
 <body>
-    <div id="game-container">
-        <div id="login-screen" class="screen">
-            <h1>FallFight</h1>
-            <div class="login-form">
-                <input type="text" id="username" placeholder="Enter your nickname" maxlength="15">
-                <button id="play-button">Play</button>
-            </div>
-        </div>
-
-        <div id="waiting-screen" class="screen hidden">
-            <div class="waiting-content">
-                <h2>Waiting for Players</h2>
-                <div class="players-list">
-                    <h3>Players in Room:</h3>
-                    <ul id="waiting-players-list"></ul>
-                </div>
-                <div class="waiting-status">
-                    <p>Waiting for <span id="players-needed">6</span> more players...</p>
-                    <div class="loading-spinner"></div>
-                </div>
-            </div>
-        </div>
-        
-        <div id="game-screen" class="screen hidden">
-            <canvas id="game-canvas"></canvas>
-            <div id="game-ui">
-                <div id="players-list"></div>
-                <div id="game-stats"></div>
-            </div>
-        </div>
-
-        <div id="menu-screen" class="screen hidden">
-            <div class="menu-content">
-                <h2>Menu</h2>
-                <button id="resume-button">Resume</button>
-                <div class="sound-settings">
-                    <label>Sound Volume: <input type="range" id="sound-volume" min="0" max="100" value="100"></label>
-                    <label>Music Volume: <input type="range" id="music-volume" min="0" max="100" value="100"></label>
-                </div>
-                <button id="exit-button">Exit Game</button>
-            </div>
+    <!-- Game Screen (should be first for proper z-indexing) -->
+    <div id="game-screen" class="hidden">
+        <canvas id="game-canvas"></canvas>
+        <div id="game-ui">
+            <div id="players-list"></div>
+            <div id="game-stats"></div>
         </div>
     </div>
 
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen">
+        <h1 class="title">FallFight</h1>
+        <input type="text" id="username" placeholder="Enter your nickname" maxlength="15">
+        <button id="play-button">Play</button>
+    </div>
+
+    <!-- Waiting Screen -->
+    <div id="waiting-screen" class="screen hidden">
+        <h2>Waiting for players...</h2>
+        <ul id="waiting-players-list"></ul>
+        <p>Players needed: <span id="players-needed">6</span></p>
+    </div>
+
+    <!-- Menu Screen -->
+    <div id="menu-screen" class="screen hidden">
+        <h2>Menu</h2>
+        <button onclick="location.reload()">Exit Game</button>
+    </div>
+
+    <!-- Load libraries first -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="js/three.min.js"></script>
-    <script src="js/game.js"></script>
+
+    <!-- Then load game code -->
+    <script src="/js/game.js"></script>
 </body>
 </html> 

@@ -130,5 +130,113 @@ services:
 
 ---
 
+## **4. Development Guide**
+
+### **4.1 Prerequisites**
+- Node.js (v18 or higher)
+- Docker (for Redis)
+- npm or yarn
+
+### **4.2 Initial Setup**
+1. Clone the repository
+```bash
+git clone <repository-url>
+cd FallFight
+```
+
+2. Install dependencies
+```bash
+npm install
+```
+
+3. Create a `.env` file in the root directory:
+```env
+NODE_ENV=development
+PORT=3000
+REDIS_URL=redis://localhost:6379
+DEV_MODE=true
+REQUIRED_PLAYERS=6
+```
+
+### **4.3 Running the Application**
+
+#### Development Mode
+In development mode, the game:
+- Starts with just one player (no need to wait for others)
+- Includes 3 bot players for testing
+- Automatically starts when you join
+- Has bot players that move randomly
+
+1. **Start Redis Only (Required for the game)**
+```bash
+npm run dev:redis
+```
+
+2. **Start the Development Server**
+```bash
+npm run dev
+```
+
+3. **Or Start Both with One Command**
+```bash
+npm run dev:all
+```
+
+4. Open your browser and navigate to:
+```
+http://localhost:3000
+```
+
+#### Production Mode
+1. Set `DEV_MODE=false` in `.env`
+2. Start the application:
+```bash
+npm start
+```
+
+### **4.4 Stopping the Application**
+
+1. **Stop the Node.js Server**
+- Press `Ctrl + C` in the terminal where the server is running
+
+2. **Stop Redis Container**
+```bash
+npm run dev:redis:stop
+```
+
+### **4.5 Development vs Production Mode**
+
+| Feature | Development | Production |
+|---------|------------|------------|
+| Players Required | 1 | 6 |
+| Bot Players | Yes (3) | No |
+| Auto-Start | Yes | No |
+| Hot Reload | Yes | No |
+| Redis | Local Docker | External (Configure in .env) |
+
+### **4.6 Troubleshooting**
+
+1. **Redis Connection Issues**
+- Ensure Docker is running
+- Check if Redis container is up:
+```bash
+docker ps | grep redis-server
+```
+- Restart Redis:
+```bash
+npm run dev:redis:stop && npm run dev:redis
+```
+
+2. **Game Not Starting**
+- In dev mode: Check if `DEV_MODE=true` in `.env`
+- In production: Need 6 players to start
+
+3. **Port Already in Use**
+- Change PORT in `.env`
+- Or kill the process using:
+```bash
+npx kill-port 3000
+```
+
 This document outlines the core requirements and technical infrastructure for FallFight. The next step is to start prototyping! 🚀
 
