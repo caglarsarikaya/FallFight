@@ -4,6 +4,9 @@
 
 FallFight is a multiplayer browser-based game where players try to eliminate their opponents by breaking the ground beneath them. The goal is to be the last player standing. The graphics should be visually appealing but optimized enough to run smoothly on all computers.
 
+![FallFight Demo](https://raw.githubusercontent.com/caglarsarikaya/FallFight/master/fallfight.gif)
+
+
 ## **2. Gameplay Mechanics**
 
 ### **2.1 General Game Flow**
