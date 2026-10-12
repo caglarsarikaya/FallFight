@@ -5,6 +5,7 @@ import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
 import { stepMovement } from '../shared/physics.js';
 import { Pathfinder } from '../shared/ai/Pathfinder.js';
 import { createRoom, place, run } from './helpers.js';
+import { LANDMARKS } from '../shared/world/layout.js';
 
 const step = (body, arena, input, seconds) => {
     for (let t = 0; t < seconds; t += 1 / 60) stepMovement(body, { moveX: 0, moveZ: 0, jump: false, ...input }, arena, 1 / 60);
@@ -17,33 +18,41 @@ const bodyAt = (arena, ix, iz) => {
 
 test('layout has platforms: plaza 1 high, towers and walls 2 high', () => {
     const arena = new Arena();
-    assert.equal(arena.surfaceHeight(10, 10), 0, 'open floor');
-    assert.equal(arena.surfaceHeight(14, 14), 1, 'plaza');
-    assert.equal(arena.surfaceHeight(5, 5), 2, 'tower');
-    assert.equal(arena.surfaceHeight(7, 5), 1, 'tower step');
-    assert.equal(arena.surfaceHeight(9, 14), 2, 'wall top');
-    assert.ok(arena.reachable[5 * arena.size + 5], 'tower top reachable via its step');
-    assert.ok(!arena.reachable[14 * arena.size + 9], 'wall top is not reachable');
+    const { openFloor, plaza, lookout, wall, sniper } = LANDMARKS;
+    const at = t => arena.surfaceHeight(t.ix, t.iz);
+    const reachable = t => !!arena.reachable[t.iz * arena.size + t.ix];
+    assert.equal(arena.size, 60);
+    assert.equal(at(openFloor), 0, 'open floor');
+    assert.equal(at(plaza), 1, 'plaza');
+    assert.equal(at(lookout.top), 2, 'lookout tower');
+    assert.equal(at(lookout.step), 1, 'lookout step');
+    assert.equal(at(wall), 2, 'wall top');
+    assert.equal(at(sniper.top), 8, 'sniper tower top');
+    assert.ok(reachable(lookout.top), 'lookout top reachable via its step');
+    assert.ok(reachable(sniper.top), 'sniper top reachable via its stairs');
+    assert.ok(!reachable(wall), 'wall top is not reachable');
 });
 
 test('walls block walking', () => {
     const arena = new Arena();
-    const body = bodyAt(arena, 7, 14);
+    const { wall } = LANDMARKS;
+    const body = bodyAt(arena, wall.ix - 2, wall.iz);
     step(body, arena, { moveX: 1 }, 2);
-    assert.ok(body.x + PLAYER.radius <= arena.tileCenter(9, 14).x - 0.5 + 1e-3, 'stopped at the wall face');
+    assert.ok(body.x + PLAYER.radius <= arena.tileCenter(wall.ix, wall.iz).x - 0.5 + 1e-3, 'stopped at the wall face');
     assert.equal(body.y, 0);
 });
 
 test('a 1-high block can be jumped onto, a 2-high one cannot', () => {
     const arena = new Arena();
-    // Step block at (7, 5), floor at (8, 5)
-    const body = bodyAt(arena, 8, 5);
+    const { lookout } = LANDMARKS;
+    // Step block east of the tower, floor beside it
+    const body = bodyAt(arena, lookout.besideStep.ix, lookout.besideStep.iz);
     step(body, arena, { moveX: -1, jump: true }, 0.3);
     step(body, arena, { moveX: -1 }, 0.6);
     assert.equal(body.y, 1, 'on the step, pressed against the tower');
-    assert.equal(arena.tileAt(body.x, body.z).ix <= 7, true);
+    assert.ok(arena.tileAt(body.x, body.z).ix <= lookout.step.ix, 'standing on the step');
     // From the floor straight at the tower side (2 high)
-    const low = bodyAt(arena, 5, 8);
+    const low = bodyAt(arena, lookout.belowSide.ix, lookout.belowSide.iz);
     step(low, arena, { moveZ: -1, jump: true }, 1);
     step(low, arena, {}, 0.5);
     assert.equal(low.y, 0, 'tower too high to jump on from the floor');
@@ -55,10 +64,11 @@ test('a 1-high block can be jumped onto, a 2-high one cannot', () => {
 
 test('standing on a platform and falling when it is chopped away', () => {
     const arena = new Arena();
-    const body = bodyAt(arena, 14, 14);
+    const { plaza } = LANDMARKS;
+    const body = bodyAt(arena, plaza.ix, plaza.iz);
     step(body, arena, {}, 0.3);
     assert.equal(body.y, 1);
-    arena.setState(14, 1, 14, BLOCK_STATE.BROKEN);
+    arena.setState(plaza.ix, 1, plaza.iz, BLOCK_STATE.BROKEN);
     step(body, arena, {}, 0.6);
     assert.equal(body.y, 0, 'dropped to the floor below');
 });
@@ -66,26 +76,100 @@ test('standing on a platform and falling when it is chopped away', () => {
 test('a block does not regrow while someone stands in its space', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
-    place(room, a, 14, 14); // on the plaza (feet at y = 1)
-    room.arena.startBreak(14, 1, 14, 'x', room.time);
+    const { ix, iz } = LANDMARKS.plaza;
+    place(room, a, ix, iz); // on the plaza (feet at y = 1)
+    room.arena.startBreak(ix, 1, iz, 'x', room.time);
     run(room, 0.5);
-    assert.ok(!room.arena.isSolid(14, 1, 14));
+    assert.ok(!room.arena.isSolid(ix, 1, iz));
     // Player now stands where the block was (as if it fell into the gap)
     Object.assign(a, { y: 0 });
     run(room, 22);
-    assert.ok(!room.arena.isSolid(14, 1, 14), 'still waiting because the player is inside');
+    assert.ok(!room.arena.isSolid(ix, 1, iz), 'still waiting because the player is inside');
     a.x += 3;
     run(room, 1.5);
-    assert.ok(room.arena.isSolid(14, 1, 14), 'regrew once the space was free');
+    assert.ok(room.arena.isSolid(ix, 1, iz), 'regrew once the space was free');
 });
 
-test('pathfinder climbs a tower via its step', () => {
+test('pathfinder climbs a lookout via its step', () => {
     const arena = new Arena();
-    const path = new Pathfinder(arena).find({ ix: 12, iz: 5 }, { ix: 5, iz: 5 });
+    const { top, step: stepTile } = LANDMARKS.lookout;
+    const path = new Pathfinder(arena).find({ ix: top.ix + 6, iz: top.iz }, top);
     assert.ok(path && path.length, 'found a path');
     const last = path.at(-1);
-    assert.deepEqual([last.ix, last.iz, last.y], [5, 5, 2]);
-    assert.ok(path.some(p => p.ix === 7 && p.iz === 5 && p.y === 1), 'goes over the step');
+    assert.deepEqual([last.ix, last.iz, last.y], [top.ix, top.iz, 2]);
+    assert.ok(path.some(p => p.ix === stepTile.ix && p.iz === stepTile.iz && p.y === 1), 'goes over the step');
+});
+
+test('pathfinder reaches a sniper perch from the middle of the arena', () => {
+    const arena = new Arena();
+    const perch = LANDMARKS.sniperPerches[3];
+    const path = new Pathfinder(arena).find(LANDMARKS.openFloor, perch);
+    assert.ok(path && path.length > 10);
+    assert.deepEqual([path.at(-1).ix, path.at(-1).iz, path.at(-1).y], [perch.ix, perch.iz, 8]);
+    // Climbs at most one block per step
+    let prev = 0;
+    for (const p of path) {
+        assert.ok(p.y - prev <= 1, `step from ${prev} to ${p.y}`);
+        prev = p.y;
+    }
+});
+
+test('a player can climb the sniper stairs to the top', () => {
+    const arena = new Arena();
+    const { stairsStart, approach } = LANDMARKS.sniper;
+    const ox = stairsStart.ix + 1;   // tower origin
+    const oz = stairsStart.iz + 1;
+    // Walk (jumping) from tile to tile like a player holding W + Space
+    const walkTo = (body, ix, iz) => {
+        const c = arena.tileCenter(ix, iz);
+        for (let t = 0; t < 4; t += 1 / 60) {
+            const dx = c.x - body.x;
+            const dz = c.z - body.z;
+            const d = Math.hypot(dx, dz);
+            if (d < 0.15 && body.onGround) break;
+            const s = Math.min(1, d * 2);
+            stepMovement(body, { moveX: (dx / d) * s, moveZ: (dz / d) * s, jump: d > 0.5 }, arena, 1 / 60);
+        }
+        step(body, arena, {}, 0.4); // settle
+    };
+    const body = bodyAt(arena, approach.ix, stairsStart.iz);
+    walkTo(body, ox + 5, oz - 1);      // up the steps along the north side
+    assert.equal(body.y, 7, 'top step');
+    walkTo(body, ox + 5, oz);          // landing
+    assert.equal(body.y, 8, 'landing');
+    walkTo(body, ox + 4, oz);          // through the parapet gap
+    walkTo(body, ox + 4, oz + 1);
+    walkTo(body, ox + 2, oz + 1);
+    walkTo(body, ox + 2, oz + 2);      // the perch in the middle
+    step(body, arena, {}, 0.3);
+    assert.equal(body.y, 8, 'standing on the sniper top');
+    assert.deepEqual(arena.tileAt(body.x, body.z), { ix: ox + 2, iz: oz + 2 });
+});
+
+test('the parapet stops a flat shot at a crouching sniper from the ground', () => {
+    const arena = new Arena();
+    const { top } = LANDMARKS.sniper;
+    const c = arena.tileCenter(top.ix, top.iz);
+    // From 10 blocks south, aim straight at the sniper's legs (just above the tower top)
+    const from = { x: c.x, y: 8.3, z: c.z + 10 };
+    const hit = arena.raycast(from, { x: 0, y: 0, z: -1 }, 10);
+    assert.ok(hit, 'blocked');
+    assert.equal(hit.iy, 9, 'by the parapet');
+});
+
+test('players spawn on the floor, never on towers', () => {
+    const room = createRoom(3);
+    for (let i = 0; i < 40; i++) {
+        const p = room.addPlayer({ id: `p${i}`, name: 'P' });
+        assert.equal(p.y, 0);
+    }
+});
+
+test('arrows drop only about a block over 20 blocks at full draw', async () => {
+    const { BOW, PROJECTILE } = await import('../shared/constants.js');
+    const time = 20 / BOW.maxSpeed;
+    const drop = 0.5 * PROJECTILE.gravity * time * time;
+    assert.ok(drop <= 1.2, `drop ${drop.toFixed(2)}`);
 });
 
 test('all pickups on the map can be collected (regression)', () => {

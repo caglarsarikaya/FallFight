@@ -280,7 +280,7 @@ export class GameRoom {
 
     placeAtSpawn(player) {
         const others = [...this.players.values()].filter(p => p.alive && p !== player);
-        const spot = this.arena.findSpawn(this.rng, others);
+        const spot = this.arena.findSpawn(this.rng, others, { maxY: 0 });
         const center = spot ? this.arena.tileCenter(spot.ix, spot.iz) : { x: 0, z: 0 };
         Object.assign(player, { x: center.x, y: spot ? spot.y : 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true });
         // Face the middle of the arena

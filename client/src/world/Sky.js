@@ -8,7 +8,7 @@ const SKY_HORIZON = new THREE.Color('#bfe0ff');
 export class Sky {
     constructor(scene) {
         this.scene = scene;
-        scene.fog = new THREE.Fog(SKY_HORIZON, 45, 140);
+        scene.fog = new THREE.Fog(SKY_HORIZON, 70, 190);
         scene.background = SKY_HORIZON.clone();
 
         this.addDome();
@@ -63,14 +63,14 @@ export class Sky {
         this.scene.add(new THREE.HemisphereLight('#cfe8ff', '#ff9a5a', 0.9));
 
         const sun = new THREE.DirectionalLight('#fff1d6', 2.2);
-        sun.position.set(18, 30, -12);
+        sun.position.set(30, 50, -20);
         sun.castShadow = true;
         sun.shadow.mapSize.set(2048, 2048);
         const s = sun.shadow.camera;
-        s.left = s.bottom = -22;
-        s.right = s.top = 22;
+        s.left = s.bottom = -38;
+        s.right = s.top = 38;
         s.near = 1;
-        s.far = 80;
+        s.far = 120;
         sun.shadow.bias = -0.0005;
         sun.shadow.normalBias = 0.02;
         this.scene.add(sun);
@@ -82,10 +82,10 @@ export class Sky {
         // Unlit so the lava glow below doesn't tint them
         const material = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85 });
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        for (let i = 0; i < 26; i++) {
+        for (let i = 0; i < 40; i++) {
             const cloud = new THREE.Mesh(geometry, material);
             cloud.scale.set(6 + Math.random() * 14, 1.5, 4 + Math.random() * 8);
-            cloud.position.set((Math.random() - 0.5) * 220, 32 + Math.random() * 10, (Math.random() - 0.5) * 220);
+            cloud.position.set((Math.random() - 0.5) * 300, 36 + Math.random() * 12, (Math.random() - 0.5) * 300);
             this.clouds.add(cloud);
         }
         this.scene.add(this.clouds);
@@ -110,7 +110,7 @@ export class Sky {
     update(dt) {
         for (const cloud of this.clouds.children) {
             cloud.position.x += dt * 1.5;
-            if (cloud.position.x > 110) cloud.position.x -= 220;
+            if (cloud.position.x > 150) cloud.position.x -= 300;
         }
         this.lavaTexture.offset.x += dt * 0.02;
         this.lavaTexture.offset.y += dt * 0.013;

@@ -9,8 +9,8 @@ test('a kill grants the killer exactly one health potion', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 10, 10);
-    place(room, b, 10, 8);
+    place(room, a, 22, 22);
+    place(room, b, 22, 20);
     b.health = 10;
 
     room.useItem(a, 1, { x: 0, y: -0.1, z: -1 });
@@ -26,8 +26,8 @@ test('falling after an opponent broke your block credits them', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 10, 10);
-    place(room, b, 10, 8);
+    place(room, a, 22, 22);
+    place(room, b, 22, 20);
 
     // A chops the block B stands on
     room.useItem(a, 1, { x: 0, y: -1.6, z: -2 });
@@ -141,9 +141,9 @@ test('physics: walk speed, jump height, falling through a hole', () => {
 
 test('arena raycast finds the tile under the crosshair', () => {
     const arena = new Arena();
-    const c = arena.tileCenter(10, 10);
+    const c = arena.tileCenter(22, 22);
     const hit = arena.raycast({ x: c.x, y: 1.6, z: c.z }, { x: 0, y: -0.6247, z: -0.7809 }, 4);
     assert.ok(hit);
-    assert.deepEqual([hit.ix, hit.iy, hit.iz], [10, 0, 8]);
+    assert.deepEqual([hit.ix, hit.iy, hit.iz], [22, 0, 20]);
     assert.equal(arena.raycast({ x: c.x, y: 1.6, z: c.z }, { x: 0, y: 1, z: 0 }, 4), null);
 });

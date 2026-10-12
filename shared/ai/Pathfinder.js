@@ -18,7 +18,7 @@ export class Pathfinder {
 
     // Returns waypoints [{ ix, iz, y }] from start (exclusive) to goal, or to the reachable cell
     // closest to the goal when it can't be reached. Returns [] when already there, null if stuck.
-    find(start, goal, maxNodes = 1200) {
+    find(start, goal, maxNodes = 5000) {
         const { arena } = this;
         const size = arena.size;
         const key = (ix, iz) => iz * size + ix;

@@ -237,15 +237,16 @@ export class Arena {
 
     // ---- spawning -------------------------------------------------------------------------
 
-    // Random stable surface far from the given points: { ix, iz, y } or null
-    findSpawn(rng, avoid = [], attempts = 30) {
+    // Random stable, reachable surface far from the given points: { ix, iz, y } or null.
+    // maxY limits how high it may be (players spawn on the floor, pickups anywhere).
+    findSpawn(rng, avoid = [], { maxY = Infinity, attempts = 40 } = {}) {
         let best = null;
         let bestScore = -Infinity;
         for (let n = 0; n < attempts; n++) {
             const ix = 1 + Math.floor(rng() * (this.size - 2));
             const iz = 1 + Math.floor(rng() * (this.size - 2));
             const y = this.surfaceHeight(ix, iz);
-            if (y === null || !this.isStable(ix, y, iz) || !this.reachable[iz * this.size + ix]) continue;
+            if (y === null || y > maxY || !this.isStable(ix, y, iz) || !this.reachable[iz * this.size + ix]) continue;
             const c = this.tileCenter(ix, iz);
             const nearest = avoid.reduce((m, p) => Math.min(m, Math.hypot(p.x - c.x, p.z - c.z)), 99);
             if (nearest > bestScore) {
@@ -257,7 +258,7 @@ export class Arena {
         for (let iz = 0; iz < this.size; iz++) {
             for (let ix = 0; ix < this.size; ix++) {
                 const y = this.surfaceHeight(ix, iz);
-                if (y !== null && this.isStable(ix, y, iz)) return { ix, iz, y };
+                if (y !== null && y <= maxY && this.isStable(ix, y, iz)) return { ix, iz, y };
             }
         }
         return null;

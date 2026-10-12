@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOW, PLAYER } from '../shared/constants.js';
+import { BOW, PLAYER, PROJECTILE } from '../shared/constants.js';
 import { getItem } from '../shared/items/ItemRegistry.js';
 import { createRoom, place } from './helpers.js';
 
@@ -30,13 +30,13 @@ test('a full-draw arrow to the head is a one-shot kill; a slow one is not', () =
     assert.ok(slow.amount >= 50 && slow.amount < PLAYER.maxHealth, 'two slow head arrows kill');
 });
 
-// Shoot from (11, 22) towards a target at (11, 14), aiming at a height above its feet
+// Shoot along a clear lane towards a target, aiming at a height above its feet
 function shootAt(room, shooter, target, height, charge) {
     const eye = shooter.eye;
     const dz = target.z - eye.z;
     const speed = bow.launchSpeed(charge);
     const time = Math.abs(dz) / speed;
-    const aimY = target.y + height + 0.5 * 20 * time * time; // compensate for gravity
+    const aimY = target.y + height + 0.5 * PROJECTILE.gravity * time * time; // compensate for gravity
     const dir = { x: 0, y: (aimY - eye.y) / Math.abs(dz), z: Math.sign(dz) };
     room.useItem(shooter, 0, dir, charge);
     for (let i = 0; i < 45 && room.projectiles.size; i++) room.tick(1 / 30);
@@ -47,8 +47,8 @@ test('projectile hits are zoned: full-draw headshot kills, two slow head shots k
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 11, 22);
-    place(room, b, 11, 14);
+    place(room, a, 22, 22);
+    place(room, b, 22, 14);
 
     shootAt(room, a, b, 1.65, BOW.fullDraw);
     const shot = room.eventsOf('damage').at(-1);
@@ -59,7 +59,7 @@ test('projectile hits are zoned: full-draw headshot kills, two slow head shots k
 
     // Fresh target: slow arrows to the head
     const c = room.addPlayer({ id: 'c', name: 'C' });
-    place(room, c, 11, 14);
+    place(room, c, 22, 14);
     shootAt(room, a, c, 1.65, 0.25);
     assert.equal(room.eventsOf('damage').at(-1).zone, 'head');
     assert.equal(c.alive, true, 'one slow head arrow does not kill');
@@ -71,8 +71,8 @@ test('leg shots do less damage than body shots', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 11, 22);
-    place(room, b, 11, 14);
+    place(room, a, 22, 22);
+    place(room, b, 22, 14);
     shootAt(room, a, b, 0.4, 0.6);
     const legs = room.eventsOf('damage').at(-1);
     shootAt(room, a, b, 1.1, 0.6);
@@ -86,9 +86,9 @@ test('walls stop arrows and axes', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    // Wall at x = 9 (z 13..16), 2 high: stand on either side of it
-    place(room, a, 8, 14);
-    place(room, b, 10, 14);
+    // 2-high wall at x = 24: stand on either side of it
+    place(room, a, 23, 29);
+    place(room, b, 25, 29);
     a.yaw = -Math.PI / 2;
     room.useItem(a, 0, { x: 1, y: 0, z: 0 }, 1);
     for (let i = 0; i < 30; i++) room.tick(1 / 30);
@@ -99,5 +99,5 @@ test('walls stop arrows and axes', () => {
     room.useItem(a, 1, { x: 1, y: -0.3, z: 0 });
     assert.equal(b.health, PLAYER.maxHealth, 'axe blocked by the wall');
     const crack = room.eventsOf('blockCracking').at(-1);
-    assert.deepEqual([crack.ix, crack.iz], [9, 14]);
+    assert.deepEqual([crack.ix, crack.iz], [24, 29]);
 });

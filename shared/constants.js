@@ -2,8 +2,8 @@
 // Units: distances in blocks, times in seconds, speeds in blocks per second.
 
 export const ARENA = {
-    size: 30,          // 30 x 30 floor tiles
-    height: 4,         // block layers: the floor plus up to 3 blocks of structures
+    size: 60,          // 60 x 60 floor tiles
+    height: 10,        // block layers: the floor, 8-high sniper towers, their parapet and headroom
     voidY: -8          // falling below this kills
 };
 
@@ -41,8 +41,8 @@ export const BOW = {
     headshotPower: 0.95, // a head hit at (almost) full draw kills outright
     minDraw: 0.15,
     fullDraw: 1.0,
-    minSpeed: 12,
-    maxSpeed: 32,
+    minSpeed: 15,
+    maxSpeed: 42,
     cooldown: 0.3,
     knockback: 6
 };
@@ -53,7 +53,7 @@ export const POTION = {
 };
 
 export const PROJECTILE = {
-    gravity: 20,
+    gravity: 9,        // low drop: a full-draw arrow falls ~1 block over 20
     maxLife: 6,
     radius: 0.1
 };
@@ -64,8 +64,8 @@ export const LOADOUT = {
 };
 
 export const PICKUPS = {
-    arrow: { interval: 15, amount: 3, max: 3 },
-    health_potion: { interval: 60, amount: 1, max: 1 },
+    arrow: { interval: 15, amount: 3, max: 5 },
+    health_potion: { interval: 60, amount: 1, max: 2 },
     radius: 0.9
 };
 

@@ -1,6 +1,7 @@
 import { AXE, BOW, PLAYER, PROJECTILE } from '../constants.js';
 import { normalize, yawTowards } from '../math.js';
 import { BLOCK_STATE } from '../world/Arena.js';
+import { LANDMARKS } from '../world/layout.js';
 import { Pathfinder } from './Pathfinder.js';
 
 // Bot tuning (distances in blocks, times in seconds)
@@ -8,7 +9,7 @@ export const BOT_SETTINGS = {
     reactionTime: [0.15, 0.35],
     meleeRange: 3.0,             // axe reach is 3.5 from the eye
     preferredMeleeDistance: 2.2,
-    bowRange: [5, 20],
+    bowRange: [5, 28],
     drawTime: [0.5, 1.0],
     aimError: 0.05,              // radians of random aim noise
     aimHeight: 0.95,             // aim at the lower chest; headshots happen, but rarely
@@ -23,7 +24,13 @@ export const BOT_SETTINGS = {
     pickupNotice: [0.3, 0.9],    // how long after a pickup appears before this bot reacts
     pickupRethink: 0.4,
     pickupDistanceCost: 1.5,     // value lost per block of distance
-    pickupGrabRange: 3           // grab it even in the middle of a fight
+    pickupGrabRange: 3,          // grab it even in the middle of a fight
+    // Sniper towers
+    sniperChance: 0.2,           // chance, every sniperThink seconds, to go and snipe when it's quiet
+    sniperThink: 5,
+    sniperRange: 40,
+    sniperStay: [15, 25],
+    sniperMinArrows: 10
 };
 
 const rand = (rng, [min, max]) => min + rng() * (max - min);
@@ -53,6 +60,8 @@ export class BotBrain {
         this.path = null;
         this.pathKey = null;
         this.replanAt = 0;
+        this.sniper = null;          // { perch, until } while heading to / holding a sniper tower top
+        this.sniperThinkAt = 2 + rng() * BOT_SETTINGS.sniperThink;
     }
 
     get now() {
@@ -82,6 +91,7 @@ export class BotBrain {
         const enemyClose = target && dist <= BOT_SETTINGS.meleeRange + 0.6 && Math.abs(target.y - bot.y) < 1.6;
 
         if (enemyClose) {
+            this.sniper = null;
             bot.yaw = yawTowards(target.x - bot.x, target.z - bot.z);
             this.cancelDraw();
             this.melee(target);
@@ -89,6 +99,9 @@ export class BotBrain {
             if (pickupDist < BOT_SETTINGS.pickupGrabRange) return this.followPath(pickup.x, pickup.z);
             return this.circle(target, dist, BOT_SETTINGS.preferredMeleeDistance);
         }
+
+        const sniping = this.updateSniper(target, dist);
+        if (sniping) return sniping;
 
         if (pickup) {
             this.cancelDraw();
@@ -282,6 +295,78 @@ export class BotBrain {
             return null;
         }
         return { moveX: dx / d, moveZ: dz / d, jump: true };
+    }
+
+    // Climb a sniper tower when things are quiet, then shoot from the top for a while
+    updateSniper(target, targetDist) {
+        const bot = this.player;
+        const arrows = bot.inventory.count('arrow');
+        if (!this.sniper && this.now >= this.sniperThinkAt) {
+            this.sniperThinkAt = this.now + BOT_SETTINGS.sniperThink;
+            const quiet = !target || targetDist > 10;
+            if (quiet && arrows >= BOT_SETTINGS.sniperMinArrows && bot.health >= 50 && this.rng() < BOT_SETTINGS.sniperChance) {
+                const perch = this.freePerch();
+                if (perch) this.sniper = { perch, until: this.now + rand(this.rng, BOT_SETTINGS.sniperStay) };
+            }
+        }
+        if (!this.sniper) return null;
+        if (this.now > this.sniper.until || arrows < 3 || bot.health < 40) {
+            this.sniper = null;
+            this.cancelDraw();
+            return null;
+        }
+
+        const { x, z, y } = this.sniper.perch;
+        const onPerch = Math.hypot(x - bot.x, z - bot.z) < 0.8 && bot.y >= y - 0.1;
+        if (!onPerch) {
+            this.cancelDraw();
+            return this.faceMovement(this.followPath(x, z));
+        }
+        // Hold the perch and shoot whoever is visible
+        const victim = this.sniperTarget();
+        if (victim) {
+            const d = Math.hypot(victim.x - bot.x, victim.z - bot.z);
+            bot.yaw = yawTowards(victim.x - bot.x, victim.z - bot.z);
+            this.shoot(victim, d);
+        } else {
+            this.cancelDraw();
+        }
+        return idle();
+    }
+
+    freePerch() {
+        const bot = this.player;
+        const taken = new Set([...this.room.bots.values()]
+            .filter(b => b !== this && b.sniper)
+            .map(b => `${b.sniper.perch.ix},${b.sniper.perch.iz}`));
+        let best = null;
+        let bestDist = Infinity;
+        for (const perch of LANDMARKS.sniperPerches) {
+            if (taken.has(`${perch.ix},${perch.iz}`)) continue;
+            if (this.arena.surfaceHeight(perch.ix, perch.iz) !== perch.y) continue; // chopped up
+            const c = this.arena.tileCenter(perch.ix, perch.iz);
+            const d = Math.hypot(c.x - bot.x, c.z - bot.z);
+            if (d < bestDist) {
+                bestDist = d;
+                best = { ...perch, x: c.x, z: c.z };
+            }
+        }
+        return best;
+    }
+
+    sniperTarget() {
+        const bot = this.player;
+        let best = null;
+        let bestDist = BOT_SETTINGS.sniperRange;
+        for (const other of this.room.players.values()) {
+            if (other === bot || !other.alive) continue;
+            const d = Math.hypot(other.x - bot.x, other.z - bot.z);
+            if (d < bestDist && this.hasLineOfSight(other)) {
+                best = other;
+                bestDist = d;
+            }
+        }
+        return best;
     }
 
     // ---- movement -----------------------------------------------------------------------

@@ -33,8 +33,8 @@ test('axe hits a player in front for 10 damage with knockback', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 10, 10);
-    place(room, b, 10, 8); // 2 blocks towards -Z (yaw 0 looks at -Z)
+    place(room, a, 22, 22);
+    place(room, b, 22, 20); // 2 blocks towards -Z (yaw 0 looks at -Z)
 
     assert.ok(room.useItem(a, 1, { x: 0, y: -0.1, z: -1 }));
     assert.equal(b.health, PLAYER.maxHealth - AXE.damage);
@@ -50,32 +50,32 @@ test('axe hits a player in front for 10 damage with knockback', () => {
 test('axe breaks the aimed floor block when no player is hit; it regrows later', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
-    place(room, a, 10, 10);
+    place(room, a, 22, 22);
     // Look down at the tile 2 ahead
     const dir = { x: 0, y: -1.6, z: -2 };
     assert.ok(room.useItem(a, 1, dir));
     const crack = room.eventsOf('blockCracking').at(-1);
-    assert.deepEqual([crack.ix, crack.iy, crack.iz], [10, 0, 8]);
-    assert.ok(room.arena.isSolid(10, 0, 8), 'still holds while cracking');
+    assert.deepEqual([crack.ix, crack.iy, crack.iz], [22, 0, 20]);
+    assert.ok(room.arena.isSolid(22, 0, 20), 'still holds while cracking');
 
     for (let i = 0; i < 15; i++) room.tick(1 / 30);
-    assert.ok(!room.arena.isSolid(10, 0, 8), 'gone after the break delay');
+    assert.ok(!room.arena.isSolid(22, 0, 20), 'gone after the break delay');
     for (let i = 0; i < 30 * 21; i++) room.tick(1 / 30);
-    assert.ok(room.arena.isSolid(10, 0, 8), 'regrown');
+    assert.ok(room.arena.isSolid(22, 0, 20), 'regrown');
 });
 
 test('bow needs a draw, consumes arrows and deals damage', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 11, 20);
-    place(room, b, 11, 12);
+    place(room, a, 22, 22);
+    place(room, b, 22, 14);
 
     assert.ok(!room.useItem(a, 0, { x: 0, y: 0, z: -1 }, 0.05), 'too short a draw');
     assert.equal(a.inventory.count('arrow'), LOADOUT.arrow);
 
     // Aim at the chest
-    assert.ok(room.useItem(a, 0, { x: 0, y: 0.02, z: -1 }, BOW.fullDraw));
+    assert.ok(room.useItem(a, 0, { x: 0, y: -0.05, z: -1 }, BOW.fullDraw));
     assert.equal(a.inventory.count('arrow'), LOADOUT.arrow - 1);
     for (let i = 0; i < 30 && b.health === PLAYER.maxHealth; i++) room.tick(1 / 30);
     const hit = room.eventsOf('damage').at(-1);
