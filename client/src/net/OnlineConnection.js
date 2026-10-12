@@ -11,8 +11,8 @@ export class OnlineConnection extends Connection {
         this.socket = io(url, { transports: ['websocket', 'polling'], reconnectionDelayMax: 4000 });
         this.socket.on('connect', () => {
             this.setStatus('online');
-            // Reconnected after a drop (or a server restart): join a room again
-            if (this.profile) this.join(this.profile);
+            // Reconnected after a drop (or a server restart): join the same room again
+            if (this.profile) this.join(this.profile, this.joinRequest);
         });
         this.socket.on('disconnect', () => this.setStatus('connecting'));
         this.socket.on('connect_error', () => this.setStatus('connecting'));
@@ -39,9 +39,21 @@ export class OnlineConnection extends Connection {
         this.statusListeners.forEach(l => l(status));
     }
 
-    join(profile) {
+    // request: { roomId, password } for a specific room, or {} for quick play
+    join(profile, request = {}) {
         this.profile = profile;
-        this.socket.emit(C2S.JOIN, { name: profile.name, characterId: profile.characterId });
+        this.joinRequest = request;
+        this.socket.emit(C2S.JOIN, { name: profile.name, characterId: profile.characterId, ...request });
+    }
+
+    // Ask the server something and wait for its answer (socket.io acknowledgement)
+    request(type, data, timeoutMs = 8000) {
+        return new Promise(resolve => {
+            if (this.status !== 'online') return resolve({ error: 'offline' });
+            this.socket.timeout(timeoutMs).emit(type, data, (err, response) => {
+                resolve(err ? { error: 'timeout' } : response);
+            });
+        });
     }
 
     send(type, data) {

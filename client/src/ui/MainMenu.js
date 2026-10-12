@@ -1,7 +1,7 @@
 import { CHARACTERS } from '../../shared/characters/definitions.js';
-import { NET } from '../../shared/constants.js';
 import { S2C } from '../../shared/protocol.js';
 import { CharacterPreview } from './CharacterPreview.js';
+import { RoomBrowser } from './RoomBrowser.js';
 import { el } from './dom.js';
 
 const CONTROLS = [
@@ -12,11 +12,23 @@ const CONTROLS = [
 
 // Nickname + character select. Used at start ('start' mode) and from the pause menu ('edit' mode).
 export class MainMenu {
-    constructor(root, { profile, sound, online = null, onPlay = () => {}, onSave = () => {}, onBack = () => {} }) {
+    constructor(root, { profile, sound, online = null, onPlay = () => {}, onJoinRoom, onCreateRoom, onSave = () => {}, onBack = () => {} }) {
         this.profile = profile;
         this.sound = sound;
         this.online = online;
         this.callbacks = { onPlay, onSave, onBack };
+        this.rooms = new RoomBrowser({
+            profile,
+            sound,
+            onJoin: (roomId, password) => {
+                this.applyToProfile();
+                return onJoinRoom(roomId, password);
+            },
+            onCreate: options => {
+                this.applyToProfile();
+                return onCreateRoom(options);
+            }
+        });
         this.mode = 'start';
         this.selected = profile.characterId;
 
@@ -37,11 +49,11 @@ export class MainMenu {
         this.previewName = el('div.preview-name');
         const previewBox = el('div.panel.preview', {}, this.previewName);
 
-        this.playButton = el('button.btn.primary', { type: 'button', text: 'Play', onclick: () => this.play() });
+        this.playButton = el('button.btn.primary', { type: 'button', text: 'Quick Play', onclick: () => this.play() });
         this.status = el('div.server-status');
         this.saveButton = el('button.btn.primary', { type: 'button', text: 'Save', onclick: () => this.save() });
         this.backButton = el('button.btn', { type: 'button', text: 'Back', onclick: () => this.callbacks.onBack() });
-        this.startButtons = el('div.play-buttons', {}, [el('div.row', {}, [this.playButton]), this.status]);
+        this.startButtons = el('div.play-buttons', {}, [el('div.row', {}, [this.playButton]), this.status, this.rooms.root]);
         this.editButtons = el('div.play-buttons.hidden', {}, el('div.row', {}, [this.saveButton, this.backButton]));
 
         this.title = el('h1.logo', {}, ['FALL', el('span', { text: 'FIGHT' })]);
@@ -75,6 +87,7 @@ export class MainMenu {
     watchServer() {
         if (!this.online) {
             this.status.textContent = 'No game server configured: you\'ll play against bots.';
+            this.rooms.setEnabled(false);
             return;
         }
         this.serverStats = null;
@@ -84,6 +97,8 @@ export class MainMenu {
             this.status.textContent = ready
                 ? MainMenu.describeServer(this.serverStats)
                 : 'Waking up the game server... (free servers can take up to a minute)';
+            this.rooms.setEnabled(ready, 'Rooms need the online server (waking up...)');
+            if (ready && this.serverStats) this.rooms.render(this.serverStats.rooms);
         };
         this.online.onStatus(render);
         this.online.on(S2C.SERVER_STATS, stats => {
@@ -92,21 +107,26 @@ export class MainMenu {
         });
     }
 
-    // e.g. "● Online · 3 playing now · you'll join 2 players (+ bots)"
+    // e.g. "● Online · 3 playing now · Quick Play joins 2 players (+ bots)"
     static describeServer(stats) {
         if (!stats) return '● Server online';
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-        if (stats.players === 0) return '● Online · nobody is playing right now · bots will fight you until someone joins';
-        // You join the fullest room that still has a free seat
-        const open = stats.rooms.filter(r => r.players < NET.maxPlayersPerRoom).sort((a, b) => b.players - a.players)[0];
-        const joining = open ? `you'll join ${plural(open.players, 'player')} (+ bots)` : 'all rooms are full, you\'ll start a new one';
-        return `● Online · ${stats.players} playing now · ${joining}`;
+        // Quick Play joins the fullest quick room that still has a free seat
+        const open = stats.rooms
+            .filter(r => r.kind === 'quick' && r.players < r.maxPlayers)
+            .sort((a, b) => b.players - a.players)[0];
+        const serverFull = stats.rooms.length >= (stats.limits?.maxRooms ?? Infinity);
+        const quick = open ? `Quick Play joins ${plural(open.players, 'player')} (+ bots)`
+            : serverFull ? 'server is full, join a room below'
+                : 'Quick Play starts a new room with bots';
+        const playing = stats.players === 0 ? 'nobody is playing right now' : `${stats.players} playing now`;
+        return `● Online · ${playing} · ${quick}`;
     }
 
     // While Play waits for the server to wake up
     setWaiting(waiting) {
         this.playButton.disabled = waiting;
-        this.playButton.textContent = waiting ? 'Connecting...' : 'Play';
+        this.playButton.textContent = waiting ? 'Connecting...' : 'Quick Play';
     }
 
     select(characterId, withSound = true) {

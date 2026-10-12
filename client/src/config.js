@@ -1,11 +1,13 @@
+import { ROOMS } from '../shared/constants.js';
+
 // Multiplayer game server (Render). The game page itself is hosted on GitHub Pages.
 export const SERVER_URL = 'https://fallfightgameserver.onrender.com';
 
 // If the server can't be reached this long after pressing Play, play offline against bots instead
 export const CONNECT_TIMEOUT_MS = 45000;
 
-// Bots in the offline fallback (rooms are always 4 fighters)
-export const OFFLINE_BOTS = 3;
+// Bots in the offline fallback: a full room, like online (see shared/config/rooms.json)
+export const OFFLINE_BOTS = ROOMS.maxPlayersPerRoom - 1;
 
 // Which server to use:
 // - ?server=<url> in the page URL overrides everything (e.g. ?server=http://localhost:3000)

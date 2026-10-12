@@ -1,5 +1,19 @@
 // Game rules and tuning shared by the client, the server and the in-browser offline server.
 // Units: distances in blocks, times in seconds, speeds in blocks per second.
+import roomLimits from './config/rooms.json' with { type: 'json' };
+
+// Server capacity, kept in shared/config/rooms.json so it's easy to raise later:
+// maxRooms = open rooms on the server; maxPlayersPerRoom = fighters per room (bots included)
+export const ROOMS = Object.freeze({ ...roomLimits });
+
+export function validateRoomLimits(limits = ROOMS) {
+    const ok = Number.isInteger(limits.maxRooms) && limits.maxRooms >= 1 &&
+        Number.isInteger(limits.maxPlayersPerRoom) && limits.maxPlayersPerRoom >= 2;
+    if (!ok) {
+        throw new Error('shared/config/rooms.json: maxRooms must be an integer >= 1 and maxPlayersPerRoom an integer >= 2');
+    }
+    return limits;
+}
 
 export const ARENA = {
     size: 60,          // 60 x 60 floor tiles
@@ -75,6 +89,5 @@ export const KILL_CREDIT_WINDOW = 10;
 export const NET = {
     tickRate: 30,
     snapshotRate: 20,
-    clientSendRate: 20,
-    maxPlayersPerRoom: 4  // fighters per room; empty seats are filled with bots
+    clientSendRate: 20
 };

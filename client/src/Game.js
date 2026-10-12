@@ -19,6 +19,7 @@ import { Scoreboard } from './ui/Scoreboard.js';
 import { RespawnOverlay } from './ui/RespawnOverlay.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { el } from './ui/dom.js';
+import { roomErrorText } from './ui/RoomBrowser.js';
 
 const PICKUP_NAMES = { arrow: 'Arrows', health_potion: 'Health Potion' };
 
@@ -97,9 +98,10 @@ export class Game {
         this.resize();
     }
 
-    start() {
+    // request: {} for quick play, or { roomId, password }
+    start(request = {}) {
         this.input.enabled = true;
-        this.connection.join(this.profile);
+        this.connection.join(this.profile, request);
         this.clickToPlay.classList.remove('hidden');
         let last = performance.now();
         const frame = now => {
@@ -292,6 +294,11 @@ export class Game {
     bindNetwork() {
         const on = (type, handler) => this.connection.on(type, data => handler.call(this, data));
         on(S2C.WELCOME, this.onWelcome);
+        on(S2C.JOIN_ERROR, ({ error }) => {
+            // e.g. the room closed while we were reconnecting
+            this.hud.toast(`${roomErrorText(error)}: back to the menu`);
+            setTimeout(() => this.onLeave(), 2500);
+        });
         on(S2C.SNAPSHOT, this.onSnapshot);
         on(S2C.PLAYER_JOINED, p => {
             if (!this.players.has(p.id)) {
@@ -386,6 +393,8 @@ export class Game {
     onWelcome(data) {
         this.resetWorld(); // a second welcome means we rejoined after a disconnect
         this.selfId = data.selfId;
+        this.room = data.room || null;
+        if (this.room) this.pauseMenu.setTitle(this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name);
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
         for (const p of data.players) this.addPlayer(p);
@@ -397,14 +406,15 @@ export class Game {
         for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
     }
 
-    // "ONLINE · 2 players + 2 bots"
+    // "FRIENDS · 2 players + 2 bots"
     updateModeBadge() {
         if (!this.connection.isOnline) return;
         const all = [...this.players.values()];
         const bots = all.filter(p => p.isBot).length;
         const people = all.length - bots;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-        this.hud.setMode(`ONLINE · ${plural(people, 'player')} + ${plural(bots, 'bot')}`);
+        const label = !this.room || this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name.toUpperCase();
+        this.hud.setMode(`${label} · ${plural(people, 'player')}${this.room?.bots === false ? '' : ` + ${plural(bots, 'bot')}`}`);
     }
 
     resetWorld() {

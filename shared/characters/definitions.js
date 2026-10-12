@@ -12,6 +12,10 @@ export function isValidCharacter(id) {
     return CHARACTERS.some(c => c.id === id);
 }
 
+export function sanitizeRoomName(name) {
+    return String(name || '').replace(/[^\p{L}\p{N} _\-.'!]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+}
+
 export function sanitizeName(name) {
     const clean = String(name || '').replace(/[^\p{L}\p{N} _\-.]/gu, '').trim().slice(0, 16);
     return clean || 'Player';

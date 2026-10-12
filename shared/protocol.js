@@ -2,7 +2,9 @@
 
 // Client -> server
 export const C2S = {
-    JOIN: 'join',          // { name, characterId }
+    JOIN: 'join',          // { name, characterId, roomId?, password? } (no roomId = quick play)
+    CHECK_ROOM: 'checkRoom',   // ack: { roomId, password } -> { ok } | { error }
+    CREATE_ROOM: 'createRoom', // ack: { roomName, password, bots, maxPlayers } -> { roomId } | { error }
     PROFILE: 'profile',    // { name, characterId }
     STATE: 'state',        // { x, y, z, vx, vy, vz, yaw, pitch, onGround }
     SELECT: 'select',      // { slot }
@@ -12,7 +14,8 @@ export const C2S = {
 
 // Server -> client
 export const S2C = {
-    WELCOME: 'welcome',                // { selfId, time, players, arena, pickups, projectiles }
+    WELCOME: 'welcome',                // { selfId, room, time, players, arena, pickups, projectiles }
+    JOIN_ERROR: 'joinError',           // { error } joining a room failed
     SNAPSHOT: 'snapshot',              // { time, players }
     PLAYER_JOINED: 'playerJoined',     // player
     PLAYER_LEFT: 'playerLeft',         // { id }
@@ -30,5 +33,5 @@ export const S2C = {
     RESPAWN: 'respawn',                // { id, x, y, z, health }
     PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z }
     PICKUP_TAKEN: 'pickupTaken',       // { id, by }
-    SERVER_STATS: 'serverStats',       // { players, rooms: [{ players, bots }] } live counts for the menu
+    SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

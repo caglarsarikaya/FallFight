@@ -5,6 +5,7 @@ import { LocalConnection } from './net/LocalConnection.js';
 import { OnlineConnection } from './net/OnlineConnection.js';
 import { MainMenu } from './ui/MainMenu.js';
 import { Game } from './Game.js';
+import { C2S } from '../shared/protocol.js';
 
 const container = document.getElementById('game');
 const ui = document.getElementById('ui');
@@ -15,7 +16,8 @@ const online = serverUrl ? new OnlineConnection(serverUrl) : null;
 
 let game = null;
 
-function startGame(connection) {
+// request: {} for quick play, or { roomId, password } for a specific room
+function startGame(connection, request = {}, notice = null) {
     menu.setWaiting(false);
     menu.hide();
     game = new Game({
@@ -30,28 +32,52 @@ function startGame(connection) {
         },
         onLeave: () => location.reload()
     });
-    game.start();
-    if (!connection.isOnline && online) game.hud.toast('Server unavailable: playing offline with bots');
+    game.start(request);
+    if (notice) game.hud.toast(notice);
 }
 
-function playOffline() {
+function playOffline(notice = online ? 'Server unavailable: playing offline with bots' : null) {
     online?.close();
-    startGame(new LocalConnection({ botCount: OFFLINE_BOTS }));
+    startGame(new LocalConnection({ botCount: OFFLINE_BOTS }), {}, notice);
 }
 
-// One Play button: join an online room (filled with bots to 4) when the server is reachable,
-// otherwise fall back to the same game against bots in the browser
+// Quick Play: join the fullest public room (bots fill the empty seats). If the server can't be
+// reached, or it's full, play the same game against bots in the browser.
+async function quickPlay() {
+    const check = await online.request(C2S.CHECK_ROOM, {});
+    if (game) return;
+    if (check.error === 'server-full') playOffline('Server is full: playing offline with bots');
+    else startGame(online, {});
+}
+
 function play() {
     if (!online) return playOffline();
-    if (online.status === 'online') return startGame(online);
+    if (online.status === 'online') return quickPlay();
     menu.setWaiting(true);
-    const timeout = setTimeout(playOffline, CONNECT_TIMEOUT_MS);
+    const timeout = setTimeout(() => !game && playOffline(), CONNECT_TIMEOUT_MS);
     online.onStatus(status => {
         if (status === 'online' && !game) {
             clearTimeout(timeout);
-            startGame(online);
+            quickPlay();
         }
     });
+}
+
+// Join a room from the list; resolves to { error } so the menu can show what went wrong
+async function joinRoom(roomId, password) {
+    if (game) return {};
+    const check = await online.request(C2S.CHECK_ROOM, { roomId, password });
+    if (check.error) return check;
+    startGame(online, { roomId, password });
+    return {};
+}
+
+async function createRoom(options) {
+    if (game) return {};
+    const created = await online.request(C2S.CREATE_ROOM, options);
+    if (created.error) return created;
+    startGame(online, { roomId: created.roomId, password: options.password });
+    return {};
 }
 
 const menu = new MainMenu(ui, {
@@ -59,6 +85,8 @@ const menu = new MainMenu(ui, {
     sound,
     online,
     onPlay: play,
+    onJoinRoom: joinRoom,
+    onCreateRoom: createRoom,
     // Esc menu -> "Change Character & Name" -> Save / Back
     onSave: () => {
         menu.hide();

@@ -36,7 +36,8 @@ export class GameRoom {
 
     // ---- membership -------------------------------------------------------------------
 
-    addPlayer({ id, name, characterId, isBot = false }) {
+    // roomInfo: public description of the room (name, bots, size) sent in the welcome
+    addPlayer({ id, name, characterId, isBot = false, roomInfo = null }) {
         const player = new PlayerState({
             id,
             name: sanitizeName(name),
@@ -49,6 +50,7 @@ export class GameRoom {
         if (!isBot) {
             this.emit(id, S2C.WELCOME, {
                 selfId: id,
+                room: roomInfo,
                 time: this.time,
                 players: [...this.players.values()].map(p => p.toJSON()),
                 arena: this.arena.toJSON(),

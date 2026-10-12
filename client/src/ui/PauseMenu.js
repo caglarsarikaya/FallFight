@@ -9,8 +9,9 @@ export class PauseMenu {
         this.sensitivity = el('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: profile.sensitivity });
         this.sensitivity.addEventListener('input', () => onSensitivity(Number(this.sensitivity.value)));
 
+        this.title = el('h2', { text: 'GAME MENU' });
         this.root = el('div.overlay.dim.pause.hidden', {}, [
-            el('h2', { text: 'GAME MENU' }),
+            this.title,
             el('button.btn.primary', { type: 'button', text: 'Back to Game', onclick: () => onResume() }),
             el('button.btn', { type: 'button', text: 'Change Character & Name', onclick: () => onEditProfile() }),
             this.cameraButton,
@@ -19,6 +20,10 @@ export class PauseMenu {
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
         root.append(this.root);
+    }
+
+    setTitle(text) {
+        this.title.textContent = text;
     }
 
     setCameraLabel(label) {

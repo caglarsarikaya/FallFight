@@ -5,9 +5,12 @@ A Minecraft-style arena fighter that runs in the browser. Pick a fighter, then s
 
 **▶ Play: https://caglarsarikaya.github.io/FallFight/**
 
-Press **Play** and you join an online room. Every room has 4 fighters: bots fill the empty seats, and a
-bot steps out whenever a person joins. If the game server can't be reached, you play the same game
-against bots in your browser.
+- **Quick Play** puts you in a public room. Rooms are always full: bots fill the empty seats, and a bot
+  steps out whenever a person joins. If the game server can't be reached (or is full), you play the
+  same game against bots in your browser.
+- **Rooms**: create your own room with a name, an optional password, a player count, and a choice to
+  **fill empty seats with bots** or play **friends only**. Friends see it in the room list and join it
+  (entering the password if there is one).
 
 ## How to play
 
@@ -119,7 +122,17 @@ multiplayer rooms; opening it in a browser shows a short status message, not the
 | Start Command | `npm start` |
 | Health Check Path | `/healthz` |
 | Build Filters (included paths) | `server/**`, `shared/**`, `package.json`, `package-lock.json` |
-| Environment | `NODE_VERSION=22`, `CORS_ORIGIN=https://caglarsarikaya.github.io`, `BOTS_FILL=4` |
+| Environment | `NODE_VERSION=22`, `CORS_ORIGIN=https://caglarsarikaya.github.io` |
+
+**Server capacity** lives in [`shared/config/rooms.json`](shared/config/rooms.json):
+
+```json
+{ "maxRooms": 5, "maxPlayersPerRoom": 4 }
+```
+
+`maxRooms` is how many rooms can be open at once (quick and custom). `maxPlayersPerRoom` is the most
+fighters a room can hold, bots included; room creators can pick fewer. Edit the file and push: the
+server, the menu and offline play all read it.
 
 `render.yaml` contains the same settings for a Blueprint deploy. The client finds the server through
 `SERVER_URL` in `client/src/config.js`.
