@@ -165,11 +165,21 @@ test('players spawn on the floor, never on towers', () => {
     }
 });
 
-test('arrows drop only about a block over 20 blocks at full draw', async () => {
-    const { BOW, PROJECTILE } = await import('../shared/constants.js');
-    const time = 20 / BOW.maxSpeed;
-    const drop = 0.5 * PROJECTILE.gravity * time * time;
-    assert.ok(drop <= 1.2, `drop ${drop.toFixed(2)}`);
+test('arrows fly straight: no drop over 20 blocks, even at the weakest draw', async () => {
+    const { BOW } = await import('../shared/constants.js');
+    const { Projectile } = await import('../shared/game/Projectile.js');
+    const room = createRoom();
+    room.players.clear();
+    const { ix, from } = LANDMARKS.lane;
+    const c = room.arena.tileCenter(ix, from);
+    const arrow = new Projectile({ id: 1, x: c.x, y: 1.5, z: c.z, vx: 0, vy: 0, vz: -BOW.minSpeed, born: 0 });
+    let t = 0;
+    while (c.z - arrow.z < 20 && t < 3) {
+        assert.equal(arrow.step(1 / 30, room, t), null);
+        t += 1 / 30;
+    }
+    assert.ok(c.z - arrow.z >= 20, 'travelled 20 blocks');
+    assert.equal(arrow.y, 1.5, 'no drop');
 });
 
 test('all pickups on the map can be collected (regression)', () => {

@@ -30,7 +30,7 @@ Your nickname, character and settings are remembered in the browser.
 | | |
 |---|---|
 | Health | 100 HP. Respawn after 3 s with 2 s of spawn protection. Attacking ends the protection |
-| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows drop only slightly (about 1 block over 20 at full draw). Start with 20 arrows |
+| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows fly straight (no drop). Start with 20 arrows |
 | 🎯 Hit zones | Legs 8–24, body 12–35, head 50–80 (scaled by draw). A **full-draw arrow to the head kills in one shot**; two slow head shots kill |
 | 🪓 Axe | 10 damage at close range. Hit any block to crack it: it breaks after 0.4 s and regrows after 20 s |
 | 🧱 Arena | 60 × 60 blocks over lava: a central stone plaza with cover walls, four plank lookouts (2 high), crates and low walls to hide behind. Walls stop arrows and axes, and they can be chopped too |

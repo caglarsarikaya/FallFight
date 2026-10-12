@@ -53,8 +53,8 @@ export const POTION = {
 };
 
 export const PROJECTILE = {
-    gravity: 9,        // low drop: a full-draw arrow falls ~1 block over 20
-    maxLife: 6,
+    gravity: 0,        // arrows fly straight, no drop
+    maxLife: 3,        // seconds; without gravity, stray arrows simply expire
     radius: 0.1
 };
 
