@@ -1,6 +1,7 @@
 class FallFight {
     constructor() {
-        this.socket = io();
+        this.socket = null; // Set on join: the online socket or a LocalSocket
+        this.onlineSocket = this.connectOnline();
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -79,8 +80,28 @@ class FallFight {
             }
         };
         
-        this.setupSocketListeners();
         this.setupEventListeners();
+    }
+
+    connectOnline() {
+        const button = document.getElementById('play-online-button');
+        const serverUrl = window.FALLFIGHT_SERVER_URL;
+        // Without a configured server, only a page served by the Node server itself can go online
+        if (!serverUrl && location.hostname.endsWith('github.io')) {
+            button.textContent = 'Online unavailable';
+            return null;
+        }
+
+        const socket = io(serverUrl || undefined, { transports: ['websocket', 'polling'] });
+        socket.on('connect', () => {
+            button.disabled = false;
+            button.textContent = 'Play Online';
+        });
+        socket.on('disconnect', () => {
+            button.disabled = true;
+            button.textContent = 'Connecting to server...';
+        });
+        return socket;
     }
 
     setupSocketListeners() {
@@ -127,7 +148,7 @@ class FallFight {
             .join('');
         
         // Update players needed
-        const needed = this.REQUIRED_PLAYERS - data.players.length;
+        const needed = (data.requiredPlayers || this.REQUIRED_PLAYERS) - data.players.length;
         playersNeeded.textContent = needed > 0 ? needed : 'Starting game...';
     }
 
@@ -335,12 +356,20 @@ class FallFight {
 
         // Login form handling
         const playButton = document.getElementById('play-button');
+        const playOnlineButton = document.getElementById('play-online-button');
         const usernameInput = document.getElementById('username');
 
         playButton.addEventListener('click', () => {
             const username = usernameInput.value.trim();
             if (username) {
-                this.joinGame(username);
+                this.joinGame(username, false);
+            }
+        });
+
+        playOnlineButton.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            if (username) {
+                this.joinGame(username, true);
             }
         });
 
@@ -349,7 +378,8 @@ class FallFight {
             if (e.key === 'Enter') {
                 const username = usernameInput.value.trim();
                 if (username) {
-                    this.joinGame(username);
+                    // Enter goes online when connected, otherwise plays vs bots
+                    this.joinGame(username, !!(this.onlineSocket && this.onlineSocket.connected));
                 }
             }
         });
@@ -467,7 +497,16 @@ class FallFight {
         }
     }
 
-    joinGame(username) {
+    joinGame(username, online) {
+        if (this.socket) return;
+        if (online) {
+            this.socket = this.onlineSocket;
+        } else {
+            if (this.onlineSocket) this.onlineSocket.disconnect();
+            this.socket = new LocalSocket();
+        }
+        this.setupSocketListeners();
+
         // Hide login screen and show waiting screen
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('waiting-screen').classList.remove('hidden');

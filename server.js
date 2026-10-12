@@ -10,11 +10,13 @@ require('dotenv').config();
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = socketIO(server, {
+    cors: { origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*' }
+});
 
 // Environment variables
 const DEV_MODE = process.env.DEV_MODE === 'true';
-const REQUIRED_PLAYERS = DEV_MODE ? 1 : (process.env.REQUIRED_PLAYERS || 6);
+const REQUIRED_PLAYERS = DEV_MODE ? 1 : (parseInt(process.env.REQUIRED_PLAYERS, 10) || 6);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -27,28 +29,41 @@ const logger = winston.createLogger({
     level: 'info',
     format: winston.format.json(),
     transports: [
-        new winston.transports.File({ filename: 'error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'combined.log' })
+        new winston.transports.Console({ format: winston.format.simple() })
     ]
 });
 
+// Hosts like Render have an ephemeral disk, so only write log files locally
 if (process.env.NODE_ENV !== 'production') {
-    logger.add(new winston.transports.Console({
-        format: winston.format.simple()
-    }));
+    logger.add(new winston.transports.File({ filename: 'error.log', level: 'error' }));
+    logger.add(new winston.transports.File({ filename: 'combined.log' }));
 }
 
-// Redis client setup
-const redisClient = Redis.createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379'
-});
+// In-memory stand-in for the Redis hash commands used below
+function createMemoryStore() {
+    const hashes = new Map();
+    const hash = (key) => {
+        if (!hashes.has(key)) hashes.set(key, new Map());
+        return hashes.get(key);
+    };
+    return {
+        hGetAll: async (key) => Object.fromEntries(hash(key)),
+        hGet: async (key, field) => hash(key).get(field) ?? null,
+        hSet: async (key, field, value) => { hash(key).set(field, value); },
+        hDel: async (key, field) => { hash(key).delete(field); }
+    };
+}
 
-redisClient.on('error', (err) => logger.error('Redis Client Error', err));
-
-// Connect to Redis
-(async () => {
-    await redisClient.connect();
-})();
+// Use Redis when configured, otherwise keep rooms in memory (single instance)
+let redisClient;
+if (process.env.REDIS_URL) {
+    redisClient = Redis.createClient({ url: process.env.REDIS_URL });
+    redisClient.on('error', (err) => logger.error('Redis Client Error', err));
+    redisClient.connect();
+} else {
+    logger.info('REDIS_URL not set, storing rooms in memory');
+    redisClient = createMemoryStore();
+}
 
 // Bot players for development
 const createBotPlayers = () => {
@@ -75,6 +90,8 @@ async function findAvailableRoom() {
     // Create new room if no available room found
     const newRoomId = `room_${Date.now()}`;
     const newRoom = {
+        id: newRoomId,
+        requiredPlayers: REQUIRED_PLAYERS,
         players: [],
         status: 'waiting',
         created_at: Date.now(),
@@ -150,6 +167,7 @@ io.on('connection', async (socket) => {
             const player = {
                 id: socket.id,
                 nickname: nickname,
+                username: nickname,
                 position: { x: 0, y: 0, z: 0 },
                 rotation: { x: 0, y: 0, z: 0 }
             };
@@ -190,6 +208,8 @@ io.on('connection', async (socket) => {
                 // Send final update and start game
                 console.log('Development mode: Starting game with room data:', room);
                 io.to(roomId).emit('roomUpdate', room);
+                io.to(roomId).emit('gameStart', room);
+            } else if (room.status === 'starting') {
                 io.to(roomId).emit('gameStart', room);
             }
         } catch (error) {

@@ -63,6 +63,14 @@
         button:hover {
             background: #45a049;
         }
+        button:disabled {
+            background: #555;
+            cursor: default;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+        }
         #waiting-players-list {
             list-style: none;
             padding: 0;
@@ -107,7 +115,10 @@
     <div id="login-screen" class="screen">
         <h1 class="title">FallFight</h1>
         <input type="text" id="username" placeholder="Enter your nickname" maxlength="15">
-        <button id="play-button">Play</button>
+        <div class="buttons">
+            <button id="play-online-button" disabled>Connecting to server...</button>
+            <button id="play-button">Play vs Bots</button>
+        </div>
     </div>
 
     <!-- Waiting Screen -->
@@ -125,9 +136,11 @@
 
     <!-- Load libraries first -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 
     <!-- Then load game code -->
-    <script src="/js/game.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/localSocket.js"></script>
+    <script src="js/game.js"></script>
 </body>
 </html> 

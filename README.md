@@ -1,5 +1,16 @@
 # **FallFight Browser Game - Technical and Game Documentation**
 
+## **▶ Play in your browser**
+**https://caglarsarikaya.github.io/FallFight/**
+
+- **Play vs Bots** always works: the game runs fully in your browser against 3 bots.
+- **Play Online** is enabled when the multiplayer server is reachable (it may take ~50s to wake up on the free tier). A match starts once 2 players have joined.
+
+### Deployment
+- **Frontend:** GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `master` (Settings → Pages → Source: *GitHub Actions*).
+- **Multiplayer server (optional):** Render free tier via `render.yaml` (render.com → New → Blueprint → this repo). Then put the service URL in `public/js/config.js` (`window.FALLFIGHT_SERVER_URL`) and push.
+- Without `REDIS_URL` the server keeps rooms in memory; set `REDIS_URL` to use Redis.
+
 ## **1. Game Description**
 
 FallFight is a multiplayer browser-based game where players try to eliminate their opponents by breaking the ground beneath them. The goal is to be the last player standing. The graphics should be visually appealing but optimized enough to run smoothly on all computers.

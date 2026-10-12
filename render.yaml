@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: fallfight
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_MODE
+        value: "false"
+      - key: REQUIRED_PLAYERS
+        value: "2"
+      - key: CORS_ORIGIN
+        value: https://caglarsarikaya.github.io
