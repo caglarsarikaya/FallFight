@@ -18,9 +18,17 @@ class FallFight {
         this.playerObject = null;
         this.raycaster = null;
         this.mouse = new THREE.Vector2();
-        this.playerSpeed = 0.05;
-        this.jumpForce = 0.25;
-        this.gravity = 0.01;
+        // Physics runs at a fixed 60 Hz step, so these are per-step values
+        this.physicsStep = 1 / 60;
+        this.physicsAccumulator = 0;
+        this.lastFrameTime = null;
+        this.playerSpeed = 0.02; // ~4.8 blocks/s top speed
+        this.jumpForce = 0.17;   // ~1.2 block high jump
+        this.gravity = 0.012;
+        this.breakDelay = 400;   // ms before a broken block disappears
+        this.lastMoveEmit = 0;
+        this.isDead = false;
+        this.particles = [];
         this.velocity = new THREE.Vector3();
         this.isOnGround = false;
         this.isGameStarted = false;
@@ -135,6 +143,20 @@ class FallFight {
             if (!this.isGameStarted) return;
             this.handleBlockBroken(data);
         });
+
+        // Another player fell out of the arena
+        this.socket.on('playerFell', (data) => {
+            this.handleOtherPlayerFell(data.playerId);
+        });
+
+        // Last player standing
+        this.socket.on('gameOver', (data) => {
+            const won = data.winnerId === this.socket.id;
+            this.showGameOver(
+                won ? 'YOU WIN!' : (data.winnerName ? `${data.winnerName} wins!` : 'Nobody survived!'),
+                won ? '#4CAF50' : '#ff5252'
+            );
+        });
     }
 
     updateWaitingRoom(data) {
@@ -183,6 +205,7 @@ class FallFight {
             });
 
             // Update player list
+            this.roomPlayers = data.players;
             this.updatePlayerList(data.players);
 
             // Position players around the arena
@@ -218,8 +241,10 @@ class FallFight {
                 // Position other players
                 const otherPlayer = this.players.get(player.id);
                 if (otherPlayer && otherPlayer.mesh) {
-                    otherPlayer.mesh.position.set(x, 2, z);
+                    otherPlayer.mesh.position.set(x, 1.5, z);
                     otherPlayer.mesh.rotation.y = angle + Math.PI;
+                    otherPlayer.targetPosition = otherPlayer.mesh.position.clone();
+                    otherPlayer.targetRotationY = otherPlayer.mesh.rotation.y;
                 }
             }
         });
@@ -461,7 +486,7 @@ class FallFight {
     }
 
     handleClick(event) {
-        if (!this.playerObject || !this.raycaster || !this.isGameStarted) return;
+        if (!this.playerObject || !this.raycaster || !this.isGameStarted || this.isDead) return;
 
         // Update raycaster to use exact center of screen
         const breakingRaycaster = new THREE.Raycaster();
@@ -521,55 +546,32 @@ class FallFight {
     }
 
     handleBlockBroken(data) {
+        if (data.playerId !== this.socket.id) {
+            this.swingRemoteAxe(data.playerId);
+        }
+
         const block = this.blocks.get(`${data.x},${data.z}`);
-        if (block) {
-            // Create breaking animation
-            const particles = this.createBreakingParticles(block.position);
-            
-            // Check for players above this block
-            const blockPosition = block.position;
-            const checkHeight = 2.0; // Maximum height to check for players
-            const checkRadius = 0.75; // Increased radius for better detection
-            
-            // Check local player
-            if (this.playerObject) {
-                const playerPos = this.playerObject.position;
-                if (Math.abs(playerPos.x - blockPosition.x) < checkRadius &&
-                    Math.abs(playerPos.z - blockPosition.z) < checkRadius &&
-                    Math.abs(playerPos.y - (blockPosition.y + 1)) < 0.1) {
-                    // Force player to fall
-                    this.isOnGround = false;
-                    this.velocity.y = -0.1;
-                }
+        if (block && !block.userData.breaking) {
+            // Tint the block so players can see it is about to go
+            block.userData.breaking = true;
+            block.material = block.material.clone();
+            block.material.color.set(0xff6b6b);
+
+            // The block under your feet is out of view, so flash a warning
+            if (this.playerObject && !this.isDead &&
+                Math.round(this.playerObject.position.x) === data.x &&
+                Math.round(this.playerObject.position.z) === data.z) {
+                this.flashDanger();
             }
-            
-            // Check other players
-            this.players.forEach((player, id) => {
-                if (player.mesh) {
-                    const otherPos = player.mesh.position;
-                    if (Math.abs(otherPos.x - blockPosition.x) < checkRadius &&
-                        Math.abs(otherPos.z - blockPosition.z) < checkRadius &&
-                        Math.abs(otherPos.y - (blockPosition.y + 1)) < 0.1) {
-                        // Apply immediate fall and notify server
-                        player.mesh.position.y -= 0.2; // Stronger initial push
-                        this.socket.emit('playerForceFall', {
-                            playerId: id,
-                            position: player.mesh.position
-                        });
-                    }
-                }
-            });
-            
+
+            // Create breaking animation
+            this.createBreakingParticles(block.position);
+
             // Remove block after delay
             setTimeout(() => {
                 this.scene.remove(block);
                 this.blocks.delete(`${data.x},${data.z}`);
-                
-                // Remove particles after animation
-                setTimeout(() => {
-                    particles.forEach(p => this.scene.remove(p));
-                }, 1000);
-            }, 100); // Reduced delay for more responsive feel
+            }, this.breakDelay);
         }
     }
 
@@ -590,8 +592,10 @@ class FallFight {
                 (Math.random() - 0.5) * 0.3
             );
             
+            particle.life = 1;
             this.scene.add(particle);
             particles.push(particle);
+            this.particles.push(particle);
         }
 
         return particles;
@@ -641,6 +645,10 @@ class FallFight {
                 this.characterType : 
                 (this.players.get(player.id)?.characterType || 'unknown');
             playerEntry.textContent = `${player.username} (${playerType})`;
+            if (player.out) {
+                playerEntry.style.textDecoration = 'line-through';
+                playerEntry.style.opacity = '0.5';
+            }
             listContainer.appendChild(playerEntry);
         });
     }
@@ -648,26 +656,24 @@ class FallFight {
     addPlayer(player) {
         const characterType = this.getRandomCharacterType();
         const design = this.characterDesigns[characterType];
-        
-        // Create main body
-        const geometry = new THREE.BoxGeometry(0.6, design.body.height, 0.6);
-        const material = new THREE.MeshPhongMaterial({ color: design.body.color });
-        const playerMesh = new THREE.Mesh(geometry, material);
-        
-        // Add character features
-        this.addCharacterFeatures(playerMesh, characterType, design);
-        
-        // Add player name label
+        const model = this.createCharacterModel(characterType, design);
+
+        // Add player name label above the head
         const nameLabel = this.createPlayerLabel(player.username);
-        nameLabel.position.y = design.body.height + 0.3; // Position above head
-        playerMesh.add(nameLabel);
-        
-        playerMesh.position.set(0, 2, 0);
-        this.scene.add(playerMesh);
+        nameLabel.position.y = 1.2;
+        model.group.add(nameLabel);
+
+        model.group.position.set(0, 1.5, 0);
+        this.scene.add(model.group);
         this.players.set(player.id, {
-            mesh: playerMesh,
+            mesh: model.group,
+            limbs: model.limbs,
             username: player.username,
-            characterType: characterType
+            characterType: characterType,
+            targetPosition: null,
+            targetRotationY: 0,
+            walkPhase: 0,
+            swingTime: 0
         });
     }
 
@@ -709,28 +715,17 @@ class FallFight {
     }
 
     createPlayerCharacter() {
-        // Create player mesh with character design
+        // The local player is only a physics point with a camera; the body is never seen in first person
         const characterType = this.getRandomCharacterType();
         this.characterType = characterType; // Store character type for player list
         const design = this.characterDesigns[characterType];
-        
-        // Create main body
-        const bodyGeometry = new THREE.BoxGeometry(0.6, design.body.height, 0.6);
-        const bodyMaterial = new THREE.MeshPhongMaterial({ 
-            color: design.body.color,
-            visible: false // Invisible in first person
-        });
-        this.playerObject = new THREE.Mesh(bodyGeometry, bodyMaterial);
-        
-        // Add character-specific features
-        this.addCharacterFeatures(this.playerObject, characterType, design);
-        
-        // Position player above the blocks
+
+        this.playerObject = new THREE.Group();
         this.playerObject.position.set(0, 2, 0);
         this.scene.add(this.playerObject);
 
-        // Set up first person camera
-        this.camera.position.set(0, design.body.height - 0.2, 0); // Eye level based on height
+        // Set up first person camera (origin rests 1 unit above the block top, eyes ~1.6 above it)
+        this.camera.position.set(0, 0.6, 0);
         this.playerObject.add(this.camera);
 
         // Create weapon for first person view
@@ -742,81 +737,96 @@ class FallFight {
         return types[Math.floor(Math.random() * types.length)];
     }
 
-    addCharacterFeatures(playerObject, type, design) {
-        switch(type) {
-            case 'cowboy':
-                // Add hat
-                const hatGeometry = new THREE.ConeGeometry(design.hat.size, design.hat.size, 32);
-                const hatMaterial = new THREE.MeshPhongMaterial({ color: design.hat.color });
-                const hat = new THREE.Mesh(hatGeometry, hatMaterial);
-                hat.position.y = design.body.height/2 + design.hat.size/2;
-                playerObject.add(hat);
-                break;
+    // Blocky humanoid. The returned group's origin is the physics point, 1 unit above the feet,
+    // matching how the local player rests on blocks.
+    createCharacterModel(type, design) {
+        const group = new THREE.Group();
+        const rig = new THREE.Group();
+        rig.scale.setScalar(design.body.height / 1.8);
+        rig.position.y = -1.0;
+        group.add(rig);
 
+        const box = (w, h, d, color, x = 0, y = 0, z = 0, parent = rig) => {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(w, h, d),
+                new THREE.MeshLambertMaterial({ color })
+            );
+            mesh.position.set(x, y, z);
+            parent.add(mesh);
+            return mesh;
+        };
+        // Limbs hang from a pivot at the shoulder/hip so they can swing
+        const limb = (w, h, color, x, y) => {
+            const pivot = new THREE.Group();
+            pivot.position.set(x, y, 0);
+            rig.add(pivot);
+            box(w, h, w, color, 0, -h / 2, 0, pivot);
+            return pivot;
+        };
+
+        const bodyColor = design.body.color;
+        const legColor = design.overalls ? design.overalls.color
+            : new THREE.Color(bodyColor).multiplyScalar(0.55).getHex();
+        const skin = type === 'squirrel' ? bodyColor : 0xf1c27d;
+
+        // Model faces -Z, the same as the camera's forward direction
+        const leftLeg = limb(0.25, 0.75, legColor, -0.13, 0.75);
+        const rightLeg = limb(0.25, 0.75, legColor, 0.13, 0.75);
+        box(0.55, 0.65, 0.3, bodyColor, 0, 1.075, 0);
+        const leftArm = limb(0.2, 0.65, bodyColor, -0.38, 1.38);
+        const rightArm = limb(0.2, 0.65, bodyColor, 0.38, 1.38);
+        box(0.45, 0.45, 0.45, skin, 0, 1.625, 0);
+        box(0.08, 0.08, 0.02, 0x222222, -0.1, 1.66, -0.23);
+        box(0.08, 0.08, 0.02, 0x222222, 0.1, 1.66, -0.23);
+
+        // Axe in the right hand, blade pointing forward
+        const axe = this.createAxe();
+        axe.scale.setScalar(0.8);
+        axe.position.set(0, -0.6, -0.15);
+        axe.rotation.set(-Math.PI / 2, Math.PI / 2, 0);
+        rightArm.add(axe);
+
+        switch (type) {
+            case 'cowboy': {
+                const hat = design.hat.color;
+                const brim = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.42, 0.42, 0.05, 16),
+                    new THREE.MeshLambertMaterial({ color: hat }));
+                brim.position.y = 1.87;
+                rig.add(brim);
+                box(0.32, 0.22, 0.32, hat, 0, 1.98, 0);
+                break;
+            }
             case 'legolas':
-                // Add hair
-                const hairGeometry = new THREE.BoxGeometry(0.6, design.hair.length, 0.2);
-                const hairMaterial = new THREE.MeshPhongMaterial({ color: design.hair.color });
-                const hair = new THREE.Mesh(hairGeometry, hairMaterial);
-                hair.position.y = design.body.height/2;
-                hair.position.z = -0.2;
-                playerObject.add(hair);
+                box(0.47, 0.1, 0.47, design.hair.color, 0, 1.88, 0);
+                box(0.47, 0.6, 0.1, design.hair.color, 0, 1.55, 0.22);
                 break;
-
             case 'witcher':
-                // Add armor plates
-                const armorGeometry = new THREE.BoxGeometry(0.7, design.body.height * 0.6, design.armor.thickness);
-                const armorMaterial = new THREE.MeshPhongMaterial({ color: design.armor.color });
-                const armor = new THREE.Mesh(armorGeometry, armorMaterial);
-                armor.position.z = 0.3;
-                playerObject.add(armor);
+                box(0.58, 0.5, 0.06, design.armor.color, 0, 1.1, -0.17);
+                box(0.47, 0.1, 0.47, 0xdddddd, 0, 1.88, 0);
+                box(0.06, 0.9, 0.03, 0xc0c0c0, 0, 1.15, 0.18).rotation.z = 0.5;
                 break;
-
             case 'mario':
-                // Add overalls
-                const overallsGeometry = new THREE.BoxGeometry(design.overalls.width, design.body.height * 0.6, 0.65);
-                const overallsMaterial = new THREE.MeshPhongMaterial({ color: design.overalls.color });
-                const overalls = new THREE.Mesh(overallsGeometry, overallsMaterial);
-                playerObject.add(overalls);
-                
-                // Add hat
-                const marioHatGeometry = new THREE.BoxGeometry(design.hat.size * 1.2, design.hat.size * 0.4, design.hat.size);
-                const marioHatMaterial = new THREE.MeshPhongMaterial({ color: design.hat.color });
-                const marioHat = new THREE.Mesh(marioHatGeometry, marioHatMaterial);
-                marioHat.position.y = design.body.height/2 + design.hat.size/2;
-                playerObject.add(marioHat);
+                box(0.57, 0.35, 0.32, design.overalls.color, 0, 0.92, 0);
+                box(0.48, 0.12, 0.48, design.hat.color, 0, 1.9, 0);
+                box(0.3, 0.04, 0.2, design.hat.color, 0, 1.86, -0.3);
+                box(0.25, 0.06, 0.02, 0x3b2314, 0, 1.55, -0.235);
                 break;
-
-            case 'squirrel':
-                // Add tail
-                const tailGeometry = new THREE.CylinderGeometry(0.1, 0.2, design.tail.length, 8);
-                const tailMaterial = new THREE.MeshPhongMaterial({ color: design.tail.color });
-                const tail = new THREE.Mesh(tailGeometry, tailMaterial);
-                tail.position.z = -0.4;
-                tail.rotation.x = Math.PI / 4;
-                playerObject.add(tail);
-                
-                // Add ears
-                const earGeometry = new THREE.ConeGeometry(design.ears.size, design.ears.size * 2, 32);
-                const earMaterial = new THREE.MeshPhongMaterial({ color: design.ears.color });
-                const leftEar = new THREE.Mesh(earGeometry, earMaterial);
-                const rightEar = new THREE.Mesh(earGeometry, earMaterial);
-                leftEar.position.set(-0.2, design.body.height/2 + design.ears.size, 0);
-                rightEar.position.set(0.2, design.body.height/2 + design.ears.size, 0);
-                playerObject.add(leftEar);
-                playerObject.add(rightEar);
+            case 'squirrel': {
+                const tail = box(0.25, 0.8, 0.25, design.tail.color, 0, 1.0, 0.35);
+                tail.rotation.x = -0.5;
+                box(0.1, 0.2, 0.06, design.ears.color, -0.14, 1.94, 0);
+                box(0.1, 0.2, 0.06, design.ears.color, 0.14, 1.94, 0);
                 break;
-
+            }
             case 'zeus':
-                // Add beard
-                const beardGeometry = new THREE.BoxGeometry(0.4, design.beard.length, 0.3);
-                const beardMaterial = new THREE.MeshPhongMaterial({ color: design.beard.color });
-                const beard = new THREE.Mesh(beardGeometry, beardMaterial);
-                beard.position.y = design.body.height/2 - design.beard.length;
-                beard.position.z = 0.2;
-                playerObject.add(beard);
+                box(0.45, 0.1, 0.47, design.beard.color, 0, 1.88, 0);
+                box(0.4, 0.35, 0.08, design.beard.color, 0, 1.45, -0.25);
+                box(0.08, 0.5, 0.08, design.weapon.color, -0.38, 1.0, -0.15).rotation.z = 0.4;
                 break;
         }
+
+        return { group, limbs: { leftArm, rightArm, leftLeg, rightLeg } };
     }
 
     createWeaponView(type, design) {
@@ -938,13 +948,126 @@ class FallFight {
     updatePlayerPosition(data) {
         const player = this.players.get(data.playerId);
         if (player && player.mesh) {
-            player.mesh.position.copy(data.position);
-            player.mesh.rotation.copy(data.rotation);
+            // animateRemotePlayers eases the mesh toward these targets
+            player.targetPosition = new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+            // A serialized THREE.Euler arrives as {_x, _y, _z}
+            const rotY = data.rotation._y !== undefined ? data.rotation._y : data.rotation.y;
+            if (typeof rotY === 'number') player.targetRotationY = rotY;
         }
     }
 
+    animateRemotePlayers(dt) {
+        const ease = 1 - Math.exp(-dt * 15);
+        this.players.forEach(player => {
+            const mesh = player.mesh;
+            if (!mesh || !player.targetPosition) return;
+
+            const before = mesh.position.clone();
+            mesh.position.lerp(player.targetPosition, ease);
+
+            // Turn the shortest way round
+            let turn = player.targetRotationY - mesh.rotation.y;
+            turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+            mesh.rotation.y += turn * ease;
+
+            // Walk cycle driven by horizontal speed
+            const speed = Math.hypot(mesh.position.x - before.x, mesh.position.z - before.z) / Math.max(dt, 0.001);
+            const stride = Math.min(speed / 4, 1) * 0.8;
+            player.walkPhase += dt * speed * 2.5;
+            const swing = Math.sin(player.walkPhase) * stride;
+            const { leftArm, rightArm, leftLeg, rightLeg } = player.limbs;
+            leftLeg.rotation.x = swing;
+            rightLeg.rotation.x = -swing;
+            leftArm.rotation.x = -swing * 0.8;
+            rightArm.rotation.x = swing * 0.8;
+
+            // Axe chop overrides the right arm
+            if (player.swingTime > 0) {
+                player.swingTime = Math.max(0, player.swingTime - dt);
+                const progress = 1 - player.swingTime / 0.3;
+                rightArm.rotation.x = Math.PI * 0.9 * Math.sin(progress * Math.PI);
+            }
+        });
+    }
+
+    flashDanger() {
+        let flash = document.getElementById('danger-flash');
+        if (!flash) {
+            flash = document.createElement('div');
+            flash.id = 'danger-flash';
+            flash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;' +
+                'box-shadow:inset 0 0 120px 40px rgba(255,0,0,0.75);opacity:0;transition:opacity 0.4s;';
+            document.body.appendChild(flash);
+        }
+        flash.style.transition = 'none';
+        flash.style.opacity = '1';
+        void flash.offsetWidth; // apply the full opacity before fading out
+        flash.style.transition = 'opacity 0.6s';
+        flash.style.opacity = '0';
+    }
+
+    swingRemoteAxe(playerId) {
+        const player = this.players.get(playerId);
+        if (player) player.swingTime = 0.3;
+    }
+
+    handleOtherPlayerFell(playerId) {
+        const player = this.players.get(playerId);
+        if (player) {
+            // Let the fall play out before removing the body
+            setTimeout(() => {
+                this.scene.remove(player.mesh);
+                this.players.delete(playerId);
+            }, 800);
+        }
+        if (this.roomPlayers) {
+            const entry = this.roomPlayers.find(p => p.id === playerId);
+            if (entry) entry.out = true;
+            this.updatePlayerList(this.roomPlayers);
+        }
+    }
+
+    updateParticles(dt) {
+        this.particles = this.particles.filter(particle => {
+            particle.velocity.y -= 0.6 * dt;
+            particle.position.addScaledVector(particle.velocity, dt * 60);
+            particle.life -= dt;
+            if (particle.life <= 0) {
+                this.scene.remove(particle);
+                return false;
+            }
+            return true;
+        });
+    }
+
+    showGameOver(text, color) {
+        if (document.getElementById('game-over')) return;
+        if (document.pointerLockElement) document.exitPointerLock();
+
+        const deathMessage = document.getElementById('death-message');
+        if (deathMessage) deathMessage.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'game-over';
+        overlay.className = 'screen';
+        overlay.style.background = 'rgba(0, 0, 0, 0.6)';
+
+        const title = document.createElement('h1');
+        title.className = 'title';
+        title.style.color = color;
+        title.textContent = text;
+
+        const button = document.createElement('button');
+        button.textContent = 'Play again';
+        button.addEventListener('click', () => location.reload());
+
+        overlay.appendChild(title);
+        overlay.appendChild(button);
+        document.body.appendChild(overlay);
+    }
+
     updatePhysics() {
-        if (!this.playerObject) return;
+        if (!this.playerObject || this.isDead) return;
 
         // Apply gravity
         this.velocity.y -= this.gravity;
@@ -1004,14 +1127,20 @@ class FallFight {
             return;
         }
 
-        // Emit position update
-        this.socket.emit('playerMove', {
-            position: this.playerObject.position,
-            rotation: this.playerObject.rotation
-        });
+        // Emit position updates ~20 times a second
+        const now = performance.now();
+        if (now - this.lastMoveEmit >= 50) {
+            this.lastMoveEmit = now;
+            this.socket.emit('playerMove', {
+                position: this.playerObject.position,
+                rotation: this.playerObject.rotation
+            });
+        }
     }
 
     handlePlayerFall() {
+        if (this.isDead) return;
+        this.isDead = true;
         console.log('Player eliminated!');
         
         // Show elimination message
@@ -1024,26 +1153,46 @@ class FallFight {
         eliminationMessage.style.color = 'red';
         eliminationMessage.style.fontSize = '48px';
         eliminationMessage.style.textShadow = '2px 2px 4px black';
+        eliminationMessage.id = 'death-message';
         eliminationMessage.textContent = 'YOU DIED!';
         gameUI.appendChild(eliminationMessage);
 
         // Emit player elimination
         this.socket.emit('playerEliminated');
 
-        // Return to menu after a delay
-        setTimeout(() => {
-            location.reload();
-        }, 2000);
+        if (this.socket instanceof LocalSocket) {
+            // Offline: the bots fight on and gameOver shows the winner
+            setTimeout(() => this.showGameOver('YOU DIED!', '#ff5252'), 1500);
+        } else {
+            // Return to menu after a delay
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
     }
 
     animate() {
         requestAnimationFrame(() => this.animate());
-        
+
+        const now = performance.now();
+        const dt = this.lastFrameTime === null ? 0 : Math.min((now - this.lastFrameTime) / 1000, 0.1);
+        this.lastFrameTime = now;
+
         if (this.isGameStarted) {
-            // Update physics
-            this.updatePhysics();
+            // Fixed 60 Hz physics so speed doesn't depend on the monitor's refresh rate
+            this.physicsAccumulator += dt;
+            let steps = 0;
+            while (this.physicsAccumulator >= this.physicsStep && steps < 5) {
+                this.updatePhysics();
+                this.physicsAccumulator -= this.physicsStep;
+                steps++;
+            }
+            if (steps === 5) this.physicsAccumulator = 0;
+
+            this.animateRemotePlayers(dt);
+            this.updateParticles(dt);
         }
-        
+
         // Render scene
         this.renderer.render(this.scene, this.camera);
     }
