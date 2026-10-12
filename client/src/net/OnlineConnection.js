@@ -9,7 +9,11 @@ export class OnlineConnection extends Connection {
         this.status = 'connecting';
         this.statusListeners = [];
         this.socket = io(url, { transports: ['websocket', 'polling'], reconnectionDelayMax: 4000 });
-        this.socket.on('connect', () => this.setStatus('online'));
+        this.socket.on('connect', () => {
+            this.setStatus('online');
+            // Reconnected after a drop (or a server restart): join a room again
+            if (this.profile) this.join(this.profile);
+        });
         this.socket.on('disconnect', () => this.setStatus('connecting'));
         this.socket.on('connect_error', () => this.setStatus('connecting'));
 
@@ -36,6 +40,7 @@ export class OnlineConnection extends Connection {
     }
 
     join(profile) {
+        this.profile = profile;
         this.socket.emit(C2S.JOIN, { name: profile.name, characterId: profile.characterId });
     }
 

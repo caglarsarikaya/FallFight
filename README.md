@@ -5,8 +5,9 @@ A Minecraft-style arena fighter that runs in the browser. Pick a fighter, then s
 
 **▶ Play: https://caglarsarikaya.github.io/FallFight/**
 
-- **Play vs Bots** works anywhere, with no server: the whole game runs in your browser.
-- **Play Online** turns on once a multiplayer server is configured (see [Deploy](#deploy)).
+Press **Play** and you join an online room. Every room has 4 fighters: bots fill the empty seats, and a
+bot steps out whenever a person joins. If the game server can't be reached, you play the same game
+against bots in your browser.
 
 ## How to play
 
@@ -89,11 +90,14 @@ Requires Node 22+.
 
 ```bash
 npm install
-npm start          # http://localhost:3000. Serves the game and hosts online rooms
-npm run dev        # same, restarting on changes
+npm run dev        # game server + game page at http://localhost:3000 (restarts on changes)
+npm start          # game server only, as in production
 npm test           # unit tests + simulated bot matches
 npm run build:pages
 ```
+
+To point any copy of the page at a different server, add `?server=<url>`, e.g.
+`?server=http://localhost:3000`.
 
 Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`). Bots navigate with A*
 (`shared/ai/Pathfinder.js`). Rules and balance are in `shared/constants.js`, and the arena layout
@@ -104,11 +108,21 @@ Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`). Bots navigat
 **Frontend (GitHub Pages):** `.github/workflows/pages.yml` tests and publishes on every push to `master`.
 In the repo, open **Settings → Pages** and set **Source** to **GitHub Actions**.
 
-**Multiplayer server (Render free tier):**
-1. On render.com, choose **New → Blueprint** and select this repo. `render.yaml` sets everything up.
-2. Copy the service URL (e.g. `https://fallfight.onrender.com`) into `SERVER_URL` in
-   `client/src/config.js` and push.
+**Game server (Render free tier):** live at https://fallfightgameserver.onrender.com. It runs only the
+multiplayer rooms; opening it in a browser shows a short status message, not the game.
 
-Free Render services sleep when idle, so the first visitor waits about a minute while it wakes up.
-The menu shows the server status. Empty rooms are topped up with bots (`BOTS_FILL`, default 4
-players), so there is always someone to fight. `Dockerfile` is provided for other hosts.
+| Render setting | Value |
+|---|---|
+| Root Directory | *(empty, the repo root)*: the server needs the game code in `shared/` |
+| Build Command | `npm ci --omit=dev` |
+| Start Command | `npm start` |
+| Health Check Path | `/healthz` |
+| Build Filters (included paths) | `server/**`, `shared/**`, `package.json`, `package-lock.json` |
+| Environment | `NODE_VERSION=22`, `CORS_ORIGIN=https://caglarsarikaya.github.io`, `BOTS_FILL=4` |
+
+`render.yaml` contains the same settings for a Blueprint deploy. The client finds the server through
+`SERVER_URL` in `client/src/config.js`.
+
+Free Render services sleep when idle, so the first visitor waits up to a minute while it wakes up.
+The page starts waking the server as soon as it opens. If it isn't up 45 s after pressing Play, the
+game starts offline with bots. `Dockerfile` is provided for other hosts.

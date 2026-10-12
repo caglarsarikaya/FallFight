@@ -51,7 +51,7 @@ export class Game {
         this.local = new LocalPlayerController();
 
         this.hud = new Hud(ui);
-        this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · VS BOTS');
+        this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · BOTS');
         this.scoreboard = new Scoreboard(ui);
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
@@ -158,6 +158,11 @@ export class Game {
     // ---- input ------------------------------------------------------------------------------
 
     bindInput() {
+        if (this.connection.isOnline) {
+            this.connection.onStatus(status => {
+                if (status !== 'online' && this.selfId) this.hud.toast('Connection lost: reconnecting...');
+            });
+        }
         this.input.onLockChange = locked => {
             if (locked) {
                 this.pauseMenu.hide();
@@ -291,7 +296,7 @@ export class Game {
         on(S2C.PLAYER_JOINED, p => {
             if (!this.players.has(p.id)) {
                 this.addPlayer(p);
-                if (this.selfId && p.id !== this.selfId) this.hud.toast(`${p.name} joined`);
+                if (this.selfId && p.id !== this.selfId && !p.isBot) this.hud.toast(`${p.name} joined`);
             }
         });
         on(S2C.PLAYER_LEFT, ({ id }) => {
@@ -299,7 +304,8 @@ export class Game {
             if (!info) return;
             info.avatar.dispose();
             this.players.delete(id);
-            this.hud.toast(`${info.name} left`);
+            this.updateModeBadge();
+            if (!info.isBot) this.hud.toast(`${info.name} left`);
         });
         on(S2C.PLAYER_UPDATED, ({ id, name, characterId }) => {
             const info = this.players.get(id);
@@ -378,6 +384,7 @@ export class Game {
     }
 
     onWelcome(data) {
+        this.resetWorld(); // a second welcome means we rejoined after a disconnect
         this.selfId = data.selfId;
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
@@ -390,6 +397,27 @@ export class Game {
         for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
     }
 
+    // "ONLINE · 2 players + 2 bots"
+    updateModeBadge() {
+        if (!this.connection.isOnline) return;
+        const all = [...this.players.values()];
+        const bots = all.filter(p => p.isBot).length;
+        const people = all.length - bots;
+        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+        this.hud.setMode(`ONLINE · ${plural(people, 'player')} + ${plural(bots, 'bot')}`);
+    }
+
+    resetWorld() {
+        for (const info of this.players.values()) info.avatar.dispose();
+        for (const view of this.pickups.values()) view.dispose();
+        for (const view of this.projectiles.values()) view.dispose();
+        this.players.clear();
+        this.pickups.clear();
+        this.projectiles.clear();
+        this.deathCam = null;
+        this.respawnOverlay.hide();
+    }
+
     addPlayer(p) {
         const isSelf = p.id === this.selfId;
         const avatar = new PlayerAvatar(this.scene, p, { isSelf });
@@ -399,6 +427,7 @@ export class Game {
             x: p.x, y: p.y, z: p.z, yaw: p.yaw, avatar
         });
         if (!p.alive) avatar.die();
+        this.updateModeBadge();
     }
 
     onSnapshot({ players }) {

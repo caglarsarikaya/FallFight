@@ -76,5 +76,5 @@ export const NET = {
     tickRate: 30,
     snapshotRate: 20,
     clientSendRate: 20,
-    maxPlayersPerRoom: 8
+    maxPlayersPerRoom: 4  // fighters per room; empty seats are filled with bots
 };

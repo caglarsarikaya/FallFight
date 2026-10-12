@@ -10,16 +10,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 3000;
 const BOTS_FILL = Number(process.env.BOTS_FILL ?? 4);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*';
+const PLAY_URL = process.env.PLAY_URL || 'https://caglarsarikaya.github.io/FallFight/';
+// The game page is hosted on GitHub Pages; serving it from here is only for local development
+const SERVE_CLIENT = process.env.SERVE_CLIENT === '1' || process.argv.includes('--serve-client');
 
 const app = express();
-// Serve the client too, so `npm start` is a complete local setup (same layout as the Pages build)
-app.use('/shared', express.static(path.join(root, 'shared')));
-app.use(express.static(path.join(root, 'client')));
-app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: rooms.stats }));
-
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
 const rooms = new RoomManager(io, { botsFill: BOTS_FILL });
+
+app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: rooms.stats }));
+
+if (SERVE_CLIENT) {
+    app.use('/shared', express.static(path.join(root, 'shared')));
+    app.use(express.static(path.join(root, 'client')));
+} else {
+    app.get('/', (_req, res) => res.json({
+        name: 'FallFight game server',
+        play: PLAY_URL,
+        rooms: rooms.stats
+    }));
+}
 
 const ROOM_MESSAGES = new Set([C2S.STATE, C2S.SELECT, C2S.DRAW, C2S.USE, C2S.PROFILE]);
 
@@ -42,5 +53,6 @@ io.on('connection', socket => {
 });
 
 server.listen(PORT, () => {
-    console.log(`FallFight server on http://localhost:${PORT} (bots fill rooms to ${BOTS_FILL})`);
+    console.log(`FallFight server on port ${PORT} (rooms of ${BOTS_FILL}, topped up with bots)`);
+    if (SERVE_CLIENT) console.log(`Game page: http://localhost:${PORT}/`);
 });

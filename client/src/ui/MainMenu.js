@@ -35,12 +35,11 @@ export class MainMenu {
         this.previewName = el('div.preview-name');
         const previewBox = el('div.panel.preview', {}, this.previewName);
 
-        this.offlineButton = el('button.btn.primary', { type: 'button', text: 'Play vs Bots', onclick: () => this.play('offline') });
-        this.onlineButton = el('button.btn', { type: 'button', text: 'Play Online', onclick: () => this.play('online') });
+        this.playButton = el('button.btn.primary', { type: 'button', text: 'Play', onclick: () => this.play() });
         this.status = el('div.server-status');
         this.saveButton = el('button.btn.primary', { type: 'button', text: 'Save', onclick: () => this.save() });
         this.backButton = el('button.btn', { type: 'button', text: 'Back', onclick: () => this.callbacks.onBack() });
-        this.startButtons = el('div.play-buttons', {}, [el('div.row', {}, [this.offlineButton, this.onlineButton]), this.status]);
+        this.startButtons = el('div.play-buttons', {}, [el('div.row', {}, [this.playButton]), this.status]);
         this.editButtons = el('div.play-buttons.hidden', {}, el('div.row', {}, [this.saveButton, this.backButton]));
 
         this.title = el('h1.logo', {}, ['FALL', el('span', { text: 'FIGHT' })]);
@@ -73,16 +72,22 @@ export class MainMenu {
 
     watchServer() {
         if (!this.online) {
-            this.onlineButton.disabled = true;
-            this.status.textContent = 'Online play: no server configured yet. Bots are ready!';
+            this.status.textContent = 'No game server configured: you\'ll play against bots.';
             return;
         }
         this.online.onStatus(status => {
             const ready = status === 'online';
-            this.onlineButton.disabled = !ready;
             this.status.classList.toggle('online', ready);
-            this.status.textContent = ready ? '● Server online' : 'Connecting to server... (free servers can take ~1 min to wake up)';
+            this.status.textContent = ready
+                ? '● Server online: you\'ll join a room of 4 (bots fill the empty seats)'
+                : 'Waking up the game server... (free servers can take up to a minute)';
         });
+    }
+
+    // While Play waits for the server to wake up
+    setWaiting(waiting) {
+        this.playButton.disabled = waiting;
+        this.playButton.textContent = waiting ? 'Connecting...' : 'Play';
     }
 
     select(characterId, withSound = true) {
@@ -104,11 +109,12 @@ export class MainMenu {
         this.profile.save();
     }
 
-    play(mode) {
+    play() {
+        if (this.playButton.disabled) return;
         this.sound.unlock();
         this.sound.play('click');
         this.applyToProfile();
-        this.callbacks.onPlay(mode);
+        this.callbacks.onPlay();
     }
 
     save() {
@@ -119,7 +125,7 @@ export class MainMenu {
 
     submitDefault() {
         if (this.mode === 'edit') this.save();
-        else this.play(this.online && !this.onlineButton.disabled ? 'online' : 'offline');
+        else this.play();
     }
 
     show(mode) {

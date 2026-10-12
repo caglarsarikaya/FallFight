@@ -3,9 +3,17 @@ services:
     name: fallfight
     runtime: node
     plan: free
+    # Root directory is the repo root: the server uses the shared game code in shared/
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
+    # Only redeploy when server-side code changes (the game page is on GitHub Pages)
+    buildFilter:
+      paths:
+        - server/**
+        - shared/**
+        - package.json
+        - package-lock.json
     envVars:
       - key: NODE_VERSION
         value: "22"
