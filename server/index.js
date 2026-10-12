@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server } from 'socket.io';
-import { C2S } from '../shared/protocol.js';
+import { C2S, S2C } from '../shared/protocol.js';
 import { RoomManager } from './RoomManager.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,13 +34,19 @@ if (SERVE_CLIENT) {
 
 const ROOM_MESSAGES = new Set([C2S.STATE, C2S.SELECT, C2S.DRAW, C2S.USE, C2S.PROFILE]);
 
+// Live player counts, shown on everyone's start menu
+const serverStats = () => ({ players: rooms.stats.reduce((n, r) => n + r.players, 0), rooms: rooms.stats });
+const broadcastStats = () => io.emit(S2C.SERVER_STATS, serverStats());
+
 io.on('connection', socket => {
     let roomId = null;
+    socket.emit(S2C.SERVER_STATS, serverStats());
 
     socket.on(C2S.JOIN, (data = {}) => {
         if (roomId) return;
         roomId = rooms.join(socket, data);
         console.log(`${socket.id} joined ${roomId}`);
+        broadcastStats();
     });
 
     socket.onAny((type, data) => {
@@ -48,7 +54,9 @@ io.on('connection', socket => {
     });
 
     socket.on('disconnect', () => {
-        if (roomId) rooms.leave(socket.id, roomId);
+        if (!roomId) return;
+        rooms.leave(socket.id, roomId);
+        broadcastStats();
     });
 });
 

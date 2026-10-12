@@ -30,4 +30,5 @@ export const S2C = {
     RESPAWN: 'respawn',                // { id, x, y, z, health }
     PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z }
     PICKUP_TAKEN: 'pickupTaken',       // { id, by }
+    SERVER_STATS: 'serverStats',       // { players, rooms: [{ players, bots }] } live counts for the menu
 };

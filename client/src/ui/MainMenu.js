@@ -1,4 +1,6 @@
 import { CHARACTERS } from '../../shared/characters/definitions.js';
+import { NET } from '../../shared/constants.js';
+import { S2C } from '../../shared/protocol.js';
 import { CharacterPreview } from './CharacterPreview.js';
 import { el } from './dom.js';
 
@@ -75,13 +77,30 @@ export class MainMenu {
             this.status.textContent = 'No game server configured: you\'ll play against bots.';
             return;
         }
-        this.online.onStatus(status => {
-            const ready = status === 'online';
+        this.serverStats = null;
+        const render = () => {
+            const ready = this.online.status === 'online';
             this.status.classList.toggle('online', ready);
             this.status.textContent = ready
-                ? '● Server online: you\'ll join a room of 4 (bots fill the empty seats)'
+                ? MainMenu.describeServer(this.serverStats)
                 : 'Waking up the game server... (free servers can take up to a minute)';
+        };
+        this.online.onStatus(render);
+        this.online.on(S2C.SERVER_STATS, stats => {
+            this.serverStats = stats;
+            render();
         });
+    }
+
+    // e.g. "● Online · 3 playing now · you'll join 2 players (+ bots)"
+    static describeServer(stats) {
+        if (!stats) return '● Server online';
+        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+        if (stats.players === 0) return '● Online · nobody is playing right now · bots will fight you until someone joins';
+        // You join the fullest room that still has a free seat
+        const open = stats.rooms.filter(r => r.players < NET.maxPlayersPerRoom).sort((a, b) => b.players - a.players)[0];
+        const joining = open ? `you'll join ${plural(open.players, 'player')} (+ bots)` : 'all rooms are full, you\'ll start a new one';
+        return `● Online · ${stats.players} playing now · ${joining}`;
     }
 
     // While Play waits for the server to wake up
