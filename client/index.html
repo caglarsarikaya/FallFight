@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FallFight</title>
+    <meta name="description" content="Minecraft-style arena fighter: bows, axes and breaking the floor under your opponents.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%235d9b3a'/%3E%3Crect y='6' width='16' height='10' fill='%23866043'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/main.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "socket.io-client": "https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.esm.min.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="game"></div>
+    <div id="ui"></div>
+    <noscript>FallFight needs JavaScript.</noscript>
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
