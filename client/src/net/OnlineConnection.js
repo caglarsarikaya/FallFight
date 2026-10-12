@@ -2,6 +2,8 @@ import { io } from 'socket.io-client';
 import { C2S, S2C } from '../../shared/protocol.js';
 import { Connection } from './Connection.js';
 
+const PING_INTERVAL_MS = 2000;
+
 // Online play through the Node server. Connects immediately so the menu can show server status.
 export class OnlineConnection extends Connection {
     constructor(url) {
@@ -23,6 +25,17 @@ export class OnlineConnection extends Connection {
         this.on(S2C.WELCOME, data => {
             this.selfId = data.selfId;
         });
+        this.pingTimer = setInterval(() => this.measurePing(), PING_INTERVAL_MS);
+    }
+
+    // Round trip of a tiny acknowledged message, smoothed so the readout doesn't jitter
+    async measurePing() {
+        if (this.status !== 'online') return;
+        const sentAt = performance.now();
+        const response = await this.request(C2S.PING, {}, PING_INTERVAL_MS);
+        if (response?.error || this.status !== 'online') return;
+        const rtt = performance.now() - sentAt;
+        this.ping = this.ping === null ? rtt : this.ping * 0.7 + rtt * 0.3;
     }
 
     get isOnline() {
@@ -36,6 +49,8 @@ export class OnlineConnection extends Connection {
 
     setStatus(status) {
         this.status = status;
+        if (status === 'online') this.measurePing();
+        else this.ping = null;
         this.statusListeners.forEach(l => l(status));
     }
 
@@ -61,6 +76,7 @@ export class OnlineConnection extends Connection {
     }
 
     close() {
+        clearInterval(this.pingTimer);
         this.socket.close();
     }
 }

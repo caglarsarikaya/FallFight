@@ -289,9 +289,24 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .slot .count { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-pixel); font-size: 11px; text-shadow: 2px 2px 0 #3f3f3f; }
 .slot .count.zero { color: var(--danger); }
 
-.killfeed {
+.net-stats {
     position: absolute;
     top: 12px; right: 12px;
+    display: flex;
+    gap: 10px;
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 6px 8px;
+    color: var(--muted);
+}
+.net-stats .good { color: #6fe36f; }
+.net-stats .ok { color: #ffd84a; }
+.net-stats .bad { color: #ff5a5a; }
+
+.killfeed {
+    position: absolute;
+    top: 44px; right: 12px;
     display: flex;
     flex-direction: column;
     gap: 4px;

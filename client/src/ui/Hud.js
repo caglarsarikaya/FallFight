@@ -51,6 +51,10 @@ export class Hud {
         this.killfeed = el('div.killfeed');
         this.toasts = el('div.toasts');
         this.modeBadge = el('div.mode-badge');
+        this.fpsText = el('span');
+        this.pingText = el('span');
+        this.latencyText = el('span');
+        this.netStats = el('div.net-stats', {}, [this.fpsText, this.pingText, this.latencyText]);
         this.protection = el('div.protection.hidden', { text: 'SPAWN PROTECTION' });
         this.vignettes = {
             damage: el('div.vignette.damage'),
@@ -72,7 +76,7 @@ export class Hud {
                 el('div.status-row', {}, [this.hearts, this.hpNumber]),
                 this.hotbar
             ]),
-            this.killfeed, this.toasts, this.modeBadge, this.helpHint
+            this.netStats, this.killfeed, this.toasts, this.modeBadge, this.helpHint
         ]);
         root.append(this.root);
         this.slots = [];
@@ -86,6 +90,19 @@ export class Hud {
 
     setVisible(visible) {
         this.root.classList.toggle('hidden', !visible);
+    }
+
+    setStatsVisible(visible) {
+        this.netStats.classList.toggle('hidden', !visible);
+    }
+
+    // fps per second; ping and latency in ms (ping null = not measured yet, or offline)
+    setStats({ fps, ping, latency, online }) {
+        this.fpsText.textContent = `FPS ${Math.round(fps)}`;
+        this.fpsText.className = fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad';
+        this.pingText.textContent = ping === null ? `PING ${online ? '—' : 'LOCAL'}` : `PING ${Math.round(ping)}ms`;
+        this.pingText.className = ping === null ? '' : ping < 80 ? 'good' : ping < 150 ? 'ok' : 'bad';
+        this.latencyText.textContent = `LAT ${Math.round(latency)}ms`;
     }
 
     setHealth(health) {

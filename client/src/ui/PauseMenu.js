@@ -1,9 +1,19 @@
 import { el } from './dom.js';
 
-// Esc menu: resume, change character/name, camera, volume, sensitivity, leave
+// Esc menu: resume, change character/name, camera, volume, sensitivity, stats overlay, leave
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onLeave }) {
         this.cameraButton = el('button.btn', { type: 'button', onclick: () => onToggleCamera() });
+        this.showStats = profile.showStats;
+        this.statsButton = el('button.btn', {
+            type: 'button',
+            onclick: () => {
+                this.showStats = !this.showStats;
+                this.updateStatsLabel();
+                onShowStats(this.showStats);
+            }
+        });
+        this.updateStatsLabel();
         this.volume = el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: profile.volume });
         this.volume.addEventListener('input', () => onVolume(Number(this.volume.value)));
         this.sensitivity = el('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: profile.sensitivity });
@@ -17,6 +27,7 @@ export class PauseMenu {
             this.cameraButton,
             el('div.setting', {}, [el('span.label', { text: 'SOUND' }), this.volume]),
             el('div.setting', {}, [el('span.label', { text: 'MOUSE SENSITIVITY' }), this.sensitivity]),
+            this.statsButton,
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
         root.append(this.root);
@@ -28,6 +39,10 @@ export class PauseMenu {
 
     setCameraLabel(label) {
         this.cameraButton.textContent = `Camera: ${label}`;
+    }
+
+    updateStatsLabel() {
+        this.statsButton.textContent = `FPS & Ping: ${this.showStats ? 'ON' : 'OFF'}`;
     }
 
     get visible() {

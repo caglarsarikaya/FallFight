@@ -7,7 +7,7 @@ import { getItem } from '../shared/items/ItemRegistry.js';
 import { Bow } from '../shared/items/Bow.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
-import { PlayerAvatar } from './entities/PlayerAvatar.js';
+import { INTERPOLATION_DELAY, PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
 import { PickupView } from './entities/PickupView.js';
 import { CameraController } from './camera/CameraViews.js';
@@ -22,6 +22,7 @@ import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
 const PICKUP_NAMES = { arrow: 'Arrows', health_potion: 'Health Potion' };
+const STATS_INTERVAL_MS = 500;
 
 // Client game: renders the arena, predicts the local player, sends inputs and reacts to the
 // authoritative room's events. Works the same with a LocalConnection or an OnlineConnection.
@@ -53,6 +54,7 @@ export class Game {
 
         this.hud = new Hud(ui);
         this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · BOTS');
+        this.hud.setStatsVisible(profile.showStats);
         this.scoreboard = new Scoreboard(ui);
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
@@ -71,6 +73,11 @@ export class Game {
             onSensitivity: v => {
                 profile.sensitivity = v;
                 profile.save();
+            },
+            onShowStats: v => {
+                profile.showStats = v;
+                profile.save();
+                this.hud.setStatsVisible(v);
             },
             onLeave: () => this.onLeave()
         });
@@ -104,13 +111,28 @@ export class Game {
         this.connection.join(this.profile, request);
         this.clickToPlay.classList.remove('hidden');
         let last = performance.now();
+        let frames = 0;
+        let statsSince = last;
         const frame = now => {
             const dt = Math.min(0.1, (now - last) / 1000);
             last = now;
             this.update(dt, now);
+            // Refresh the FPS / ping readout twice a second
+            frames++;
+            if (now - statsSince >= STATS_INTERVAL_MS) {
+                this.updateStats(frames * 1000 / (now - statsSince));
+                frames = 0;
+                statsSince = now;
+            }
             requestAnimationFrame(frame);
         };
         requestAnimationFrame(frame);
+    }
+
+    // Latency = how far behind the other players you see are: one-way trip + interpolation buffer
+    updateStats(fps) {
+        const { ping, isOnline } = this.connection;
+        this.hud.setStats({ fps, ping, online: isOnline, latency: (ping ?? 0) / 2 + INTERPOLATION_DELAY });
     }
 
     // ---- menus and pointer lock -------------------------------------------------------------

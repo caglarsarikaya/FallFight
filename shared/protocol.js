@@ -10,6 +10,7 @@ export const C2S = {
     SELECT: 'select',      // { slot }
     DRAW: 'draw',          // { drawing } bow draw started/cancelled, for animation
     USE: 'use',            // { slot, dir: {x,y,z}, charge }
+    PING: 'latencyCheck',  // ack: {} -> {} round-trip timing ('ping' is reserved by socket.io)
 };
 
 // Server -> client

@@ -58,6 +58,8 @@ io.on('connection', socket => {
         reply(ack)(result.error ? { error: result.error } : { ok: true });
     });
 
+    socket.on(C2S.PING, (_data, ack) => reply(ack)({}));
+
     socket.on(C2S.CREATE_ROOM, (data = {}, ack) => {
         reply(ack)(roomManager.create({
             roomName: data.roomName,

@@ -11,7 +11,8 @@ const DEFAULTS = {
     roomName: '',
     roomMaxPlayers: 0,
     roomBots: true,
-    sensitivity: 1
+    sensitivity: 1,
+    showStats: true     // FPS / ping / latency readout in the corner
 };
 
 // Player choices remembered between visits (browser storage may be unavailable; that's fine)
@@ -45,6 +46,7 @@ export class Profile {
                 cameraMode: this.cameraMode,
                 volume: this.volume,
                 sensitivity: this.sensitivity,
+                showStats: this.showStats,
                 roomName: this.roomName,
                 roomMaxPlayers: this.roomMaxPlayers,
                 roomBots: this.roomBots

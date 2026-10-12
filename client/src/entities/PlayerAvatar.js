@@ -4,7 +4,7 @@ import { createCharacterModel } from '../characters/registry.js';
 import { getItemView } from '../items/registry.js';
 import { BowView } from '../items/BowView.js';
 
-const INTERPOLATION_DELAY = 100; // ms behind the newest snapshot, for smooth remote movement
+export const INTERPOLATION_DELAY = 100; // ms behind the newest snapshot, for smooth remote movement
 
 // A player in the world: character model, held item and name tag. Remote players are driven by
 // interpolated snapshots; the local player's avatar (third-person view) is posed directly.

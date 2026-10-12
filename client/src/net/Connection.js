@@ -3,6 +3,7 @@ export class Connection {
     constructor() {
         this.handlers = new Map();
         this.selfId = null;
+        this.ping = null;   // smoothed round-trip time in ms, null when unknown or offline
     }
 
     get isOnline() {
