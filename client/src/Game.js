@@ -441,7 +441,10 @@ export class Game {
         victim.avatar.setHealth(health);
         victim.avatar.hurt();
         const pos = victimId === this.selfId ? this.local.body : victim.avatar.group.position;
-        this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 10, colors: ['#ff2a2a', '#a30000'], speed: 3, up: 2.5, size: 0.08 });
+        // Our own hit particles would spawn inside the camera; the red vignette shows it instead
+        if (victimId !== this.selfId) {
+            this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 10, colors: ['#ff2a2a', '#a30000'], speed: 3, up: 2.5, size: 0.08 });
+        }
         this.sound.play(weapon === 'bow' ? 'arrowHit' : 'hit', { at: { x: pos.x, y: pos.y + 1, z: pos.z } });
 
         if (victimId === this.selfId) {

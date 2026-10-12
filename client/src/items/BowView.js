@@ -76,7 +76,7 @@ export class BowView extends ItemView {
     }
 
     get firstPersonPose() {
-        return { position: [0.3, -0.32, -0.7], rotation: [0, 0, 0.35], scale: 1 };
+        return { position: [0.4, -0.36, -0.8], rotation: [0, 0.2, 0.4], scale: 0.62 };
     }
 
     get thirdPersonPose() {
@@ -86,9 +86,10 @@ export class BowView extends ItemView {
     applyFirstPersonAnimation(model, { action, t, draw }) {
         // While drawing: bring the bow to the centre and upright
         const d = draw || 0;
-        model.position.x -= d * 0.22;
-        model.position.y += d * 0.06;
-        model.position.z += d * 0.1;
+        model.position.x -= d * 0.28;
+        model.position.y += d * 0.12;
+        model.position.z += d * 0.08;
+        model.rotation.y -= d * 0.2;
         model.rotation.z -= d * 0.3;
         if (action === 'shoot') model.position.z += Math.sin(t * Math.PI) * 0.06;
         BowView.setDraw(model, d);

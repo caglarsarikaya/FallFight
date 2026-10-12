@@ -8,11 +8,11 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "build:pages": "node scripts/build-pages.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "express": "^4.19.2",

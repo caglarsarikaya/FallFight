@@ -97,7 +97,8 @@ export class MainMenu {
     }
 
     applyToProfile() {
-        this.profile.setName(this.nameInput.value);
+        const typed = this.nameInput.value.trim();
+        this.profile.setName(typed || this.profile.name || `Player${100 + Math.floor(Math.random() * 900)}`);
         this.nameInput.value = this.profile.name;
         this.profile.characterId = this.selected;
         this.profile.save();

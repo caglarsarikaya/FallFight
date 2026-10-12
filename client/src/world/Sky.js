@@ -79,7 +79,8 @@ export class Sky {
 
     addClouds() {
         this.clouds = new THREE.Group();
-        const material = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 0.9 });
+        // Unlit so the lava glow below doesn't tint them
+        const material = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85 });
         const geometry = new THREE.BoxGeometry(1, 1, 1);
         for (let i = 0; i < 26; i++) {
             const cloud = new THREE.Mesh(geometry, material);
