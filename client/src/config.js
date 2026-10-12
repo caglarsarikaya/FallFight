@@ -1,6 +1,6 @@
 // Multiplayer server (e.g. 'https://fallfight.onrender.com'). Leave empty to only offer offline play.
 // When the page is served by the Node server itself (npm start), its own origin is used.
-export const SERVER_URL = '';
+export const SERVER_URL = 'https://fallfightgameserver.onrender.com';
 
 export function resolveServerUrl() {
     if (SERVER_URL) return SERVER_URL;
