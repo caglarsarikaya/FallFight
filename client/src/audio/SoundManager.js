@@ -59,6 +59,12 @@ const PATCHES = {
         s.tone({ out, type: 'square', freq: 1568, duration: 0.06, gain: 0.12 });
         s.tone({ out, type: 'square', freq: 2093, duration: 0.18, delay: 0.06, gain: 0.12 });
     },
+    // One-shot headshot: a dull thump, then a fading ear ring (two close sines beat against each other)
+    tinnitus: (s, out) => {
+        s.noise({ out, duration: 0.25, type: 'lowpass', freq: 400, freqEnd: 80, gain: 0.5 });
+        s.tone({ out, type: 'sine', freq: 6800, duration: 2.2, gain: 0.05 });
+        s.tone({ out, type: 'sine', freq: 6860, duration: 2.2, gain: 0.05 });
+    },
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 })
 };
 

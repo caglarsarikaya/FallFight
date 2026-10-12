@@ -55,8 +55,8 @@ export const BOW = {
     headshotPower: 0.95, // a head hit at (almost) full draw kills outright
     minDraw: 0.15,
     fullDraw: 1.0,
-    minSpeed: 15,
-    maxSpeed: 42,
+    minSpeed: 40,
+    maxSpeed: 100,
     cooldown: 0.3,
     knockback: 6
 };
@@ -68,7 +68,7 @@ export const POTION = {
 
 export const PROJECTILE = {
     gravity: 0,        // arrows fly straight, no drop
-    maxLife: 3,        // seconds; without gravity, stray arrows simply expire
+    maxLife: 1.5,      // seconds; without gravity, stray arrows simply expire
     radius: 0.1
 };
 

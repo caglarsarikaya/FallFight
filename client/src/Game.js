@@ -517,9 +517,15 @@ export class Game {
         if (attackerId === this.selfId && victimId !== this.selfId) {
             this.hud.hit(zone === 'head');
             this.sound.play(zone === 'head' ? 'headshot' : 'hitmarker');
-            if (headshot) this.hud.toast('🎯 HEADSHOT!');
+            if (headshot) {
+                this.hud.toast('🎯 HEADSHOT!');
+                this.sound.play('tinnitus');
+            }
         }
-        if (victimId === this.selfId && headshot) this.hud.toast('🎯 Headshot!');
+        if (victimId === this.selfId && headshot) {
+            this.hud.toast('🎯 Headshot!');
+            this.sound.play('tinnitus');
+        }
     }
 
     onDeath({ victimId, killerId, cause }) {
