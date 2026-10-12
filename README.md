@@ -29,10 +29,12 @@ Your nickname, character and settings are remembered in the browser.
 | | |
 |---|---|
 | Health | 100 HP. Respawn after 3 s with 2 s of spawn protection. Attacking ends the protection |
-| 🏹 Bow | 20 damage. Hold to draw (longer = faster, flatter arrow). Arrows fly with gravity. Start with 5 arrows |
-| 🪓 Axe | 10 damage at close range. Hit the floor to crack a block: it breaks after 0.4 s and regrows after 20 s |
+| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows fly with gravity. Start with 5 arrows |
+| 🎯 Hit zones | Legs 8–24, body 12–35, head 50–80 (scaled by draw). A **full-draw arrow to the head kills in one shot**; two slow head shots kill |
+| 🪓 Axe | 10 damage at close range. Hit any block to crack it: it breaks after 0.4 s and regrows after 20 s |
+| 🧱 Arena | A stone plaza (1 high), cover walls (2 high) and four plank towers (2 high, climb via the step block). Walls stop arrows and axes, and they can be chopped too |
 | 🧪 Health potion | Heals 20 HP, one use. Every kill rewards **one** potion |
-| Pickups | Every 15 s: +3 arrows. Every 60 s: a health potion. The first player to walk through it gets it |
+| Pickups | Every 15 s: +3 arrows. Every 60 s: a health potion. They can appear on platforms too. The first player to walk through one gets it, and the bots race you for them |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
 
 On respawn you get 100 HP, 5 arrows and no potions.
@@ -93,8 +95,9 @@ npm test           # unit tests + simulated bot matches
 npm run build:pages
 ```
 
-Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`). Rules and balance are in
-`shared/constants.js`.
+Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`). Bots navigate with A*
+(`shared/ai/Pathfinder.js`). Rules and balance are in `shared/constants.js`, and the arena layout
+(platforms and walls) is in `shared/world/layout.js`.
 
 ## Deploy
 

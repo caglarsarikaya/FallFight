@@ -8,6 +8,7 @@ export class FirstPersonView {
         this.label = 'First person';
         this.showsOwnBody = false;
         this.showsViewModel = true;
+        this.closeToEye = true;
     }
 
     apply(camera, { eye, yaw, pitch }) {
@@ -28,11 +29,20 @@ export class ThirdPersonView {
         this.offset = new THREE.Vector3();
     }
 
-    // Over the shoulder, looking where the player looks
-    apply(camera, { eye, yaw, pitch }) {
+    // Over the shoulder, looking where the player looks; pulled in when a block is in the way
+    apply(camera, { eye, yaw, pitch, arena }) {
         camera.rotation.set(pitch, yaw, 0, 'YXZ');
         this.offset.set(this.shoulder, this.height, this.distance).applyEuler(camera.rotation);
-        camera.position.set(eye.x + this.offset.x, Math.max(eye.y + this.offset.y, -30), eye.z + this.offset.z);
+        let scale = 1;
+        if (arena) {
+            const length = this.offset.length();
+            const dir = { x: this.offset.x / length, y: this.offset.y / length, z: this.offset.z / length };
+            const hit = arena.raycast(eye, dir, length + 0.3);
+            if (hit) scale = Math.max(0.1, (hit.distance - 0.3) / length);
+        }
+        camera.position.set(eye.x + this.offset.x * scale, eye.y + this.offset.y * scale, eye.z + this.offset.z * scale);
+        // Pushed right up against our own head: the body would fill the screen
+        this.closeToEye = this.offset.length() * scale < 1.1;
     }
 }
 

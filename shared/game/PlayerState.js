@@ -18,7 +18,7 @@ export class PlayerState {
         this.yaw = 0;
         this.pitch = 0;
         this.onGround = true;
-        this.lastGroundTile = null; // { ix, iz } last tile stood on, for fall kill credit
+        this.lastGroundBlock = null; // { ix, iy, iz } last block stood on, for fall kill credit
 
         this.health = PLAYER.maxHealth;
         this.alive = true;

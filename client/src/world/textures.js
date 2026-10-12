@@ -64,7 +64,34 @@ export function createBlockTextures() {
         }
     });
 
-    return { grassTop, grassSide, dirt };
+    const stoneBricks = pixelTexture((ctx, s) => {
+        const rng = createRng(53);
+        noise(ctx, s, '#8a8a8a', 0.1, rng);
+        // Mortar lines in a running-bond pattern
+        ctx.fillStyle = '#5e5e5e';
+        for (const y of [0, 4, 8, 12]) ctx.fillRect(0, y, s, 1);
+        for (let row = 0; row < 4; row++) {
+            const offset = row % 2 ? 4 : 0;
+            for (let x = offset; x < s; x += 8) ctx.fillRect(x, row * 4, 1, 4);
+        }
+        ctx.fillStyle = '#a3a3a3';
+        for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+    });
+
+    const planks = pixelTexture((ctx, s) => {
+        const rng = createRng(71);
+        noise(ctx, s, '#b8945f', 0.08, rng);
+        ctx.fillStyle = '#7d6139';
+        for (const y of [3, 7, 11, 15]) ctx.fillRect(0, y, s, 1);
+        for (let row = 0; row < 4; row++) {
+            const x = row % 2 ? 11 : 4;
+            ctx.fillRect(x, row * 4, 1, 3);
+        }
+        ctx.fillStyle = '#9c7a48';
+        for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 2, 1);
+    });
+
+    return { grassTop, grassSide, dirt, stoneBricks, planks };
 }
 
 // Crack overlays for the breaking animation (stage 0..4)

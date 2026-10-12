@@ -14,7 +14,6 @@ test('item hierarchy', () => {
     assert.ok(getItem('axe') instanceof Weapon && getItem('axe') instanceof Item);
     assert.ok(getItem('health_potion') instanceof Consumable);
     assert.equal(getItem('axe').damage, 10);
-    assert.equal(getItem('bow').damage, 20);
     assert.throws(() => registerItem(getItem('axe')), /already registered/);
 });
 
@@ -56,29 +55,32 @@ test('axe breaks the aimed floor block when no player is hit; it regrows later',
     const dir = { x: 0, y: -1.6, z: -2 };
     assert.ok(room.useItem(a, 1, dir));
     const crack = room.eventsOf('blockCracking').at(-1);
-    assert.deepEqual([crack.ix, crack.iz], [10, 8]);
-    assert.ok(room.arena.isSolidTile(10, 8), 'still holds while cracking');
+    assert.deepEqual([crack.ix, crack.iy, crack.iz], [10, 0, 8]);
+    assert.ok(room.arena.isSolid(10, 0, 8), 'still holds while cracking');
 
     for (let i = 0; i < 15; i++) room.tick(1 / 30);
-    assert.ok(!room.arena.isSolidTile(10, 8), 'gone after the break delay');
+    assert.ok(!room.arena.isSolid(10, 0, 8), 'gone after the break delay');
     for (let i = 0; i < 30 * 21; i++) room.tick(1 / 30);
-    assert.ok(room.arena.isSolidTile(10, 8), 'regrown');
+    assert.ok(room.arena.isSolid(10, 0, 8), 'regrown');
 });
 
-test('bow needs a draw, consumes arrows and deals 20 damage', () => {
+test('bow needs a draw, consumes arrows and deals damage', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    place(room, a, 15, 20);
-    place(room, b, 15, 12);
+    place(room, a, 11, 20);
+    place(room, b, 11, 12);
 
     assert.ok(!room.useItem(a, 0, { x: 0, y: 0, z: -1 }, 0.05), 'too short a draw');
     assert.equal(a.inventory.count('arrow'), 5);
 
-    assert.ok(room.useItem(a, 0, { x: 0, y: 0.03, z: -1 }, BOW.fullDraw));
+    // Aim at the chest
+    assert.ok(room.useItem(a, 0, { x: 0, y: 0.02, z: -1 }, BOW.fullDraw));
     assert.equal(a.inventory.count('arrow'), 4);
     for (let i = 0; i < 30 && b.health === PLAYER.maxHealth; i++) room.tick(1 / 30);
-    assert.equal(b.health, PLAYER.maxHealth - BOW.damage);
+    const hit = room.eventsOf('damage').at(-1);
+    assert.equal(hit.zone, 'body');
+    assert.equal(b.health, PLAYER.maxHealth - BOW.damage.body[1]);
     assert.equal(room.eventsOf('projectileEnd').at(-1).hitId, 'b');
 });
 

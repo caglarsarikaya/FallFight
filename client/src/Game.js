@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { AXE, BOW, NET, PLAYER } from '../shared/constants.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
-import { Arena, TILE } from '../shared/world/Arena.js';
+import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
 import { getItem } from '../shared/items/ItemRegistry.js';
 import { Bow } from '../shared/items/Bow.js';
-import { WorldRenderer } from './world/WorldRenderer.js';
+import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
@@ -21,7 +21,6 @@ import { PauseMenu } from './ui/PauseMenu.js';
 import { el } from './ui/dom.js';
 
 const PICKUP_NAMES = { arrow: 'Arrows', health_potion: 'Health Potion' };
-const DIRT_COLORS = ['#866043', '#6b4a32', '#5d9b3a', '#4e8a2f'];
 
 // Client game: renders the arena, predicts the local player, sends inputs and reacts to the
 // authoritative room's events. Works the same with a LocalConnection or an OnlineConnection.
@@ -320,18 +319,18 @@ export class Game {
             if (action === 'drink') this.sound.play('drink', { at });
         });
         on(S2C.BLOCK_CRACKING, this.onBlockCracking);
-        on(S2C.BLOCK_BROKEN, ({ ix, iz }) => {
-            this.arena.setTile(ix, iz, TILE.BROKEN);
-            this.world.break(ix, iz);
-            const { x, z } = this.arena.tileCenter(ix, iz);
-            this.particles.burst({ x, y: -0.4, z }, { count: 22, colors: DIRT_COLORS, speed: 4, up: 3, size: 0.14, spread: 0.8 });
-            this.sound.play('break', { at: { x, y: 0, z } });
+        on(S2C.BLOCK_BROKEN, ({ ix, iy, iz }) => {
+            this.arena.setState(ix, iy, iz, BLOCK_STATE.BROKEN);
+            this.world.break(ix, iy, iz);
+            const c = this.arena.blockCenter(ix, iy, iz);
+            const colors = DEBRIS_COLORS[this.arena.kindAt(ix, iy, iz)] || DEBRIS_COLORS[1];
+            this.particles.burst(c, { count: 22, colors, speed: 4, up: 3, size: 0.14, spread: 0.8 });
+            this.sound.play('break', { at: c });
         });
-        on(S2C.BLOCK_RESTORED, ({ ix, iz }) => {
-            this.arena.setTile(ix, iz, TILE.SOLID);
-            this.world.restore(ix, iz);
-            const { x, z } = this.arena.tileCenter(ix, iz);
-            this.sound.play('restore', { at: { x, y: 0, z }, volume: 0.6 });
+        on(S2C.BLOCK_RESTORED, ({ ix, iy, iz }) => {
+            this.arena.setState(ix, iy, iz, BLOCK_STATE.SOLID);
+            this.world.restore(ix, iy, iz);
+            this.sound.play('restore', { at: this.arena.blockCenter(ix, iy, iz), volume: 0.6 });
         });
         on(S2C.PROJECTILE, data => {
             this.projectiles.set(data.id, new ProjectileView(this.scene, data));
@@ -360,14 +359,14 @@ export class Game {
         on(S2C.RESPAWN, this.onRespawn);
         on(S2C.PICKUP_SPAWNED, data => {
             this.pickups.set(data.id, new PickupView(this.scene, data));
-            this.sound.play('spawnPickup', { at: { x: data.x, y: 0.5, z: data.z } });
+            this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
         on(S2C.PICKUP_TAKEN, ({ id, by, type, amount }) => {
             const view = this.pickups.get(id);
             if (view) {
                 const p = view.group.position;
-                this.particles.burst({ x: p.x, y: 0.8, z: p.z }, { count: 12, colors: ['#ffd23f', '#ffffff'], up: 2, speed: 2, gravity: 2, glow: true, size: 0.07 });
+                this.particles.burst({ x: p.x, y: p.y + 0.8, z: p.z }, { count: 12, colors: ['#ffd23f', '#ffffff'], up: 2, speed: 2, gravity: 2, glow: true, size: 0.07 });
                 view.dispose();
                 this.pickups.delete(id);
             }
@@ -424,17 +423,17 @@ export class Game {
         this.self?.avatar.setHeldItem(itemId);
     }
 
-    onBlockCracking({ ix, iz }) {
-        this.arena.setTile(ix, iz, TILE.CRACKING);
-        this.world.crack(ix, iz);
-        const { x, z } = this.arena.tileCenter(ix, iz);
-        this.sound.play('crack', { at: { x, y: 0, z } });
+    onBlockCracking({ ix, iy, iz }) {
+        this.arena.setState(ix, iy, iz, BLOCK_STATE.CRACKING);
+        this.world.crack(ix, iy, iz);
+        this.sound.play('crack', { at: this.arena.blockCenter(ix, iy, iz) });
         // Warn if it's the block under our feet
-        const mine = this.arena.tileAt(this.local.body.x, this.local.body.z);
-        if (this.local.alive && this.local.body.onGround && mine.ix === ix && mine.iz === iz) this.hud.flash('danger');
+        const { x, y, z, onGround } = this.local.body;
+        const under = this.arena.supportBlock(x, y, z, PLAYER.radius);
+        if (this.local.alive && onGround && under && under.ix === ix && under.iy === iy && under.iz === iz) this.hud.flash('danger');
     }
 
-    onDamage({ victimId, attackerId, health, knockback, weapon }) {
+    onDamage({ victimId, attackerId, health, knockback, weapon, zone, headshot }) {
         const victim = this.players.get(victimId);
         if (!victim) return;
         victim.health = health;
@@ -455,9 +454,11 @@ export class Game {
             this.shake = 0.25;
         }
         if (attackerId === this.selfId && victimId !== this.selfId) {
-            this.hud.hit();
-            this.sound.play('hitmarker');
+            this.hud.hit(zone === 'head');
+            this.sound.play(zone === 'head' ? 'headshot' : 'hitmarker');
+            if (headshot) this.hud.toast('🎯 HEADSHOT!');
         }
+        if (victimId === this.selfId && headshot) this.hud.toast('🎯 Headshot!');
     }
 
     onDeath({ victimId, killerId, cause }) {
@@ -480,7 +481,8 @@ export class Game {
             this.cancelDraw();
             this.deathCam = { x: this.local.body.x, y: Math.max(this.local.body.y, -2), z: this.local.body.z, yaw: this.local.yaw, t: 0 };
             const reason = killer
-                ? (cause === 'fall' ? `${killer.name} made you fall` : `Killed by ${killer.name}`)
+                ? (cause === 'fall' ? `${killer.name} made you fall`
+                    : cause === 'headshot' ? `${killer.name} got you with a headshot` : `Killed by ${killer.name}`)
                 : (cause === 'fall' ? 'You fell into the void' : 'You died');
             this.respawnOverlay.show(reason, PLAYER.respawnDelay);
         }
@@ -567,7 +569,8 @@ export class Game {
         const self = this.self;
         if (self) {
             self.avatar.setPose(body.x, body.y, body.z, this.local.yaw, this.local.pitch, body.onGround);
-            self.avatar.setVisible(this.cameraController.view.showsOwnBody || !this.local.alive);
+            const view = this.cameraController.view;
+            self.avatar.setVisible((view.showsOwnBody && !view.closeToEye) || !this.local.alive);
         }
         this.viewModel.update(dt, { speed, onGround: body.onGround });
         this.hud.setProtected(this.local.alive && now < this.protectedUntil);
@@ -591,7 +594,7 @@ export class Game {
             this.camera.lookAt(c.x, c.y, c.z);
             return;
         }
-        this.cameraController.update({ eye: this.local.eye, yaw: this.local.yaw, pitch: this.local.pitch });
+        this.cameraController.update({ eye: this.local.eye, yaw: this.local.yaw, pitch: this.local.pitch, arena: this.arena });
         if (this.shake > 0) {
             this.shake = Math.max(0, this.shake - dt);
             this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.3;

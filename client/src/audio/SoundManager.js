@@ -55,6 +55,10 @@ const PATCHES = {
     select: (s, out) => s.tone({ out, type: 'square', freq: 1200, duration: 0.03, gain: 0.05 }),
     empty: (s, out) => s.tone({ out, type: 'square', freq: 180, duration: 0.06, gain: 0.1 }),
     hitmarker: (s, out) => s.tone({ out, type: 'square', freq: 1900, duration: 0.035, gain: 0.08 }),
+    headshot: (s, out) => {
+        s.tone({ out, type: 'square', freq: 1568, duration: 0.06, gain: 0.12 });
+        s.tone({ out, type: 'square', freq: 2093, duration: 0.18, delay: 0.06, gain: 0.12 });
+    },
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 })
 };
 

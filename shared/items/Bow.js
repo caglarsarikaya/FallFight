@@ -1,17 +1,20 @@
-import { BOW } from '../constants.js';
+import { BOW, PLAYER } from '../constants.js';
 import { RangedWeapon } from './Weapon.js';
 
-// Hold to draw, release to fire. Longer draws fly faster; damage is always the same.
+const lerp = ([min, max], t) => min + (max - min) * t;
+
+// Hold to draw, release to fire. A longer draw flies faster and hits harder; where it lands
+// matters too: legs < body < head, and a full-draw arrow to the head kills outright.
 export class Bow extends RangedWeapon {
     constructor() {
         super({
             id: 'bow',
             name: 'Bow',
             ammo: 'arrow',
-            damage: BOW.damage,
+            damage: BOW.damage.body[1],
             cooldown: BOW.cooldown,
             knockback: BOW.knockback,
-            description: `${BOW.damage} damage, uses arrows`
+            description: `${BOW.damage.body[0]}-${BOW.damage.body[1]} damage, draw longer to hit harder · full-draw headshots kill`
         });
         this.chargeable = true;
     }
@@ -24,5 +27,17 @@ export class Bow extends RangedWeapon {
     launchSpeed(charge) {
         if (!(charge >= BOW.minDraw)) return null;
         return BOW.minSpeed + (BOW.maxSpeed - BOW.minSpeed) * Bow.drawProgress(charge);
+    }
+
+    projectileData(charge) {
+        return { power: Bow.drawProgress(charge) };
+    }
+
+    damageFor({ zone, power }) {
+        if (zone === 'head' && power >= BOW.headshotPower) {
+            return { amount: PLAYER.maxHealth, headshot: true };
+        }
+        const range = BOW.damage[zone] || BOW.damage.body;
+        return { amount: Math.round(lerp(range, power)), headshot: false };
     }
 }

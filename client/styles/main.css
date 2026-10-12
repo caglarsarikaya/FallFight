@@ -231,6 +231,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .hitmarker::before { left: 14px; top: 0; width: 3px; height: 30px; }
 .hitmarker::after { left: 0; top: 14px; width: 30px; height: 3px; }
 .hitmarker.show { opacity: 1; transition: none; }
+.hitmarker.head::before, .hitmarker.head::after { background: var(--gold); }
 
 .charge {
     position: absolute;

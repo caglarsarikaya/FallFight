@@ -52,6 +52,16 @@ export class RangedWeapon extends Weapon {
         throw new Error(`${this.constructor.name} must implement launchSpeed()`);
     }
 
+    // Extra data carried by the projectile (e.g. draw power)
+    projectileData(_charge) {
+        return {};
+    }
+
+    // Damage when a projectile hits: hit = { zone: 'head' | 'body' | 'legs', power }
+    damageFor(_hit) {
+        return { amount: this.damage, headshot: false };
+    }
+
     use({ room, player, origin, dir, charge }) {
         const speed = this.launchSpeed(charge);
         if (speed === null || !player.inventory.consume(this.ammo)) return false;
@@ -59,7 +69,7 @@ export class RangedWeapon extends Weapon {
             x: dir.x * speed,
             y: dir.y * speed,
             z: dir.z * speed
-        });
+        }, this.projectileData(charge));
         room.notifyInventory(player);
         return true;
     }

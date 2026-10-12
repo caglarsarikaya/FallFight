@@ -11,7 +11,7 @@ export class PickupView {
         this.data = data;
         this.time = Math.random() * 10;
         this.group = new THREE.Group();
-        this.group.position.set(data.x, 0, data.z);
+        this.group.position.set(data.x, data.baseY ?? 0, data.z);
 
         this.item = data.type === 'arrow' ? this.createArrowBundle(data.amount) : getItemView('health_potion').createModel();
         if (data.type !== 'arrow') this.item.scale.setScalar(1.8);

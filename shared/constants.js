@@ -3,6 +3,7 @@
 
 export const ARENA = {
     size: 30,          // 30 x 30 floor tiles
+    height: 4,         // block layers: the floor plus up to 3 blocks of structures
     voidY: -8          // falling below this kills
 };
 
@@ -17,7 +18,9 @@ export const PLAYER = {
     groundAccel: 14,
     airAccel: 3,
     respawnDelay: 3,
-    spawnProtection: 2
+    spawnProtection: 2,
+    // Hit zones by height above the feet
+    zones: { headFrom: 1.4, bodyFrom: 0.75 }
 };
 
 export const BLOCK = {
@@ -33,11 +36,13 @@ export const AXE = {
 };
 
 export const BOW = {
-    damage: 20,
+    // [weakest, strongest] damage by zone; scales with draw power (0.15..1)
+    damage: { legs: [8, 24], body: [12, 35], head: [50, 80] },
+    headshotPower: 0.95, // a head hit at (almost) full draw kills outright
     minDraw: 0.15,
     fullDraw: 1.0,
     minSpeed: 12,
-    maxSpeed: 30,
+    maxSpeed: 32,
     cooldown: 0.3,
     knockback: 6
 };

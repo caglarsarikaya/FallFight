@@ -30,3 +30,19 @@ test('setBotCount adds and removes bots', () => {
     assert.equal(room.bots.size, 1);
     assert.equal(room.players.size, 1);
 });
+
+test('bots race for pickups and grab them quickly', () => {
+    const room = createRoom(11);
+    room.setBotCount(4);
+    run(room, 150);
+
+    const spawned = room.timedEventsOf('pickupSpawned');
+    const taken = new Map(room.timedEventsOf('pickupTaken').map(e => [e.data.id, e]));
+    const waits = spawned
+        .filter(e => taken.get(e.data.id)?.data.by)
+        .map(e => taken.get(e.data.id).time - e.time);
+    assert.ok(spawned.length >= 8, `pickups spawned: ${spawned.length}`);
+    assert.ok(waits.length >= spawned.length - 2, `collected ${waits.length}/${spawned.length}`);
+    const average = waits.reduce((a, b) => a + b, 0) / waits.length;
+    assert.ok(average < 10, `average wait ${average.toFixed(1)}s`);
+});

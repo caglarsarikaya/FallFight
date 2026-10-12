@@ -11,7 +11,7 @@ export class Axe extends MeleeWeapon {
             reach: AXE.reach,
             cooldown: AXE.cooldown,
             knockback: AXE.knockback,
-            description: `${AXE.damage} damage, breaks the floor`
+            description: `${AXE.damage} damage, chops any block`
         });
         this.canBreakBlocks = true;
     }
@@ -19,7 +19,7 @@ export class Axe extends MeleeWeapon {
     use(ctx) {
         if (this.strikePlayer(ctx)) return true;
         const block = ctx.room.arena.raycast(ctx.origin, ctx.dir, this.reach);
-        if (block) ctx.room.breakBlock(block.ix, block.iz, ctx.player);
+        if (block) ctx.room.breakBlock(block.ix, block.iy, block.iz, ctx.player);
         return true;
     }
 }

@@ -1,13 +1,13 @@
-import { ARENA, PROJECTILE } from '../constants.js';
+import { ARENA, PLAYER, PROJECTILE } from '../constants.js';
 import { rayBox } from '../math.js';
 
 // A flying arrow. Simulated by the room; clients replay it from the spawn velocity.
 export class Projectile {
-    constructor({ id, ownerId, itemId, x, y, z, vx, vy, vz, born }) {
-        Object.assign(this, { id, ownerId, itemId, x, y, z, vx, vy, vz, born });
+    constructor({ id, ownerId, itemId, x, y, z, vx, vy, vz, born, power = 1 }) {
+        Object.assign(this, { id, ownerId, itemId, x, y, z, vx, vy, vz, born, power });
     }
 
-    // Advance one step. Returns { type: 'player', player } | { type: 'block' } | { type: 'expired' } | null
+    // Advance one step. Returns { type: 'player', player, zone } | { type: 'block' } | { type: 'expired' } | null
     step(dt, room, now) {
         this.vy -= PROJECTILE.gravity * dt;
         const from = { x: this.x, y: this.y, z: this.z };
@@ -27,7 +27,7 @@ export class Projectile {
 
         if (best && (!block || best.t <= block.distance)) {
             this.moveTo(from, dir, best.t);
-            return { type: 'player', player: best.player };
+            return { type: 'player', player: best.player, zone: hitZone(this.y - best.player.y) };
         }
         if (block) {
             this.moveTo(from, dir, block.distance);
@@ -48,7 +48,14 @@ export class Projectile {
     }
 
     toJSON() {
-        const { id, ownerId, itemId, x, y, z, vx, vy, vz } = this;
-        return { id, ownerId, itemId, x, y, z, vx, vy, vz };
+        const { id, ownerId, itemId, x, y, z, vx, vy, vz, power } = this;
+        return { id, ownerId, itemId, x, y, z, vx, vy, vz, power };
     }
+}
+
+// Which part of the body a hit at this height above the feet lands on
+export function hitZone(height) {
+    if (height >= PLAYER.zones.headFrom) return 'head';
+    if (height >= PLAYER.zones.bodyFrom) return 'body';
+    return 'legs';
 }

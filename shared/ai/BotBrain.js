@@ -1,26 +1,34 @@
-import { AXE, BOW, PROJECTILE } from '../constants.js';
+import { AXE, BOW, PLAYER, PROJECTILE } from '../constants.js';
 import { normalize, yawTowards } from '../math.js';
-import { TILE } from '../world/Arena.js';
+import { BLOCK_STATE } from '../world/Arena.js';
+import { Pathfinder } from './Pathfinder.js';
 
 // Bot tuning (distances in blocks, times in seconds)
 export const BOT_SETTINGS = {
     reactionTime: [0.15, 0.35],
     meleeRange: 3.0,             // axe reach is 3.5 from the eye
     preferredMeleeDistance: 2.2,
-    bowRange: [5, 18],
+    bowRange: [5, 20],
     drawTime: [0.5, 1.0],
     aimError: 0.05,              // radians of random aim noise
+    aimHeight: 0.95,             // aim at the lower chest; headshots happen, but rarely
     attackDelay: [0.1, 0.45],    // extra pause on top of weapon cooldowns
-    trapChance: 0.35,            // chop the floor under/ahead of the target instead of hitting it
+    trapChance: 0.35,            // chop the block under the target instead of hitting it
     potionBelowHealth: 50,
-    pickupRange: 9,
     retargetInterval: 2.5,
     crowdPenalty: 4,             // prefer targets other bots aren't already chasing
-    dodgeChance: 0.8
+    dodgeChance: 0.8,
+    replanInterval: 0.5,
+    // Pickup racing
+    pickupNotice: [0.3, 0.9],    // how long after a pickup appears before this bot reacts
+    pickupRethink: 0.4,
+    pickupDistanceCost: 1.5,     // value lost per block of distance
+    pickupGrabRange: 3           // grab it even in the middle of a fight
 };
 
 const rand = (rng, [min, max]) => min + rng() * (max - min);
 const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+const idle = () => ({ moveX: 0, moveZ: 0, jump: false });
 
 // Decides what a bot does each tick. Movement is returned as input for shared physics;
 // attacks go through the same GameRoom actions human players use.
@@ -29,6 +37,7 @@ export class BotBrain {
         this.room = room;
         this.player = player;
         this.rng = rng;
+        this.pathfinder = new Pathfinder(room.arena);
         this.targetId = null;
         this.retargetAt = 0;
         this.nextAttackAt = 1 + rng() * 2;
@@ -36,12 +45,22 @@ export class BotBrain {
         this.drawFor = 0;
         this.trapMode = false;
         this.strafeDir = rng() < 0.5 ? 1 : -1;
-        this.dodge = null;            // { at, tile } reacting to a cracking block
-        this.handledCrackTile = null;
+        this.dodge = null;
+        this.handledCrackKey = null;
+        this.noticeDelay = rand(rng, BOT_SETTINGS.pickupNotice);
+        this.pickupId = null;
+        this.pickupThinkAt = 0;
+        this.path = null;
+        this.pathKey = null;
+        this.replanAt = 0;
     }
 
     get now() {
         return this.room.time;
+    }
+
+    get arena() {
+        return this.room.arena;
     }
 
     update(_dt) {
@@ -49,6 +68,7 @@ export class BotBrain {
         if (!bot.alive) {
             this.drawStartedAt = null;
             this.dodge = null;
+            this.path = null;
             return idle();
         }
 
@@ -56,30 +76,35 @@ export class BotBrain {
         if (dodgeInput) return dodgeInput;
 
         this.maybeDrinkPotion();
-
         const target = this.pickTarget();
-        const pickup = this.wantedPickup();
-        if (!target) return pickup ? this.moveTowards(pickup.x, pickup.z) : idle();
+        const pickup = this.choosePickup();
+        const dist = target ? Math.hypot(target.x - bot.x, target.z - bot.z) : Infinity;
+        const enemyClose = target && dist <= BOT_SETTINGS.meleeRange + 0.6 && Math.abs(target.y - bot.y) < 1.6;
 
-        const dx = target.x - bot.x;
-        const dz = target.z - bot.z;
-        const dist = Math.hypot(dx, dz);
-        bot.yaw = yawTowards(dx, dz);
-
-        const arrows = bot.inventory.count('arrow');
-        if (dist <= BOT_SETTINGS.meleeRange + 0.6) {
+        if (enemyClose) {
+            bot.yaw = yawTowards(target.x - bot.x, target.z - bot.z);
             this.cancelDraw();
             this.melee(target);
+            const pickupDist = pickup ? Math.hypot(pickup.x - bot.x, pickup.z - bot.z) : Infinity;
+            if (pickupDist < BOT_SETTINGS.pickupGrabRange) return this.followPath(pickup.x, pickup.z);
             return this.circle(target, dist, BOT_SETTINGS.preferredMeleeDistance);
         }
-        if (arrows > 0 && dist >= BOT_SETTINGS.bowRange[0] && dist <= BOT_SETTINGS.bowRange[1]) {
+
+        if (pickup) {
+            this.cancelDraw();
+            return this.faceMovement(this.followPath(pickup.x, pickup.z));
+        }
+
+        if (!target) return idle();
+        bot.yaw = yawTowards(target.x - bot.x, target.z - bot.z);
+        const canShoot = bot.inventory.count('arrow') > 0 &&
+            dist >= BOT_SETTINGS.bowRange[0] && dist <= BOT_SETTINGS.bowRange[1] && this.hasLineOfSight(target);
+        if (canShoot) {
             this.shoot(target, dist);
-            // Shuffle sideways while drawing to be harder to hit
             return this.strafe(target, dist, 0.35);
         }
         this.cancelDraw();
-        if (pickup && Math.hypot(pickup.x - bot.x, pickup.z - bot.z) < dist) return this.moveTowards(pickup.x, pickup.z);
-        return this.moveTowards(target.x, target.z);
+        return this.followPath(target.x, target.z);
     }
 
     // ---- decisions ----------------------------------------------------------------------
@@ -106,21 +131,42 @@ export class BotBrain {
         return best;
     }
 
-    wantedPickup() {
+    pickupValue(pickup) {
+        const inv = this.player.inventory;
+        if (pickup.type === 'health_potion') {
+            return 45 + (this.player.health < 70 ? 25 : 0) + (inv.count('health_potion') === 0 ? 15 : 0);
+        }
+        const arrows = inv.count('arrow');
+        return arrows < 3 ? 60 : arrows < 12 ? 30 : 10;
+    }
+
+    // Race for pickups worth the trip; reconsidered a few times a second
+    choosePickup() {
+        const pickups = this.room.pickups.pickups;
+        if (this.now < this.pickupThinkAt) return pickups.get(this.pickupId) || null;
+        this.pickupThinkAt = this.now + BOT_SETTINGS.pickupRethink;
+
         const bot = this.player;
-        const needArrows = bot.inventory.count('arrow') < 3;
-        const needPotion = bot.inventory.count('health_potion') === 0 || bot.health < 70;
         let best = null;
-        let bestDist = BOT_SETTINGS.pickupRange;
-        for (const pickup of this.room.pickups.pickups.values()) {
-            if (pickup.type === 'arrow' && !needArrows) continue;
-            if (pickup.type === 'health_potion' && !needPotion) continue;
-            const d = Math.hypot(pickup.x - bot.x, pickup.z - bot.z);
-            if (d < bestDist) {
+        let bestScore = 0;
+        for (const pickup of pickups.values()) {
+            if (this.now - (pickup.spawnedAt || 0) < this.noticeDelay) continue;
+            const d = Math.hypot(pickup.x - bot.x, pickup.z - bot.z) + Math.abs(pickup.baseY - bot.y) * 2;
+            let score = this.pickupValue(pickup) - d * BOT_SETTINGS.pickupDistanceCost;
+            // Probably lost if someone else is clearly closer
+            for (const other of this.room.players.values()) {
+                if (other === bot || !other.alive) continue;
+                if (Math.hypot(pickup.x - other.x, pickup.z - other.z) + 3 < d) {
+                    score *= 0.5;
+                    break;
+                }
+            }
+            if (score > bestScore) {
                 best = pickup;
-                bestDist = d;
+                bestScore = score;
             }
         }
+        this.pickupId = best?.id ?? null;
         return best;
     }
 
@@ -131,6 +177,13 @@ export class BotBrain {
         if (slot >= 0) this.room.useItem(bot, slot, { x: 0, y: -1, z: 0 });
     }
 
+    hasLineOfSight(target) {
+        const eye = this.player.eye;
+        const to = { x: target.x - eye.x, y: target.y + 1.2 - eye.y, z: target.z - eye.z };
+        const dist = Math.hypot(to.x, to.y, to.z);
+        return !this.arena.raycast(eye, normalize(to), dist);
+    }
+
     melee(target) {
         const bot = this.player;
         if (this.now < this.nextAttackAt) return;
@@ -138,29 +191,23 @@ export class BotBrain {
         if (slot < 0) return;
 
         const eye = bot.eye;
-        let aim;
+        let aim = { x: target.x, y: target.y + 1.0, z: target.z };
         if (this.trapMode) {
             // Chop the block under (or just ahead of) the target so it falls
-            const lead = 0.25;
-            const tx = target.x + target.vx * lead;
-            const tz = target.z + target.vz * lead;
-            const { ix, iz } = this.room.arena.tileAt(tx, tz);
-            const own = this.room.arena.tileAt(bot.x, bot.z);
-            if ((ix === own.ix && iz === own.iz) || !this.room.arena.isSafeTile(ix, iz)) {
-                aim = { x: target.x, y: target.y + 1.0, z: target.z };
-            } else {
-                const c = this.room.arena.tileCenter(ix, iz);
-                aim = { x: c.x, y: -0.05, z: c.z };
+            const tx = target.x + target.vx * 0.25;
+            const tz = target.z + target.vz * 0.25;
+            const under = this.arena.supportBlock(tx, target.y, tz, 0);
+            const own = this.arena.supportBlock(bot.x, bot.y, bot.z, PLAYER.radius);
+            const isOwn = own && under && own.ix === under.ix && own.iy === under.iy && own.iz === under.iz;
+            if (under && !isOwn && this.arena.isStable(under.ix, under.iy, under.iz)) {
+                const c = this.arena.blockCenter(under.ix, under.iy, under.iz);
+                aim = { x: c.x, y: c.y + 0.45, z: c.z };
             }
-        } else {
-            aim = { x: target.x, y: target.y + 1.0, z: target.z };
         }
-        const dir = this.withError(normalize({ x: aim.x - eye.x, y: aim.y - eye.y, z: aim.z - eye.z }));
         if (Math.hypot(aim.x - eye.x, aim.y - eye.y, aim.z - eye.z) > AXE.reach) return;
-
+        const dir = this.withError(normalize({ x: aim.x - eye.x, y: aim.y - eye.y, z: aim.z - eye.z }));
         this.room.useItem(bot, slot, dir);
         this.nextAttackAt = this.now + AXE.cooldown + rand(this.rng, BOT_SETTINGS.attackDelay);
-        // Mix it up: sometimes switch between hitting and trapping
         if (this.rng() < 0.3) this.trapMode = this.rng() < BOT_SETTINGS.trapChance;
     }
 
@@ -186,7 +233,7 @@ export class BotBrain {
         const time = dist / speed;
         const aim = {
             x: target.x + target.vx * time,
-            y: target.y + 1.1 + 0.5 * PROJECTILE.gravity * time * time,
+            y: target.y + BOT_SETTINGS.aimHeight + 0.5 * PROJECTILE.gravity * time * time,
             z: target.z + target.vz * time
         };
         const dir = this.withError(normalize({ x: aim.x - eye.x, y: aim.y - eye.y, z: aim.z - eye.z }));
@@ -205,49 +252,92 @@ export class BotBrain {
     // React to the block under its feet cracking by jumping to a safe neighbour
     updateDodge() {
         const bot = this.player;
-        const arena = this.room.arena;
-        const tile = arena.tileAt(bot.x, bot.z);
-        const key = `${tile.ix},${tile.iz}`;
+        const arena = this.arena;
+        const under = arena.supportBlock(bot.x, bot.y, bot.z, 0);
+        const key = under ? `${under.ix},${under.iy},${under.iz}` : null;
 
-        if (!this.dodge && bot.onGround && arena.getTile(tile.ix, tile.iz) === TILE.CRACKING && this.handledCrackTile !== key) {
-            this.handledCrackTile = key;
+        if (!this.dodge && bot.onGround && under && arena.stateAt(under.ix, under.iy, under.iz) === BLOCK_STATE.CRACKING && this.handledCrackKey !== key) {
+            this.handledCrackKey = key;
             if (this.rng() < BOT_SETTINGS.dodgeChance) {
-                const options = NEIGHBOURS.filter(([ox, oz]) => arena.isSafeTile(tile.ix + ox, tile.iz + oz));
+                const options = NEIGHBOURS
+                    .map(([ox, oz]) => ({ ix: under.ix + ox, iz: under.iz + oz }))
+                    .filter(t => this.isSafeStep(t.ix, t.iz));
                 if (options.length) {
-                    const [ox, oz] = options[Math.floor(this.rng() * options.length)];
+                    const pick = options[Math.floor(this.rng() * options.length)];
                     this.dodge = {
                         at: this.now + rand(this.rng, BOT_SETTINGS.reactionTime),
                         until: this.now + 0.9,
-                        target: arena.tileCenter(tile.ix + ox, tile.iz + oz)
+                        target: arena.tileCenter(pick.ix, pick.iz)
                     };
                 }
             }
         }
         if (!this.dodge) return null;
         if (this.now < this.dodge.at) return idle();
-        if (this.now > this.dodge.until) {
-            this.dodge = null;
-            return null;
-        }
         const dx = this.dodge.target.x - bot.x;
         const dz = this.dodge.target.z - bot.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.2) {
+        if (this.now > this.dodge.until || d < 0.2) {
             this.dodge = null;
-            return idle();
+            return null;
         }
         return { moveX: dx / d, moveZ: dz / d, jump: true };
     }
 
     // ---- movement -----------------------------------------------------------------------
 
-    moveTowards(x, z) {
+    // A tile the bot can step onto from where it stands: stable, not higher, not a deadly drop
+    isSafeStep(ix, iz) {
+        const h = this.arena.surfaceHeight(ix, iz);
+        const y = this.player.y;
+        return h !== null && h <= y + 0.5 && h >= y - 3 && this.arena.isStable(ix, h, iz);
+    }
+
+    safeAt(x, z) {
+        const { ix, iz } = this.arena.tileAt(x, z);
+        return this.isSafeStep(ix, iz);
+    }
+
+    // Walk along an A* path to (x, z), jumping up onto higher blocks
+    followPath(x, z) {
+        const bot = this.player;
+        const goal = this.arena.tileAt(x, z);
+        const key = `${goal.ix},${goal.iz}`;
+        if (key !== this.pathKey || this.now >= this.replanAt || !this.path) {
+            this.path = this.pathfinder.find(this.arena.tileAt(bot.x, bot.z), goal);
+            this.pathKey = key;
+            this.replanAt = this.now + BOT_SETTINGS.replanInterval;
+        }
+        if (!this.path) return this.moveDirect(x, z);
+
+        while (this.path.length) {
+            const c = this.arena.tileCenter(this.path[0].ix, this.path[0].iz);
+            if (Math.hypot(c.x - bot.x, c.z - bot.z) < 0.3 && Math.abs(this.path[0].y - bot.y) < 0.6) this.path.shift();
+            else break;
+        }
+        if (!this.path.length) return this.moveDirect(x, z);
+
+        const waypoint = this.path[0];
+        const c = this.arena.tileCenter(waypoint.ix, waypoint.iz);
+        const dx = c.x - bot.x;
+        const dz = c.z - bot.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const jump = bot.onGround && waypoint.y > bot.y + 0.3 && d < 1.3;
+        return { moveX: dx / d, moveZ: dz / d, jump };
+    }
+
+    moveDirect(x, z) {
         const bot = this.player;
         const dx = x - bot.x;
         const dz = z - bot.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.3) return idle();
+        if (d < 0.25) return idle();
         return this.steer(dx / d, dz / d);
+    }
+
+    faceMovement(input) {
+        if (input.moveX || input.moveZ) this.player.yaw = yawTowards(input.moveX, input.moveZ);
+        return input;
     }
 
     // Keep a preferred distance while orbiting the target
@@ -270,22 +360,10 @@ export class BotBrain {
         return { moveX: input.moveX * amount, moveZ: input.moveZ * amount, jump: false };
     }
 
-    // Pick the safe direction closest to the wanted one; jump over 1-wide gaps
+    // Pick the safe direction closest to the wanted one
     steer(wantX, wantZ) {
         const bot = this.player;
-        const arena = this.room.arena;
-        const safeAt = (x, z) => {
-            const { ix, iz } = arena.tileAt(x, z);
-            return arena.isSafeTile(ix, iz);
-        };
-
-        if (safeAt(bot.x + wantX * 0.7, bot.z + wantZ * 0.7)) return { moveX: wantX, moveZ: wantZ, jump: false };
-        // Gap ahead: jump it if there is floor right behind it
-        if (bot.onGround && safeAt(bot.x + wantX * 2.0, bot.z + wantZ * 2.0) && safeAt(bot.x + wantX * 0.25, bot.z + wantZ * 0.25)) {
-            const edge = !safeAt(bot.x + wantX * 0.45, bot.z + wantZ * 0.45);
-            return { moveX: wantX, moveZ: wantZ, jump: edge };
-        }
-
+        if (this.safeAt(bot.x + wantX * 0.7, bot.z + wantZ * 0.7)) return { moveX: wantX, moveZ: wantZ, jump: false };
         let best = null;
         let bestScore = -0.3;
         for (let i = 0; i < 8; i++) {
@@ -293,7 +371,7 @@ export class BotBrain {
             const dx = Math.cos(a);
             const dz = Math.sin(a);
             const score = dx * wantX + dz * wantZ;
-            if (score > bestScore && safeAt(bot.x + dx * 0.7, bot.z + dz * 0.7)) {
+            if (score > bestScore && this.safeAt(bot.x + dx * 0.7, bot.z + dz * 0.7)) {
                 best = { moveX: dx, moveZ: dz, jump: false };
                 bestScore = score;
             }
@@ -310,6 +388,3 @@ export class BotBrain {
         });
     }
 }
-
-const idle = () => ({ moveX: 0, moveZ: 0, jump: false });
-

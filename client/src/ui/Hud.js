@@ -1,4 +1,4 @@
-import { PLAYER } from '../../shared/constants.js';
+import { BOW, PLAYER } from '../../shared/constants.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
 import { drawPixelArt } from '../world/textures.js';
@@ -35,7 +35,7 @@ function heartCanvas(kind) {
     return canvas;
 }
 
-const KILL_ICONS = { axe: '🪓', bow: '🏹', fall: '⬇', default: '⚔' };
+const KILL_ICONS = { axe: '🪓', bow: '🏹', headshot: '🎯', fall: '⬇', default: '⚔' };
 
 // Heads-up display: hearts, hotbar, crosshair, bow charge, kill feed, toasts and screen flashes
 export class Hud {
@@ -147,7 +147,8 @@ export class Hud {
         this.charge.classList.toggle('hidden', progress === null);
         if (progress !== null) {
             this.chargeFill.style.width = `${Math.round(progress * 100)}%`;
-            this.chargeFill.classList.toggle('full', progress >= 1);
+            // Gold once a head hit would be a one-shot headshot
+            this.chargeFill.classList.toggle('full', progress >= BOW.headshotPower);
         }
     }
 
@@ -155,8 +156,9 @@ export class Hud {
         this.protection.classList.toggle('hidden', !on);
     }
 
-    hit() {
-        flash(this.hitmarker, 'show', 150);
+    hit(head = false) {
+        this.hitmarker.classList.toggle('head', head);
+        flash(this.hitmarker, 'show', head ? 300 : 150);
     }
 
     flash(kind) {

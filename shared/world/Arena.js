@@ -1,24 +1,86 @@
 import { ARENA, BLOCK } from '../constants.js';
+import { ARENA_LAYOUT, BLOCK_KIND } from './layout.js';
 
-export const TILE = Object.freeze({ SOLID: 0, CRACKING: 1, BROKEN: 2 });
+export { BLOCK_KIND };
+export const BLOCK_STATE = Object.freeze({ SOLID: 0, CRACKING: 1, BROKEN: 2 });
 
-// A single-layer floor of blocks. Tile (ix, iz) covers world x in [ix + min, ix + min + 1),
-// z likewise, and y in [-1, 0]; players stand at y = 0.
+const EPS = 1e-6;
+
+// Voxel arena. Cell (ix, iy, iz) covers world x in [ix + min, ix + min + 1), z likewise, and
+// y in [iy - 1, iy): layer 0 is the floor, so players standing on it have their feet at y = 0,
+// and standing on top of block layer iy puts the feet at y = iy.
+// Any block can crack, break and later regrow; the layout itself never changes.
 export class Arena {
-    constructor(size = ARENA.size) {
+    constructor({ size = ARENA.size, height = ARENA.height, layout = ARENA_LAYOUT } = {}) {
         this.size = size;
+        this.height = height;
         this.min = -size / 2;
-        this.tiles = new Uint8Array(size * size);
-        this.timers = new Map();     // tile index -> { at, next } pending state change
-        this.lastBreak = new Map();  // tile index -> { by, time } for fall kill credit
+        this.kinds = new Uint8Array(size * size * height);
+        this.states = new Uint8Array(size * size * height);
+        this.timers = new Map();     // voxel index -> { at, next }
+        this.lastBreak = new Map();  // voxel index -> { by, time } for fall kill credit
+
+        for (const box of layout) {
+            for (let iy = box.y0; iy <= box.y1; iy++) {
+                for (let iz = box.z0; iz <= box.z1; iz++) {
+                    for (let ix = box.x0; ix <= box.x1; ix++) {
+                        if (this.inBounds(ix, iy, iz)) this.kinds[this.index(ix, iy, iz)] = box.kind;
+                    }
+                }
+            }
+        }
+        this.reachable = this.computeReachable();
     }
 
-    index(ix, iz) {
-        return iz * this.size + ix;
+    // Columns a player can get onto from the floor (walking, jumping up 1, dropping down),
+    // e.g. tower tops via their steps but not the tops of 2-high walls
+    computeReachable() {
+        const reachable = new Uint8Array(this.size * this.size);
+        const queue = [];
+        for (let iz = 0; iz < this.size; iz++) {
+            for (let ix = 0; ix < this.size; ix++) {
+                if (this.surfaceHeight(ix, iz) === 0) {
+                    reachable[iz * this.size + ix] = 1;
+                    queue.push([ix, iz]);
+                }
+            }
+        }
+        while (queue.length) {
+            const [ix, iz] = queue.pop();
+            const h = this.surfaceHeight(ix, iz);
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = ix + dx;
+                const nz = iz + dz;
+                if (nx < 0 || nz < 0 || nx >= this.size || nz >= this.size || reachable[nz * this.size + nx]) continue;
+                const nh = this.surfaceHeight(nx, nz);
+                if (nh !== null && nh - h <= 1) {
+                    reachable[nz * this.size + nx] = 1;
+                    queue.push([nx, nz]);
+                }
+            }
+        }
+        return reachable;
     }
 
-    inBounds(ix, iz) {
-        return ix >= 0 && iz >= 0 && ix < this.size && iz < this.size;
+    // ---- coordinates --------------------------------------------------------------------
+
+    index(ix, iy, iz) {
+        return (iy * this.size + iz) * this.size + ix;
+    }
+
+    coords(i) {
+        const ix = i % this.size;
+        const iz = Math.floor(i / this.size) % this.size;
+        const iy = Math.floor(i / (this.size * this.size));
+        return { ix, iy, iz };
+    }
+
+    inBounds(ix, iy, iz) {
+        return ix >= 0 && iz >= 0 && iy >= 0 && ix < this.size && iz < this.size && iy < this.height;
+    }
+
+    cellAt(x, y, z) {
+        return { ix: Math.floor(x - this.min), iy: Math.floor(y) + 1, iz: Math.floor(z - this.min) };
     }
 
     tileAt(x, z) {
@@ -29,130 +91,196 @@ export class Arena {
         return { x: ix + this.min + 0.5, z: iz + this.min + 0.5 };
     }
 
-    getTile(ix, iz) {
-        return this.inBounds(ix, iz) ? this.tiles[this.index(ix, iz)] : TILE.BROKEN;
+    blockCenter(ix, iy, iz) {
+        return { x: ix + this.min + 0.5, y: iy - 0.5, z: iz + this.min + 0.5 };
+    }
+
+    // ---- block queries -------------------------------------------------------------------
+
+    kindAt(ix, iy, iz) {
+        return this.inBounds(ix, iy, iz) ? this.kinds[this.index(ix, iy, iz)] : BLOCK_KIND.AIR;
+    }
+
+    stateAt(ix, iy, iz) {
+        return this.inBounds(ix, iy, iz) ? this.states[this.index(ix, iy, iz)] : BLOCK_STATE.BROKEN;
     }
 
     // Cracking blocks still hold you up until they break
-    isSolidTile(ix, iz) {
-        return this.getTile(ix, iz) !== TILE.BROKEN;
-    }
-
-    isSolidAt(x, z) {
-        const { ix, iz } = this.tileAt(x, z);
-        return this.isSolidTile(ix, iz);
+    isSolid(ix, iy, iz) {
+        if (!this.inBounds(ix, iy, iz)) return false;
+        const i = this.index(ix, iy, iz);
+        return this.kinds[i] !== BLOCK_KIND.AIR && this.states[i] !== BLOCK_STATE.BROKEN;
     }
 
     // Solid and not about to break
-    isSafeTile(ix, iz) {
-        return this.getTile(ix, iz) === TILE.SOLID;
+    isStable(ix, iy, iz) {
+        return this.isSolid(ix, iy, iz) && this.stateAt(ix, iy, iz) === BLOCK_STATE.SOLID;
     }
 
-    // Standing support for a body of the given radius (any corner over a block holds you)
-    hasSupport(x, z, radius) {
-        return this.isSolidAt(x - radius, z - radius) || this.isSolidAt(x + radius, z - radius) ||
-            this.isSolidAt(x - radius, z + radius) || this.isSolidAt(x + radius, z + radius);
+    isSolidAt(x, y, z) {
+        const { ix, iy, iz } = this.cellAt(x, y, z);
+        return this.isSolid(ix, iy, iz);
     }
 
-    // Does a body's footprint overlap any block column (used to stop walking into hole walls)
-    overlapsBlock(x, z, radius) {
-        const a = this.tileAt(x - radius, z - radius);
-        const b = this.tileAt(x + radius, z + radius);
-        for (let ix = a.ix; ix <= b.ix; ix++) {
-            for (let iz = a.iz; iz <= b.iz; iz++) {
-                if (this.isSolidTile(ix, iz)) return true;
+    // Does an axis-aligned box overlap any solid block (max edges exclusive)
+    boxCollides(minX, minY, minZ, maxX, maxY, maxZ) {
+        const x0 = Math.floor(minX - this.min);
+        const x1 = Math.floor(maxX - this.min - EPS);
+        const y0 = Math.floor(minY) + 1;
+        const y1 = Math.floor(maxY - EPS) + 1;
+        const z0 = Math.floor(minZ - this.min);
+        const z1 = Math.floor(maxZ - this.min - EPS);
+        for (let iy = y0; iy <= y1; iy++) {
+            for (let iz = z0; iz <= z1; iz++) {
+                for (let ix = x0; ix <= x1; ix++) {
+                    if (this.isSolid(ix, iy, iz)) return true;
+                }
             }
         }
         return false;
     }
 
-    startBreak(ix, iz, by, now) {
-        if (this.getTile(ix, iz) !== TILE.SOLID) return false;
-        const i = this.index(ix, iz);
-        this.tiles[i] = TILE.CRACKING;
-        this.timers.set(i, { at: now + BLOCK.breakDelay, next: TILE.BROKEN });
+    // Feet height of the walkable surface of a column (top solid block with 2 free blocks above), or null
+    surfaceHeight(ix, iz) {
+        for (let iy = this.height - 1; iy >= 0; iy--) {
+            if (!this.isSolid(ix, iy, iz)) continue;
+            if (this.isSolid(ix, iy + 1, iz) || this.isSolid(ix, iy + 2, iz)) return null;
+            return iy;
+        }
+        return null;
+    }
+
+    // The block a body of the given radius is standing on (centre first, then its corners)
+    supportBlock(x, y, z, radius) {
+        const iy = Math.floor(y - 0.05) + 1;
+        for (const [dx, dz] of [[0, 0], [-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+            const { ix, iz } = this.tileAt(x + dx, z + dz);
+            if (this.isSolid(ix, iy, iz)) return { ix, iy, iz };
+        }
+        return null;
+    }
+
+    // ---- breaking ---------------------------------------------------------------------------
+
+    startBreak(ix, iy, iz, by, now) {
+        if (!this.isStable(ix, iy, iz)) return false;
+        const i = this.index(ix, iy, iz);
+        this.states[i] = BLOCK_STATE.CRACKING;
+        this.timers.set(i, { at: now + BLOCK.breakDelay, next: BLOCK_STATE.BROKEN });
         this.lastBreak.set(i, { by, time: now });
         return true;
     }
 
-    // Advance timers; returns [{ type: 'broken' | 'restored', ix, iz }]
-    update(now) {
+    // Advance timers. isOccupied(ix, iy, iz) postpones regrowing a block someone is standing in.
+    // Returns [{ type: 'broken' | 'restored', ix, iy, iz }]
+    update(now, isOccupied = () => false) {
         const events = [];
         for (const [i, timer] of this.timers) {
             if (now < timer.at) continue;
-            const ix = i % this.size;
-            const iz = Math.floor(i / this.size);
-            if (timer.next === TILE.BROKEN) {
-                this.tiles[i] = TILE.BROKEN;
-                this.timers.set(i, { at: now + BLOCK.regrowDelay, next: TILE.SOLID });
-                events.push({ type: 'broken', ix, iz });
+            const { ix, iy, iz } = this.coords(i);
+            if (timer.next === BLOCK_STATE.BROKEN) {
+                this.states[i] = BLOCK_STATE.BROKEN;
+                this.timers.set(i, { at: now + BLOCK.regrowDelay, next: BLOCK_STATE.SOLID });
+                events.push({ type: 'broken', ix, iy, iz });
+            } else if (isOccupied(ix, iy, iz)) {
+                timer.at = now + 1;
             } else {
-                this.tiles[i] = TILE.SOLID;
+                this.states[i] = BLOCK_STATE.SOLID;
                 this.timers.delete(i);
-                events.push({ type: 'restored', ix, iz });
+                events.push({ type: 'restored', ix, iy, iz });
             }
         }
         return events;
     }
 
-    breakerOf(ix, iz, now, window) {
-        const record = this.lastBreak.get(this.index(ix, iz));
+    breakerOf(block, now, window) {
+        if (!block) return null;
+        const record = this.lastBreak.get(this.index(block.ix, block.iy, block.iz));
         return record && now - record.time <= window ? record.by : null;
     }
 
-    // First block hit by a ray within maxDist: { ix, iz, distance, point } or null
+    // ---- raycast ----------------------------------------------------------------------------
+
+    // First solid block along a ray (voxel DDA): { ix, iy, iz, distance, point } or null
     raycast(origin, dir, maxDist) {
-        const step = 0.05;
-        for (let t = 0; t <= maxDist; t += step) {
-            const y = origin.y + dir.y * t;
-            if (y > 0 || y < -1) continue;
-            const x = origin.x + dir.x * t;
-            const z = origin.z + dir.z * t;
-            const { ix, iz } = this.tileAt(x, z);
-            if (this.isSolidTile(ix, iz)) return { ix, iz, distance: t, point: { x, y, z } };
+        const gx = origin.x - this.min;
+        const gy = origin.y + 1;
+        const gz = origin.z - this.min;
+        let ix = Math.floor(gx);
+        let iy = Math.floor(gy);
+        let iz = Math.floor(gz);
+        const step = [Math.sign(dir.x), Math.sign(dir.y), Math.sign(dir.z)];
+        const delta = [dir.x, dir.y, dir.z].map(d => (d === 0 ? Infinity : Math.abs(1 / d)));
+        const next = [
+            dir.x > 0 ? (ix + 1 - gx) / dir.x : dir.x < 0 ? (gx - ix) / -dir.x : Infinity,
+            dir.y > 0 ? (iy + 1 - gy) / dir.y : dir.y < 0 ? (gy - iy) / -dir.y : Infinity,
+            dir.z > 0 ? (iz + 1 - gz) / dir.z : dir.z < 0 ? (gz - iz) / -dir.z : Infinity
+        ];
+        let t = 0;
+        for (let n = 0; n < 256 && t <= maxDist; n++) {
+            if (this.isSolid(ix, iy, iz)) {
+                return {
+                    ix, iy, iz,
+                    distance: t,
+                    point: { x: origin.x + dir.x * t, y: origin.y + dir.y * t, z: origin.z + dir.z * t }
+                };
+            }
+            const axis = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
+            t = next[axis];
+            next[axis] += delta[axis];
+            if (axis === 0) ix += step[0];
+            else if (axis === 1) iy += step[1];
+            else iz += step[2];
         }
         return null;
     }
 
-    // Random tile that is safe to stand on, preferring tiles far from the given points
-    findSpawnTile(rng, avoid = [], attempts = 24) {
+    // ---- spawning -------------------------------------------------------------------------
+
+    // Random stable surface far from the given points: { ix, iz, y } or null
+    findSpawn(rng, avoid = [], attempts = 30) {
         let best = null;
         let bestScore = -Infinity;
         for (let n = 0; n < attempts; n++) {
-            const ix = 2 + Math.floor(rng() * (this.size - 4));
-            const iz = 2 + Math.floor(rng() * (this.size - 4));
-            if (!this.isSafeTile(ix, iz)) continue;
+            const ix = 1 + Math.floor(rng() * (this.size - 2));
+            const iz = 1 + Math.floor(rng() * (this.size - 2));
+            const y = this.surfaceHeight(ix, iz);
+            if (y === null || !this.isStable(ix, y, iz) || !this.reachable[iz * this.size + ix]) continue;
             const c = this.tileCenter(ix, iz);
             const nearest = avoid.reduce((m, p) => Math.min(m, Math.hypot(p.x - c.x, p.z - c.z)), 99);
             if (nearest > bestScore) {
                 bestScore = nearest;
-                best = { ix, iz };
+                best = { ix, iz, y };
             }
         }
         if (best) return best;
-        // Fallback: scan for any safe tile
-        for (let i = 0; i < this.tiles.length; i++) {
-            if (this.tiles[i] === TILE.SOLID) return { ix: i % this.size, iz: Math.floor(i / this.size) };
+        for (let iz = 0; iz < this.size; iz++) {
+            for (let ix = 0; ix < this.size; ix++) {
+                const y = this.surfaceHeight(ix, iz);
+                if (y !== null && this.isStable(ix, y, iz)) return { ix, iz, y };
+            }
         }
         return null;
     }
 
+    // ---- sync -------------------------------------------------------------------------------
+
     toJSON() {
         const changed = [];
-        for (let i = 0; i < this.tiles.length; i++) {
-            if (this.tiles[i] !== TILE.SOLID) changed.push([i, this.tiles[i]]);
+        for (let i = 0; i < this.states.length; i++) {
+            if (this.states[i] !== BLOCK_STATE.SOLID) changed.push([i, this.states[i]]);
         }
-        return { size: this.size, changed };
+        return { size: this.size, height: this.height, changed };
     }
 
     static fromJSON(data) {
-        const arena = new Arena(data.size);
-        for (const [i, state] of data.changed) arena.tiles[i] = state;
+        const arena = new Arena({ size: data.size, height: data.height });
+        for (const [i, state] of data.changed) arena.states[i] = state;
         return arena;
     }
 
     // Client-side mirror updates (the server owns the timers)
-    setTile(ix, iz, state) {
-        if (this.inBounds(ix, iz)) this.tiles[this.index(ix, iz)] = state;
+    setState(ix, iy, iz, state) {
+        if (this.inBounds(ix, iy, iz)) this.states[this.index(ix, iy, iz)] = state;
     }
 }

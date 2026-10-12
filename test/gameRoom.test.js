@@ -116,7 +116,8 @@ test('profile changes are sanitised and broadcast', () => {
 
 test('physics: walk speed, jump height, falling through a hole', () => {
     const arena = new Arena();
-    const body = { x: 0.5, y: 0, z: 0.5, vx: 0, vy: 0, vz: 0, onGround: true };
+    const start = arena.tileCenter(10, 2);
+    const body = { x: start.x, y: 0, z: start.z, vx: 0, vy: 0, vz: 0, onGround: true };
     for (let i = 0; i < 60; i++) stepMovement(body, { moveX: 1, moveZ: 0, jump: false }, arena, 1 / 60);
     assert.ok(body.vx > PLAYER.walkSpeed * 0.95 && body.vx <= PLAYER.walkSpeed + 1e-9);
     assert.equal(body.y, 0);
@@ -132,7 +133,7 @@ test('physics: walk speed, jump height, falling through a hole', () => {
 
     // Remove the tile under the body: it falls
     const { ix, iz } = arena.tileAt(body.x, body.z);
-    arena.setTile(ix, iz, 2);
+    arena.setState(ix, 0, iz, 2);
     Object.assign(body, { x: arena.tileCenter(ix, iz).x, z: arena.tileCenter(ix, iz).z });
     for (let i = 0; i < 30; i++) stepMovement(body, { moveX: 0, moveZ: 0, jump: false }, arena, 1 / 60);
     assert.ok(body.y < -1);
@@ -140,8 +141,9 @@ test('physics: walk speed, jump height, falling through a hole', () => {
 
 test('arena raycast finds the tile under the crosshair', () => {
     const arena = new Arena();
-    const hit = arena.raycast({ x: 0.5, y: 1.6, z: 0.5 }, { x: 0, y: -0.6247, z: -0.7809 }, 4);
+    const c = arena.tileCenter(10, 10);
+    const hit = arena.raycast({ x: c.x, y: 1.6, z: c.z }, { x: 0, y: -0.6247, z: -0.7809 }, 4);
     assert.ok(hit);
-    assert.equal(arena.tileCenter(hit.ix, hit.iz).z, -1.5);
-    assert.equal(arena.raycast({ x: 0, y: 1.6, z: 0 }, { x: 0, y: 1, z: 0 }, 4), null);
+    assert.deepEqual([hit.ix, hit.iy, hit.iz], [10, 0, 8]);
+    assert.equal(arena.raycast({ x: c.x, y: 1.6, z: c.z }, { x: 0, y: 1, z: 0 }, 4), null);
 });

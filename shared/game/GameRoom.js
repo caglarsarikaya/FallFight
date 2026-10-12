@@ -173,7 +173,8 @@ export class GameRoom {
         return best;
     }
 
-    damage(victim, amount, attacker, weapon, knockback) {
+    // info: { zone, headshot } for projectile hits
+    damage(victim, amount, attacker, weapon, knockback, info = {}) {
         if (!victim.alive || victim.isProtected(this.time)) return false;
         victim.health = Math.max(0, victim.health - amount);
         victim.lastDamage = { by: attacker?.id ?? null, weapon, time: this.time };
@@ -199,9 +200,11 @@ export class GameRoom {
             amount,
             health: victim.health,
             weapon,
+            zone: info.zone ?? null,
+            headshot: !!info.headshot,
             knockback: kb
         });
-        if (victim.health <= 0) this.kill(victim, attacker, weapon);
+        if (victim.health <= 0) this.kill(victim, attacker, info.headshot ? 'headshot' : weapon);
         return true;
     }
 
@@ -210,13 +213,13 @@ export class GameRoom {
         this.emit(null, S2C.HEAL, { id: player.id, amount, health: player.health });
     }
 
-    breakBlock(ix, iz, player) {
-        if (this.arena.startBreak(ix, iz, player.id, this.time)) {
-            this.emit(null, S2C.BLOCK_CRACKING, { ix, iz, by: player.id });
+    breakBlock(ix, iy, iz, player) {
+        if (this.arena.startBreak(ix, iy, iz, player.id, this.time)) {
+            this.emit(null, S2C.BLOCK_CRACKING, { ix, iy, iz, by: player.id });
         }
     }
 
-    spawnProjectile(owner, item, origin, velocity) {
+    spawnProjectile(owner, item, origin, velocity, extra = {}) {
         const speed = Math.hypot(velocity.x, velocity.y, velocity.z) || 1;
         const projectile = new Projectile({
             id: this.nextProjectileId++,
@@ -229,7 +232,8 @@ export class GameRoom {
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
-            born: this.time
+            born: this.time,
+            ...extra
         });
         this.projectiles.set(projectile.id, projectile);
         this.emit(null, S2C.PROJECTILE, projectile.toJSON());
@@ -242,15 +246,17 @@ export class GameRoom {
     // ---- life and death ---------------------------------------------------------------
 
     afterMove(player) {
-        if (player.onGround) player.lastGroundTile = this.arena.tileAt(player.x, player.z);
+        if (player.onGround) {
+            const block = this.arena.supportBlock(player.x, player.y, player.z, PLAYER.radius);
+            if (block) player.lastGroundBlock = block;
+        }
         if (player.alive && player.y < ARENA.voidY) this.fall(player);
     }
 
     fall(victim) {
         const recent = victim.lastDamage && this.time - victim.lastDamage.time <= KILL_CREDIT_WINDOW
             ? victim.lastDamage.by : null;
-        const tile = victim.lastGroundTile;
-        const breaker = tile ? this.arena.breakerOf(tile.ix, tile.iz, this.time, KILL_CREDIT_WINDOW) : null;
+        const breaker = this.arena.breakerOf(victim.lastGroundBlock, this.time, KILL_CREDIT_WINDOW);
         const creditId = recent || (breaker !== victim.id ? breaker : null);
         this.kill(victim, this.players.get(creditId) || null, 'fall');
     }
@@ -274,13 +280,13 @@ export class GameRoom {
 
     placeAtSpawn(player) {
         const others = [...this.players.values()].filter(p => p.alive && p !== player);
-        const tile = this.arena.findSpawnTile(this.rng, others);
-        const center = tile ? this.arena.tileCenter(tile.ix, tile.iz) : { x: 0, z: 0 };
-        Object.assign(player, { x: center.x, y: 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true });
+        const spot = this.arena.findSpawn(this.rng, others);
+        const center = spot ? this.arena.tileCenter(spot.ix, spot.iz) : { x: 0, z: 0 };
+        Object.assign(player, { x: center.x, y: spot ? spot.y : 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true });
         // Face the middle of the arena
         player.yaw = Math.atan2(player.x, player.z);
         player.pitch = 0;
-        player.lastGroundTile = tile;
+        player.lastGroundBlock = spot ? { ix: spot.ix, iy: spot.y, iz: spot.iz } : null;
         player.protectedUntil = this.time + PLAYER.spawnProtection;
     }
 
@@ -295,13 +301,26 @@ export class GameRoom {
         this.notifyInventory(player);
     }
 
+    // Is any living player's body inside this block (so it must not regrow yet)
+    isBlockOccupied(ix, iy, iz) {
+        const c = this.arena.blockCenter(ix, iy, iz);
+        const r = PLAYER.radius;
+        for (const p of this.players.values()) {
+            if (!p.alive) continue;
+            if (p.x + r > c.x - 0.5 && p.x - r < c.x + 0.5 &&
+                p.z + r > c.z - 0.5 && p.z - r < c.z + 0.5 &&
+                p.y + PLAYER.height > c.y - 0.5 && p.y < c.y + 0.5) return true;
+        }
+        return false;
+    }
+
     // ---- simulation -------------------------------------------------------------------
 
     tick(dt) {
         this.time += dt;
 
-        for (const event of this.arena.update(this.time)) {
-            this.emit(null, event.type === 'broken' ? S2C.BLOCK_BROKEN : S2C.BLOCK_RESTORED, { ix: event.ix, iz: event.iz });
+        for (const event of this.arena.update(this.time, (ix, iy, iz) => this.isBlockOccupied(ix, iy, iz))) {
+            this.emit(null, event.type === 'broken' ? S2C.BLOCK_BROKEN : S2C.BLOCK_RESTORED, { ix: event.ix, iy: event.iy, iz: event.iz });
         }
         for (const pickup of this.pickups.removeUnsupported(this.arena)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
@@ -322,18 +341,21 @@ export class GameRoom {
             if (hit.type === 'player') {
                 const weapon = getItem(projectile.itemId);
                 const owner = this.players.get(projectile.ownerId) || null;
-                this.damage(hit.player, weapon.damage, owner, weapon.id,
-                    { x: projectile.vx, z: projectile.vz, strength: weapon.knockback });
+                const { amount, headshot } = weapon.damageFor({ zone: hit.zone, power: projectile.power });
+                this.damage(hit.player, amount, owner, weapon.id,
+                    { x: projectile.vx, z: projectile.vz, strength: weapon.knockback * (0.5 + projectile.power / 2) },
+                    { zone: hit.zone, headshot });
             }
             this.emit(null, S2C.PROJECTILE_END, {
                 id: projectile.id,
                 x: projectile.x, y: projectile.y, z: projectile.z,
                 hitId: hit.type === 'player' ? hit.player.id : null,
+                zone: hit.zone ?? null,
                 stuck: hit.type === 'block'
             });
         }
 
-        for (const pickup of this.pickups.update(dt, this.arena)) {
+        for (const pickup of this.pickups.update(dt, this.arena, this.time)) {
             this.emit(null, S2C.PICKUP_SPAWNED, pickup);
         }
         for (const { pickup, player } of this.pickups.collect(this.players.values())) {

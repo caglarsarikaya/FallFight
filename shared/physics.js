@@ -1,8 +1,17 @@
 import { PLAYER } from './constants.js';
 
+const SKIN = 1e-4;
+
+function collides(arena, x, y, z) {
+    const r = PLAYER.radius;
+    return arena.boxCollides(x - r, y, z - r, x + r, y + PLAYER.height, z + r);
+}
+
 // One movement step for a player body, shared by client prediction and server-side bots.
-// body:  { x, y, z, vx, vy, vz, onGround } (mutated); y is the feet height, 0 = standing on the floor
+// body:  { x, y, z, vx, vy, vz, onGround } (mutated); y is the feet height
 // input: { moveX, moveZ } world-space wish direction (length <= 1), { jump } boolean
+// Collision is box-vs-voxel, one axis at a time; there is no auto step-up, so 1-high blocks
+// need a jump and 2-high blocks are walls.
 export function stepMovement(body, input, arena, dt) {
     const accel = body.onGround ? PLAYER.groundAccel : PLAYER.airAccel;
     const blend = 1 - Math.exp(-accel * dt);
@@ -15,25 +24,48 @@ export function stepMovement(body, input, arena, dt) {
     }
     body.vy -= PLAYER.gravity * dt;
 
-    // Once inside a hole, the surrounding blocks act as walls
-    const inHole = body.y < -0.02;
-    const nx = body.x + body.vx * dt;
-    if (inHole && arena.overlapsBlock(nx, body.z, PLAYER.radius)) body.vx = 0;
-    else body.x = nx;
-    const nz = body.z + body.vz * dt;
-    if (inHole && arena.overlapsBlock(body.x, nz, PLAYER.radius)) body.vz = 0;
-    else body.z = nz;
+    moveHorizontal(body, arena, 'x', body.vx * dt);
+    moveHorizontal(body, arena, 'z', body.vz * dt);
+    moveVertical(body, arena, body.vy * dt);
+    return body;
+}
 
-    const ny = body.y + body.vy * dt;
-    if (body.vy <= 0 && body.y >= 0 && ny <= 0 && arena.hasSupport(body.x, body.z, PLAYER.radius)) {
-        body.y = 0;
-        body.vy = 0;
+function moveHorizontal(body, arena, axis, delta) {
+    if (delta === 0) return;
+    const velocity = axis === 'x' ? 'vx' : 'vz';
+    const target = body[axis] + delta;
+    const at = v => (axis === 'x' ? collides(arena, v, body.y, body.z) : collides(arena, body.x, body.y, v));
+    if (!at(target)) {
+        body[axis] = target;
+        return;
+    }
+    // Slide up against the face of the blocking cell
+    const r = PLAYER.radius;
+    const face = delta > 0
+        ? Math.floor(target + r - arena.min) + arena.min - r - SKIN
+        : Math.floor(target - r - arena.min) + 1 + arena.min + r + SKIN;
+    if ((delta > 0 ? face > body[axis] : face < body[axis]) && !at(face)) body[axis] = face;
+    body[velocity] = 0;
+}
+
+function moveVertical(body, arena, delta) {
+    const target = body.y + delta;
+    body.onGround = false;
+    if (!collides(arena, body.x, target, body.z)) {
+        body.y = target;
+        return;
+    }
+    if (delta < 0) {
+        // Land on top of the block below
+        const top = Math.floor(target) + 1;
+        if (top <= body.y + SKIN && !collides(arena, body.x, top, body.z)) body.y = top;
         body.onGround = true;
     } else {
-        body.y = ny;
-        body.onGround = false;
+        // Bump the head on the block above
+        const bottom = Math.floor(target + PLAYER.height) - PLAYER.height - SKIN;
+        if (bottom >= body.y && !collides(arena, body.x, bottom, body.z)) body.y = bottom;
     }
-    return body;
+    body.vy = 0;
 }
 
 // Convert WASD-style input and a yaw into a world-space wish direction
