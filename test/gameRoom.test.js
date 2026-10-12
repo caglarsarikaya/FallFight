@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ARENA, PICKUPS, PLAYER } from '../shared/constants.js';
+import { ARENA, LOADOUT, PICKUPS, PLAYER } from '../shared/constants.js';
 import { Arena } from '../shared/world/Arena.js';
 import { stepMovement } from '../shared/physics.js';
 import { createRoom, place, run } from './helpers.js';
@@ -60,7 +60,7 @@ test('respawn after the delay with full health and the default loadout', () => {
     run(room, 0.4);
     assert.equal(a.alive, true);
     assert.equal(a.health, PLAYER.maxHealth);
-    assert.equal(a.inventory.count('arrow'), 5);
+    assert.equal(a.inventory.count('arrow'), LOADOUT.arrow);
     assert.equal(a.inventory.count('health_potion'), 0);
     assert.ok(a.isProtected(room.time), 'spawn protection');
 });
@@ -94,8 +94,8 @@ test('pickups spawn every 15s (arrows) and 60s (potion); first player to touch t
     assert.equal(taken.length, 1);
     const winner = taken[0].by === 'a' ? a : b;
     const loser = winner === a ? b : a;
-    assert.equal(winner.inventory.count('arrow'), 5 + PICKUPS.arrow.amount);
-    assert.equal(loser.inventory.count('arrow'), 5);
+    assert.equal(winner.inventory.count('arrow'), LOADOUT.arrow + PICKUPS.arrow.amount);
+    assert.equal(loser.inventory.count('arrow'), LOADOUT.arrow);
     assert.equal(room.pickups.pickups.size, 0);
 
     for (const p of [a, b]) place(room, p, 0, p === a ? 0 : 1);

@@ -17,10 +17,10 @@ test('item hierarchy', () => {
     assert.throws(() => registerItem(getItem('axe')), /already registered/);
 });
 
-test('default inventory: bow, axe, potion; 5 arrows', () => {
+test('default inventory: bow, axe, potion; 20 arrows', () => {
     const inv = new Inventory();
     assert.deepEqual(inv.hotbar, ['bow', 'axe', 'health_potion']);
-    assert.equal(inv.count('arrow'), 5);
+    assert.equal(inv.count('arrow'), 20);
     assert.equal(inv.count('health_potion'), 0);
     assert.equal(inv.selectedItem.id, 'bow');
     assert.ok(inv.select(1));
@@ -72,11 +72,11 @@ test('bow needs a draw, consumes arrows and deals damage', () => {
     place(room, b, 11, 12);
 
     assert.ok(!room.useItem(a, 0, { x: 0, y: 0, z: -1 }, 0.05), 'too short a draw');
-    assert.equal(a.inventory.count('arrow'), 5);
+    assert.equal(a.inventory.count('arrow'), LOADOUT.arrow);
 
     // Aim at the chest
     assert.ok(room.useItem(a, 0, { x: 0, y: 0.02, z: -1 }, BOW.fullDraw));
-    assert.equal(a.inventory.count('arrow'), 4);
+    assert.equal(a.inventory.count('arrow'), LOADOUT.arrow - 1);
     for (let i = 0; i < 30 && b.health === PLAYER.maxHealth; i++) room.tick(1 / 30);
     const hit = room.eventsOf('damage').at(-1);
     assert.equal(hit.zone, 'body');
@@ -114,5 +114,5 @@ test('health potion heals 20, capped at max, and is consumed', () => {
 });
 
 test('starting loadout matches LOADOUT', () => {
-    assert.equal(LOADOUT.arrow, 5);
+    assert.equal(LOADOUT.arrow, 20);
 });

@@ -137,7 +137,7 @@ export class BotBrain {
             return 45 + (this.player.health < 70 ? 25 : 0) + (inv.count('health_potion') === 0 ? 15 : 0);
         }
         const arrows = inv.count('arrow');
-        return arrows < 3 ? 60 : arrows < 12 ? 30 : 10;
+        return arrows < 5 ? 60 : arrows < 20 ? 35 : 25;
     }
 
     // Race for pickups worth the trip; reconsidered a few times a second

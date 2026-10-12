@@ -59,7 +59,7 @@ export const PROJECTILE = {
 };
 
 export const LOADOUT = {
-    arrow: 5,
+    arrow: 20,
     health_potion: 0
 };
 

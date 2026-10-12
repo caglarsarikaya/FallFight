@@ -30,7 +30,7 @@ Your nickname, character and settings are remembered in the browser.
 | | |
 |---|---|
 | Health | 100 HP. Respawn after 3 s with 2 s of spawn protection. Attacking ends the protection |
-| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows fly with gravity. Start with 5 arrows |
+| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows fly with gravity. Start with 20 arrows |
 | 🎯 Hit zones | Legs 8–24, body 12–35, head 50–80 (scaled by draw). A **full-draw arrow to the head kills in one shot**; two slow head shots kill |
 | 🪓 Axe | 10 damage at close range. Hit any block to crack it: it breaks after 0.4 s and regrows after 20 s |
 | 🧱 Arena | A stone plaza (1 high), cover walls (2 high) and four plank towers (2 high, climb via the step block). Walls stop arrows and axes, and they can be chopped too |
@@ -38,7 +38,7 @@ Your nickname, character and settings are remembered in the browser.
 | Pickups | Every 15 s: +3 arrows. Every 60 s: a health potion. They can appear on platforms too. The first player to walk through one gets it, and the bots race you for them |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
 
-On respawn you get 100 HP, 5 arrows and no potions.
+On respawn you get 100 HP, 20 arrows and no potions.
 
 ## Architecture
 
