@@ -3,7 +3,9 @@ export const CHARACTERS = [
     { id: 'robot', name: 'Robot', tagline: 'Steel plating, laser visor, zero fear.' },
     { id: 'squirrel', name: 'Squirrel', tagline: 'Small, fluffy and very angry.' },
     { id: 'mario', name: 'Mario', tagline: 'Plumber by day, axe-swinger by night.' },
-    { id: 'doctor-octopus', name: 'Dr Octopus', tagline: 'Four mechanical arms, one evil plan.' }
+    { id: 'doctor-octopus', name: 'Dr Octopus', tagline: 'Four mechanical arms, one evil plan.' },
+    { id: 'biologist', name: 'Dr Helix', tagline: 'Molecular biologist. Splices genes and enemies.' },
+    { id: 'programmer', name: 'Byte', tagline: 'Bald, bespectacled, debugs with an axe.' }
 ];
 
 export const DEFAULT_CHARACTER = CHARACTERS[0].id;

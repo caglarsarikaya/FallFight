@@ -73,8 +73,10 @@ test/     node:test unit tests and bot simulations
   first-person animation and hotbar icon. Players carry an `Inventory`: a hotbar with one selected
   item, plus counters for ammo and stacks.
 - **Characters (OOP):** `client/src/characters/CharacterModel.js` builds and animates a blocky rig
-  (walk, chop, bow draw, drink, hurt, death). `RobotModel`, `SquirrelModel`, `MarioModel` and
-  `DrOctopusModel` override the build hooks. Dr Octopus also animates four mechanical tentacles.
+  (walk, chop, bow draw, drink, hurt, death). `RobotModel`, `SquirrelModel`, `MarioModel`,
+  `DrOctopusModel`, `BiologistModel` and `ProgrammerModel` override the build hooks. Dr Octopus also
+  animates four mechanical tentacles; the biologist's ponytail sways and her sample glows; the
+  programmer's glasses glint and the laptop on his back scrolls code.
 
 ### Adding a weapon
 
