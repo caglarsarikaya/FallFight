@@ -151,6 +151,7 @@ export class GameRoom {
             case C2S.FIRE: return this.fire(player, data);
             case C2S.RELOAD: return this.reload(player);
             case C2S.SCOPE: return this.setScope(player, data.level);
+            case C2S.BUY: return this.buy(player, data.item);
             case C2S.PROFILE: return this.onProfile(player, data);
         }
     }
@@ -231,6 +232,14 @@ export class GameRoom {
         }
         if (fired) player.protectedUntil = 0; // attacking ends spawn protection
         return fired;
+    }
+
+    // Team Buy: spend money (the mode checks time, place and price)
+    buy(player, item) {
+        if (!this.mode.buy || typeof item !== 'string') return { ok: false, error: 'unknown' };
+        const result = this.mode.buy(player, item);
+        if (!player.isBot) this.emit(player.id, S2C.BUY_RESULT, { item, ...result });
+        return result;
     }
 
     reload(player) {
@@ -472,7 +481,7 @@ export class GameRoom {
     }
 
     notifyInventory(player) {
-        if (!player.isBot) this.emit(player.id, S2C.INVENTORY, { ...player.inventory.toJSON(), armor: player.armor, helmet: player.helmet });
+        if (!player.isBot) this.emit(player.id, S2C.INVENTORY, { ...player.inventory.toJSON(), armor: player.armor, helmet: player.helmet, money: player.money });
     }
 
     // ---- life and death ---------------------------------------------------------------

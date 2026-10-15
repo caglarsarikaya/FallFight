@@ -77,6 +77,7 @@ export class InputManager {
             if (code.startsWith('Digit')) this.onAction('slot', Number(code.slice(5)) - 1);
             if (code === 'KeyV' || code === 'F5') this.onAction('camera');
             if (code === 'KeyR') this.onAction('reload');
+            if (code === 'KeyB') this.onAction('buy');
             if (code === 'KeyQ') this.onAction('last');
             if (code === 'Tab') this.onAction('scoreboard', true);
             if (code === 'Escape') this.onAction('pause');

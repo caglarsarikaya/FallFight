@@ -24,6 +24,8 @@ import { RespawnOverlay } from './ui/RespawnOverlay.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
+import { BuyMenu } from './ui/BuyMenu.js';
+import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
@@ -78,6 +80,7 @@ export class Game {
         this.scoreboard = new Scoreboard(ui);
         this.modePanel = new ModePanel(this.hud.root);
         this.matchEnd = new MatchEndOverlay(ui);
+        this.buyMenu = new BuyMenu(ui, { sound, onBuy: item => this.connection.send(C2S.BUY, { item }) });
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
             profile,
@@ -233,7 +236,10 @@ export class Game {
         this.input.onAction = (action, value) => {
             if (!this.selfId) return;
             const w = this.weapons;
+            // The buy menu takes the number keys while it's open
+            if (action === 'slot' && this.buyMenu.visible) return this.buyMenu.key(value + 1);
             switch (action) {
+                case 'buy': return this.toggleBuyMenu();
                 case 'slot': return this.local.alive && w.select(value);
                 case 'cycle': return this.local.alive && w.cycle(value);
                 case 'last': return this.local.alive && w.selectLast();
@@ -249,6 +255,25 @@ export class Game {
 
     get canAct() {
         return this.selfId && this.local.alive && this.input.locked && this.weapons.inventory && !this.pauseMenu.visible;
+    }
+
+    get canBuy() {
+        const s = this.modeState;
+        return this.modeId === 'teambuy' && this.local.alive && s && (s.phase === 'freeze' || (s.phase === 'live' && s.buyLeft > 0));
+    }
+
+    get frozen() {
+        return this.modeId === 'teambuy' && this.modeState?.phase === 'freeze';
+    }
+
+    toggleBuyMenu() {
+        if (this.buyMenu.visible) return this.buyMenu.hide();
+        if (this.modeId !== 'teambuy') return;
+        if (!this.canBuy) {
+            this.hud.toast('Buy time is over');
+            return;
+        }
+        this.buyMenu.show(this.self?.money ?? 0, this.self?.team);
     }
 
     useConsumable() {
@@ -506,6 +531,25 @@ export class Game {
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
             this.hud.toast('New match!');
         });
+        on(S2C.ROUND_START, ({ round }) => {
+            this.hud.showBanner(`Round ${round} · Buy now (B)`, 'round', 2500);
+            this.sound.play('roundStart');
+        });
+        on(S2C.ROUND_END, ({ winner }) => {
+            const text = winner ? `${TEAM_BUY.teamNames[winner]} Win!` : 'Round Draw';
+            this.hud.showBanner(text, winner ? `team-${winner}` : '', 4000);
+            this.sound.play(winner && winner === this.self?.team ? 'win' : 'lose');
+            this.buyMenu.hide();
+        });
+        on(S2C.BUY_RESULT, ({ ok, item, error }) => {
+            if (ok) {
+                this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item === 'ammo' ? 'ammoPickup' : item === 'health_potion' ? 'pickup' : 'deploy');
+                return;
+            }
+            this.sound.play('empty');
+            this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? 'You already have that'
+                : error === 'not-now' ? 'Buy in your base during buy time' : 'Can\'t buy that');
+        });
         on(S2C.LEVEL_UP, ({ id, level, weapon }) => {
             if (id !== this.selfId) return;
             this.sound.play('levelUp');
@@ -606,16 +650,30 @@ export class Game {
             for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
             if (p.id === this.selfId) {
                 this.hud.setHealth(p.health);
+                if (p.money !== undefined) {
+                    this.hud.setMoney(p.money);
+                    this.buyMenu.setMoney(p.money);
+                }
                 this.armor = p.armor;
                 this.hud.setArmor(p.armor, this.helmet);
             } else {
                 info.avatar.pushSnapshot(p);
+                if (p.team !== undefined) {
+                    info.avatar.setTeam(p.team);
+                    info.avatar.setNameVisible(!p.team || p.team === this.self?.team);
+                }
             }
         }
+        if (this.buyMenu.visible && !this.canBuy) this.buyMenu.hide();
         this.modePanel.render(this.modeState, this.players, this.selfId);
     }
 
     onInventory(data) {
+        if (data.money !== undefined) {
+            this.hud.setMoney(data.money);
+            this.buyMenu.setMoney(data.money);
+            if (this.self) this.self.money = data.money;
+        }
         this.helmet = !!data.helmet;
         this.armor = data.armor ?? this.armor;
         this.hud.setArmor(this.armor, this.helmet);
@@ -750,12 +808,13 @@ export class Game {
             this.weapons.setTrigger(false);
             this.weapons.setScope(0);
             this.deathCam = { x: this.local.body.x, y: Math.max(this.local.body.y, -2), z: this.local.body.z, yaw: this.local.yaw, t: 0 };
+            this.buyMenu.hide();
             const gun = weaponSpec(cause)?.name;
             const reason = killer
                 ? (cause === 'fall' ? `${killer.name} made you fall`
                     : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
                 : (cause === 'fall' ? 'You fell into the void' : 'You died');
-            this.respawnOverlay.show(reason, PLAYER.respawnDelay);
+            this.respawnOverlay.show(reason, this.modeId === 'teambuy' ? null : PLAYER.respawnDelay);
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play('kill');
@@ -811,10 +870,12 @@ export class Game {
         const { dx, dy } = this.input.consumeMouse();
         // Scoped: slower mouse so aiming stays precise
         if (active) this.local.look(dx, dy, this.profile.sensitivity / this.zoom);
-        const move = active ? this.input.movement : { forward: 0, strafe: 0 };
+        // Freeze time: look around, buy, but don't move
+        const canMove = active && !this.frozen;
+        const move = canMove ? this.input.movement : { forward: 0, strafe: 0 };
         this.local.update(dt, {
             ...move,
-            jump: active && this.input.jump,
+            jump: canMove && this.input.jump,
             crouch: active && this.input.crouch,
             walk: active && this.input.walk
         }, this.arena, this.weapons.speedMul);

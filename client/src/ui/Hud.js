@@ -32,7 +32,10 @@ export class Hud {
         this.ammoReserve = el('span.reserve');
         this.weaponName = el('div.weapon-name');
         this.ammo = el('div.cs-stat.ammo', {}, [this.ammoMag, el('span.sep', { text: '|' }), this.ammoReserve]);
-        this.ammoBox = el('div.ammo-box', {}, [this.weaponName, this.ammo]);
+        this.money = el('div.money.hidden');
+        this.moneyDelta = el('div.money-delta');
+        this.ammoBox = el('div.ammo-box', {}, [this.moneyDelta, this.money, this.weaponName, this.ammo]);
+        this.banner = el('div.round-banner.hidden');
 
         this.slotList = el('div.slots');
         this.killfeed = el('div.killfeed');
@@ -60,7 +63,7 @@ export class Hud {
             this.underwater, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             ...Object.values(this.vignettes),
             el('div.hud-left', {}, [this.health, this.armor]),
-            this.ammoBox, this.slotList,
+            this.ammoBox, this.slotList, this.banner,
             this.netStats, this.killfeed, this.toasts, this.modeBadge, this.helpHint
         ]);
         root.append(this.root);
@@ -180,6 +183,29 @@ export class Hud {
         if (g === this.crosshairGap) return;
         this.crosshairGap = g;
         this.crosshair.style.setProperty('--gap', `${g}px`);
+    }
+
+    // Team Buy money, with a +$300 / -$2500 flash on changes
+    setMoney(money) {
+        if (money === undefined || money === null) return;
+        this.money.classList.remove('hidden');
+        if (money === this.moneyShown) return;
+        if (this.moneyShown !== undefined) {
+            const delta = money - this.moneyShown;
+            this.moneyDelta.textContent = `${delta > 0 ? '+' : '-'}$${Math.abs(delta)}`;
+            this.moneyDelta.classList.toggle('spent', delta < 0);
+            flash(this.moneyDelta, 'show', 1500);
+        }
+        this.moneyShown = money;
+        this.money.textContent = `$ ${money}`;
+    }
+
+    // Big centre message: "Counter-Terrorists Win!"
+    showBanner(text, kind = '', ms = 3000) {
+        this.banner.textContent = text;
+        this.banner.className = `round-banner ${kind}`;
+        clearTimeout(this.bannerTimer);
+        this.bannerTimer = setTimeout(() => this.banner.classList.add('hidden'), ms);
     }
 
     setUnderwater(on) {

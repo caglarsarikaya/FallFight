@@ -9,11 +9,16 @@ export class RespawnOverlay {
         this.timer = null;
     }
 
+    // seconds: countdown to respawn, or null when waiting for the next round
     show(reason, seconds) {
         this.reason.textContent = reason;
         this.root.classList.remove('hidden');
-        const until = performance.now() + seconds * 1000;
         clearInterval(this.timer);
+        if (seconds === null) {
+            this.countdown.textContent = 'Waiting for the next round...';
+            return;
+        }
+        const until = performance.now() + seconds * 1000;
         const tick = () => {
             const left = Math.max(0, Math.ceil((until - performance.now()) / 1000));
             this.countdown.textContent = `Respawning in ${left}...`;

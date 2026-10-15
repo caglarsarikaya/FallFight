@@ -88,6 +88,10 @@ const PATCHES = {
         s.tone({ out, type: 'sine', freq: 6860, duration: 2.2, gain: 0.05 });
     },
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 }),
+    roundStart: (s, out) => {
+        s.tone({ out, type: 'square', freq: 660, duration: 0.08, gain: 0.07 });
+        s.tone({ out, type: 'square', freq: 990, duration: 0.14, delay: 0.1, gain: 0.07 });
+    },
     levelUp: (s, out) => {
         [523, 659, 784, 1046].forEach((f, i) => s.tone({ out, type: 'square', freq: f, duration: 0.09, delay: i * 0.07, gain: 0.08 }));
     },

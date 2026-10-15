@@ -43,5 +43,8 @@ export const S2C = {
     MATCH_END: 'matchEnd',             // { winnerId, winnerTeam, title, standings, restartIn }
     MATCH_START: 'matchStart',         // {} a new match began (scores reset)
     LEVEL_UP: 'levelUp',               // { id, level, weapon } Gun Game
+    ROUND_START: 'roundStart',         // { round, freezeTime } Team Buy
+    ROUND_END: 'roundEnd',             // { winner: 't' | 'ct' | null, reason, score, round }
+    BUY_RESULT: 'buyResult',           // { ok, item, error? } to the buyer
     SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

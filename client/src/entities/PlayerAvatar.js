@@ -24,6 +24,8 @@ export class PlayerAvatar {
         this.health = info.health ?? PLAYER.maxHealth;
         this.name = info.name;
         this.heldItemId = null;
+        this.team = info.team ?? null;
+        this.nameVisible = true;
         this.lastPosition = new THREE.Vector3(info.x || 0, info.y || 0, info.z || 0);
 
         this.nameTag = this.createNameTag();
@@ -71,6 +73,19 @@ export class PlayerAvatar {
         this.drawNameTag();
     }
 
+    // Team modes: coloured name tags (T orange, CT blue)
+    setTeam(team) {
+        if (team === this.team) return;
+        this.team = team;
+        this.drawNameTag();
+    }
+
+    // Enemies' names are hidden in team modes, like CS
+    setNameVisible(visible) {
+        this.nameVisible = visible;
+        this.nameTag.visible = visible && this.alive && !this.isSelf;
+    }
+
     createNameTag() {
         const canvas = document.createElement('canvas');
         canvas.width = 256;
@@ -93,7 +108,7 @@ export class PlayerAvatar {
         const width = Math.min(250, ctx.measureText(this.name).width + 20);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
         ctx.fillRect((256 - width) / 2, 0, width, 40);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = this.team === 't' ? '#ffb06a' : this.team === 'ct' ? '#8ec9ff' : '#ffffff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(this.name, 128, 22, 240);
@@ -192,7 +207,7 @@ export class PlayerAvatar {
         this.alive = true;
         this.model.revive();
         this.snapTo(x, y, z, yaw);
-        this.nameTag.visible = !this.isSelf;
+        this.nameTag.visible = !this.isSelf && this.nameVisible;
         this.setHealth(PLAYER.maxHealth);
     }
 

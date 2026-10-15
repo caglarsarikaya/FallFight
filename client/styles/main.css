@@ -468,6 +468,53 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .standings .kd { color: var(--muted); text-align: right; }
 .match-end .countdown { font-family: var(--font-pixel); font-size: 11px; color: var(--muted); }
 
+/* ---------- Team Buy: money, banners, buy menu ---------- */
+
+.money { font-family: var(--font-body); font-size: 34px; color: #7fe07f; text-shadow: 0 0 6px rgba(0, 0, 0, 0.8), 2px 2px 0 rgba(0, 0, 0, 0.6); }
+.money.hidden { display: none; }
+.money-delta { font-family: var(--font-body); font-size: 26px; color: #7fe07f; opacity: 0; transition: opacity 0.8s; text-shadow: 1px 1px 0 #000; }
+.money-delta.spent { color: #ff8a6a; }
+.money-delta.show { opacity: 1; transition: none; }
+
+.round-banner {
+    position: absolute; left: 50%; top: 22%;
+    transform: translateX(-50%);
+    font-family: var(--font-pixel); font-size: clamp(14px, 3vw, 26px);
+    color: #fff; text-shadow: 3px 3px 0 #000;
+    background: rgba(0, 0, 0, 0.45); padding: 12px 22px;
+    white-space: nowrap;
+}
+.round-banner.hidden { display: none; }
+.round-banner.team-t { color: #ffb06a; }
+.round-banner.team-ct { color: #8ec9ff; }
+
+.buy-menu {
+    position: fixed; left: 24px; top: 50%;
+    transform: translateY(-50%);
+    width: min(360px, 90vw);
+    background: rgba(10, 12, 8, 0.82);
+    border: 2px solid rgba(255, 179, 58, 0.5);
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 6px;
+    z-index: 5;
+}
+.buy-menu.hidden { display: none; }
+.buy-title { font-family: var(--font-pixel); font-size: 11px; color: #ffcf7a; margin-bottom: 4px; }
+.buy-list { display: flex; flex-direction: column; gap: 4px; }
+.buy-row {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid transparent; color: #fff;
+    font-family: var(--font-body); font-size: 22px; padding: 4px 8px; cursor: pointer; text-align: left;
+}
+.buy-row:hover { border-color: #ffcf7a; }
+.buy-row .key { font-family: var(--font-pixel); font-size: 10px; color: #ffcf7a; width: 14px; }
+.buy-row .name { flex: 1; }
+.buy-row .price { color: #7fe07f; }
+.buy-row.poor { opacity: 0.4; }
+.buy-row.poor .price { color: #ff8a6a; }
+.buy-row canvas { width: 64px; height: 32px; }
+.buy-hint { font-size: 17px; color: var(--muted); }
+
 /* ---------- Mode picker (menu) ---------- */
 
 .mode-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
