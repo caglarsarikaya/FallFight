@@ -40,8 +40,11 @@ const roomManager = new RoomManager(io, { onChange: broadcastStats });
 app.get('/healthz', (_req, res) => res.json({ ok: true, ...serverStats() }));
 
 if (SERVE_CLIENT) {
-    app.use('/shared', express.static(path.join(root, 'shared')));
-    app.use(express.static(path.join(root, 'client')));
+    // Make the browser re-check every file (a quick 304 when unchanged), so after an update it never
+    // runs a mix of old and new game modules from its cache
+    const fresh = { setHeaders: res => res.setHeader('Cache-Control', 'no-cache') };
+    app.use('/shared', express.static(path.join(root, 'shared'), fresh));
+    app.use(express.static(path.join(root, 'client'), fresh));
 } else {
     app.get('/', (_req, res) => res.json({ name: 'FallFight game server', play: PLAY_URL, ...serverStats() }));
 }
