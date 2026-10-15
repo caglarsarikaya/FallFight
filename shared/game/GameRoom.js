@@ -314,7 +314,7 @@ export class GameRoom {
         for (const p of this.players.values()) {
             if (!p.alive || p === shooter) continue;
             const pose = this.lagComp.poseAt(p, time);
-            targets.push({ player: p, x: pose.x, y: pose.y, z: pose.z, crouching: pose.crouching });
+            targets.push({ player: p, x: pose.x, y: pose.y, z: pose.z, crouching: pose.crouching, scale: pose.scale });
         }
         return targets;
     }
@@ -443,10 +443,12 @@ export class GameRoom {
                 y: Math.min(4, knockback.strength),
                 z: (knockback.z / len) * knockback.strength
             };
-            if (victim.isBot) {
-                victim.vx += kb.x;
-                victim.vz += kb.z;
-                victim.vy = kb.y;
+            // Zombies barely budge (a shove shouldn't knock them into a hole); giants not at all
+            const k = victim.knockbackScale ?? 1;
+            if (victim.isBot && k > 0) {
+                victim.vx += kb.x * k;
+                victim.vz += kb.z * k;
+                victim.vy = kb.y * k;
                 victim.onGround = false;
             }
         }

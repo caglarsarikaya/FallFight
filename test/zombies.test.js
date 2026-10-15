@@ -162,3 +162,88 @@ test('flow field: distance shrinks towards the target, through doors and up stai
     }
     assert.deepEqual([at.ix, at.iz, at.y], [perch.ix, perch.iz, perch.y], 'arrived on the roof');
 });
+
+test('giants: one on wave 5, two on wave 10, three on wave 15, on top of the usual zombies', () => {
+    const room = zombieRoom();
+    room.addPlayer({ id: 'a', name: 'A' });
+    assert.deepEqual([4, 5, 10, 15].map(w => room.mode.waveStats(w).giants), [0, 1, 2, 3]);
+    // Jump to wave 10 and let it spawn everything (killing as they come so the cap never blocks)
+    room.mode.wave = 9;
+    room.mode.startWave();
+    assert.equal(room.eventsOf('waveStart').at(-1).giants, 2);
+    const seen = new Map();
+    for (let i = 0; i < 3000 && room.mode.toSpawn + room.mode.giantsToSpawn > 0; i++) {
+        room.tick(1 / 30);
+        for (const z of zombiesOf(room)) {
+            seen.set(z.id, z);
+            if (z.alive) room.kill(z, null, 'ak47');
+        }
+    }
+    const all = [...seen.values()];
+    const giants = all.filter(z => z.isGiant);
+    assert.equal(giants.length, 2);
+    assert.equal(all.length - giants.length, room.mode.waveStats(10).count);
+    const g = giants[0];
+    assert.equal(g.characterId, 'zombie-giant');
+    assert.equal(g.scale, ZOMBIES.giant.scale);
+    assert.equal(g.maxHealth, Math.round(room.mode.waveStats(10).health * ZOMBIES.giant.health));
+    assert.equal(room.playerJSON(g, true).scale, ZOMBIES.giant.scale);
+});
+
+test('a giant pays more, always drops a gun, shrugs off knockback and has a bigger hitbox', () => {
+    const room = zombieRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    room.mode.wave = 4;
+    room.mode.startWave();
+    room.mode.spawnZombie(true);
+    const g = zombiesOf(room).find(z => z.isGiant);
+    const z = zombiesOf(room).find(p => !p.isGiant) || (room.mode.spawnZombie(), zombiesOf(room).find(p => !p.isGiant));
+    // Knockback: none for the giant, a little for a normal zombie
+    g.vx = g.vz = z.vx = z.vz = 0;
+    room.damage(g, 1, a, 'ak47', { x: 1, z: 0, strength: 4 });
+    room.damage(z, 1, a, 'ak47', { x: 1, z: 0, strength: 4 });
+    assert.equal(g.vx, 0);
+    assert.ok(z.vx > 0 && z.vx < 4 * ZOMBIES.knockback + 1e-9);
+    // A shot at head height of the scaled body is a headshot
+    const headY = g.y + 1.8 * ZOMBIES.giant.scale - 0.1;
+    const hit = room.findPlayerHit({ x: g.x - 5, y: headY, z: g.z }, { x: 1, y: 0, z: 0 }, 20, a.id);
+    assert.equal(hit?.player, g);
+    assert.equal(hit.zone, 'head');
+    const money = a.money;
+    const drops = room.eventsOf('pickupSpawned').length;
+    room.kill(g, a, 'ak47');
+    assert.equal(a.money - money, ZOMBIES.giant.killMoney);
+    const drop = room.eventsOf('pickupSpawned').slice(drops)[0];
+    assert.equal(drop?.type, 'weapon');
+});
+
+test('zombies walk around a hole in the floor instead of falling into the lava', () => {
+    const room = zombieRoom('fallfight_classic');
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    room.mode.wave = 1;
+    room.mode.phase = 'wave';
+    room.mode.toSpawn = 0;
+    room.mode.phaseEndsAt = Infinity;
+    const arena = room.arena;
+    // A narrow trench with the player right on the far edge: close enough that the zombies used to
+    // walk straight at them, into the pit
+    for (let ix = 38; ix <= 52; ix++) arena.setState(ix, 0, 8, 2);
+    const place = (p, ix, iz) => {
+        const c = arena.tileCenter(ix, iz);
+        Object.assign(p, { x: c.x, y: 0, z: c.z, vx: 0, vy: 0, vz: 0, onGround: true });
+    };
+    place(a, 45, 9);
+    a.health = a.maxHealth = 100000;
+    const zs = [];
+    for (let i = 0; i < 4; i++) {
+        room.mode.toSpawn = 1;
+        room.mode.spawnZombie();
+        const z = zombiesOf(room).at(-1);
+        place(z, 43 + i * 2, 7);   // on the near edge, across from the player
+        zs.push(z);
+    }
+    run(room, 25);
+    const falls = room.eventsOf('death').filter(d => d.cause === 'fall');
+    assert.equal(falls.length, 0, 'no zombie fell in');
+    assert.ok(room.eventsOf('damage').some(d => d.victimId === 'a' && d.weapon === 'claws'), 'they still got to the player');
+});

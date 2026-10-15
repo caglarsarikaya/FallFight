@@ -41,6 +41,10 @@ export const ZOMBIES = Object.freeze({
     speedPerWave: 0.12,
     maxSpeed: 4.6,
     runnerEvery: 5,         // every 5th wave adds fast, weak runners
+    giantEvery: 5,          // wave 5: 1 giant on top of the usual zombies, wave 10: 2, wave 15: 3...
+    // A giant, relative to that wave's normal zombie: bigger (hitbox too), tougher, slower, harder hitting
+    giant: { scale: 1.6, health: 10, speed: 0.7, damage: 2.2, reach: 2.2, killMoney: 1000 },
+    knockback: 0.3,         // how much a bullet's shove moves a zombie (giants: none)
     damage: 20,
     attackInterval: 0.9,
     reach: 1.4,

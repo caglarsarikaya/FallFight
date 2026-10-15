@@ -357,6 +357,23 @@ export class WeaponController {
         return Math.min(1, (this.now - r.start) / (r.end - r.start));
     }
 
+    // For the crosshair: { progress 0..1, left seconds } of the whole reload, or null.
+    // Shotguns load shell by shell, so the end is estimated from the shells still to go.
+    reloadStatus() {
+        const r = this.reload;
+        if (!r) return null;
+        const now = this.now;
+        if (!r.shell) return { progress: Math.min(1, (now - r.start) / (r.end - r.start)), left: Math.max(0, r.end - now) };
+        const spec = this.spec;
+        const ammo = this.ammo;
+        if (!spec || !ammo) return null;
+        const needed = Math.max(1, Math.min(spec.mag - ammo.mag, ammo.reserve));
+        const total = r.total ??= needed;
+        const shellLeft = Math.max(0, r.end - now);
+        const shellDone = 1 - shellLeft / (r.end - r.start);
+        return { progress: Math.min(1, (total - needed + shellDone) / total), left: shellLeft + (needed - 1) * spec.reloadTime };
+    }
+
     boltProgress() {
         const spec = this.spec;
         if (this.reload?.shell) return ((this.now - this.reload.start) / (this.reload.end - this.reload.start)) % 1;

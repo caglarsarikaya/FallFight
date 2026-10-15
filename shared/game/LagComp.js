@@ -46,6 +46,7 @@ export class LagComp {
         pose.y = player.y;
         pose.z = player.z;
         pose.crouching = !!player.crouching;
+        pose.scale = player.scale ?? 1;
         const ring = this.rings.get(player.id);
         if (!ring || ring.count === 0) return pose;
         const d = ring.data;

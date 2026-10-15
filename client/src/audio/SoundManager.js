@@ -65,6 +65,21 @@ const PATCHES = {
         s.tone({ out, type: 'square', freq: 880, duration: 0.06, gain: 0.07 });
         s.tone({ out, type: 'square', freq: 1320, duration: 0.12, delay: 0.06, gain: 0.07 });
     },
+    // Our headshot kill: a wet crack, a heavy thump, then a bright two-note "ding" you want to hear again
+    headshotKill: (s, out) => {
+        s.noise({ out, duration: 0.05, type: 'highpass', freq: 3000, gain: 0.6 });
+        s.noise({ out, duration: 0.18, type: 'bandpass', freq: 1400, freqEnd: 300, q: 1.4, gain: 0.7 });
+        s.tone({ out, type: 'sine', freq: 95, freqEnd: 38, duration: 0.25, gain: 0.55 });
+        s.tone({ out, type: 'triangle', freq: 1568, duration: 0.12, delay: 0.07, gain: 0.16 });
+        s.tone({ out, type: 'triangle', freq: 2093, duration: 0.35, delay: 0.15, gain: 0.16 });
+        s.tone({ out, type: 'sine', freq: 4186, duration: 0.25, delay: 0.15, gain: 0.04 });
+    },
+    // A giant zombie arrives: a deep, rumbling roar
+    giantRoar: (s, out, p) => {
+        s.tone({ out, type: 'sawtooth', freq: 70 * p, freqEnd: 38, duration: 1.6, gain: 0.22 });
+        s.tone({ out, type: 'square', freq: 52 * p, freqEnd: 30, duration: 1.4, delay: 0.1, gain: 0.08 });
+        s.noise({ out, duration: 1.5, type: 'lowpass', freq: 420, freqEnd: 90, gain: 0.5 });
+    },
     pickup: (s, out) => {
         s.tone({ out, type: 'square', freq: 784, duration: 0.07, gain: 0.12 });
         s.tone({ out, type: 'square', freq: 1175, duration: 0.14, delay: 0.07, gain: 0.12 });

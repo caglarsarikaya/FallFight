@@ -28,7 +28,7 @@ export class Scoreboard {
         this.title = el('h3', { text: 'SCOREBOARD' });
         this.head = el('thead');
         this.body = el('tbody');
-        this.root = el('div.overlay.hidden', {}, el('div.panel.scoreboard', {}, [
+        this.root = el('div.overlay.scores.hidden', {}, el('div.panel.scoreboard', {}, [
             this.title,
             el('table', {}, [this.head, this.body])
         ]));

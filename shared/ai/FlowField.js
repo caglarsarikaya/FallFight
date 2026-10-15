@@ -40,7 +40,8 @@ export class FlowField {
         for (let iz = 0; iz < size; iz++) {
             for (let ix = 0; ix < size; ix++) {
                 const base = (iz * size + ix) * height;
-                for (let l = 0; l < height; l++) standable[base + l] = arena.isStandable(ix, l, iz) ? 1 : 0;
+                // Cracking blocks are about to drop into the void: not somewhere to walk
+                for (let l = 0; l < height; l++) standable[base + l] = arena.isStandable(ix, l, iz) && arena.isStable(ix, l, iz) ? 1 : 0;
             }
         }
         let head = 0;
@@ -86,8 +87,10 @@ export class FlowField {
     }
 
     // Best spot to step to from feet position (ix, iz, y): { ix, iz, y } or null
+    // (Standing on a cracking block, which the field skips, still finds the way off it.)
     next(ix, iz, y) {
-        const here = this.levelNear(ix, iz, Math.round(y));
+        let here = this.levelNear(ix, iz, Math.round(y));
+        if (here < 0) here = this.arena.levelNear(ix, iz, Math.round(y)) ?? -1;
         if (here < 0) return null;
         let best = null;
         let bestDist = this.distanceAt(ix, iz, here);

@@ -1,3 +1,4 @@
+import { ZOMBIES } from '../../shared/config/modes.js';
 import { CharacterModel } from './CharacterModel.js';
 
 // A shambling zombie: grey-green skin, torn shirt, arms reaching forward, glowing eyes.
@@ -51,5 +52,27 @@ export class RunnerZombieModel extends ZombieModel {
     animateExtras(dt, state) {
         super.animateExtras(dt, state);
         if (this.deathTimer === null) this.body.rotation.x = -0.35;
+    }
+}
+
+// The every-5th-wave boss: broad, dark and scaled up whole (its hitbox is scaled the same way)
+export class GiantZombieModel extends ZombieModel {
+    constructor() {
+        super();
+        this.root.scale.setScalar(ZOMBIES.giant.scale);
+    }
+
+    dimensions() {
+        return { legW: 0.3, hipX: 0.16, torsoW: 0.66, torsoD: 0.36, armW: 0.26 };
+    }
+
+    get palette() {
+        return { skin: '#5e7a48', shirt: '#3a2a22', pants: '#2a2620', shoes: '#1a1612', hair: '#1e2418' };
+    }
+
+    animateExtras(dt, state) {
+        super.animateExtras(dt, state);
+        // A slow, heavy stomp
+        if (this.deathTimer === null) this.body.rotation.z *= 1.6;
     }
 }

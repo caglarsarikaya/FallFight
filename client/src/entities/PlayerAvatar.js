@@ -42,7 +42,9 @@ export class PlayerAvatar {
         this.team = info.team ?? null;
         this.isZombie = !!info.isZombie;
         this.maxHealth = info.maxHealth ?? PLAYER.maxHealth;
-        this.nameVisible = !this.isZombie;
+        this.scale = info.scale ?? 1;   // giant zombies
+        // Zombies go nameless, except giants: their tag carries the boss health bar
+        this.nameVisible = !this.isZombie || this.scale > 1;
         this.lastPosition = new THREE.Vector3(info.x || 0, info.y || 0, info.z || 0);
 
         this.nameTag = this.createNameTag();
@@ -64,7 +66,7 @@ export class PlayerAvatar {
         }
         this.model = createCharacterModel(characterId);
         this.group.add(this.model.root);
-        this.nameTag.position.y = this.model.dims.legH + this.model.dims.torsoH + this.model.dims.head + 0.45;
+        this.nameTag.position.y = (this.model.dims.legH + this.model.dims.torsoH + this.model.dims.head) * this.model.root.scale.y + 0.45;
         const held = this.heldItemId;
         this.heldItemId = null;
         if (held) this.setHeldItem(held);

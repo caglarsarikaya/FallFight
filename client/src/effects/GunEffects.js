@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // World-space gunfire effects, all pooled and instanced: bullet tracers, bullet holes on blocks,
-// and muzzle flashes (a sprite plus one shared light that is always in the scene, so firing
+// blood pools under kills, and muzzle flashes (a sprite plus one shared light that is always in the scene, so firing
 // never changes the light count and forces a shader recompile).
 
 const MAX_TRACERS = 64;
@@ -10,6 +10,8 @@ const MAX_FLASHES = 8;
 const TRACER_SPEED = 260;   // blocks per second, a visible streak rather than a laser
 const TRACER_LENGTH = 2.6;
 const DECAL_LIFE = 30;      // seconds before a bullet hole fades
+const MAX_BLOOD = 48;
+const BLOOD_LIFE = 20;      // seconds before a blood pool is cleared
 
 function radialTexture(stops, size = 64) {
     const canvas = document.createElement('canvas');
@@ -44,6 +46,33 @@ function flashTexture(size = 128) {
     }
     ctx.closePath();
     ctx.fill();
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+// An uneven splat: a dark core and a few drops around it
+function bloodTexture(size = 128) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const c = size / 2;
+    const blob = (x, y, r, alpha) => {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, `rgba(110,4,4,${alpha})`);
+        g.addColorStop(0.7, `rgba(90,2,2,${alpha * 0.9})`);
+        g.addColorStop(1, 'rgba(70,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    };
+    blob(c, c, c * 0.62, 0.95);
+    for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + Math.sin(i * 7.3);
+        const d = c * (0.45 + ((i * 37) % 10) / 22);
+        blob(c + Math.cos(a) * d, c + Math.sin(a) * d, c * (0.08 + ((i * 13) % 7) / 50), 0.9);
+    }
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
@@ -88,6 +117,19 @@ export class GunEffects {
         this.decals = new Array(MAX_DECALS).fill(null);    // { block: key, born }
         this.nextDecal = 0;
         this.decalsDirty = false;
+
+        // Blood pools: flat splats on the ground where someone died
+        const bloodGeometry = new THREE.PlaneGeometry(1, 1);
+        bloodGeometry.rotateX(-Math.PI / 2);
+        this.bloodMesh = new THREE.InstancedMesh(bloodGeometry, new THREE.MeshBasicMaterial({
+            map: bloodTexture(), transparent: true, depthWrite: false,
+            polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+        }), MAX_BLOOD);
+        this.bloodMesh.frustumCulled = false;
+        this.bloodMesh.count = 0;
+        scene.add(this.bloodMesh);
+        this.blood = new Array(MAX_BLOOD).fill(null);       // { block: key, born }
+        this.nextBlood = 0;
 
         // Muzzle flashes: pooled sprites and one shared light
         this.flashes = [];
@@ -138,11 +180,37 @@ export class GunEffects {
         this.decalsDirty = true;
     }
 
-    // A block broke: its bullet holes go with it
+    // A pool of blood on the floor at feet height y (on top of block blockKey), size in blocks
+    bloodPool(x, y, z, size, blockKey) {
+        const i = this.nextBlood;
+        this.nextBlood = (this.nextBlood + 1) % MAX_BLOOD;
+        this.blood[i] = { block: blockKey, born: this.time };
+        const d = this.dummy;
+        d.position.set(x, y + 0.01 + i * 0.0002, z);   // a hair apart so overlapping pools don't flicker
+        d.rotation.set(0, Math.random() * Math.PI * 2, 0);
+        d.scale.setScalar(size * (0.85 + Math.random() * 0.3));
+        d.updateMatrix();
+        this.bloodMesh.setMatrixAt(i, d.matrix);
+        this.bloodMesh.count = Math.max(this.bloodMesh.count, i + 1);
+        this.bloodMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // A block broke: its bullet holes and blood go with it
     clearBlock(blockKey) {
         for (let i = 0; i < MAX_DECALS; i++) {
             if (this.decals[i]?.block === blockKey) this.hideDecal(i);
         }
+        for (let i = 0; i < MAX_BLOOD; i++) {
+            if (this.blood[i]?.block === blockKey) this.hideBlood(i);
+        }
+    }
+
+    hideBlood(i) {
+        this.blood[i] = null;
+        this.dummy.scale.setScalar(0);
+        this.dummy.updateMatrix();
+        this.bloodMesh.setMatrixAt(i, this.dummy.matrix);
+        this.bloodMesh.instanceMatrix.needsUpdate = true;
     }
 
     hideDecal(i) {
@@ -202,6 +270,8 @@ export class GunEffects {
             const i = Math.floor(Math.random() * MAX_DECALS);
             if (this.decals[i] && this.time - this.decals[i].born > DECAL_LIFE) this.hideDecal(i);
         }
+        const b = Math.floor(Math.random() * MAX_BLOOD);
+        if (this.blood[b] && this.time - this.blood[b].born > BLOOD_LIFE) this.hideBlood(b);
         if (this.decalsDirty) {
             this.decalMesh.instanceMatrix.needsUpdate = true;
             this.decalsDirty = false;

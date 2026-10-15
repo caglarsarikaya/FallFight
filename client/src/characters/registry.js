@@ -5,7 +5,7 @@ import { MarioModel } from './MarioModel.js';
 import { DrOctopusModel } from './DrOctopusModel.js';
 import { BiologistModel } from './BiologistModel.js';
 import { ProgrammerModel } from './ProgrammerModel.js';
-import { RunnerZombieModel, ZombieModel } from './ZombieModel.js';
+import { GiantZombieModel, RunnerZombieModel, ZombieModel } from './ZombieModel.js';
 
 // Character id (shared/characters/definitions.js) -> model class
 const MODELS = {
@@ -17,7 +17,8 @@ const MODELS = {
     programmer: ProgrammerModel,
     // Not selectable: the Zombies mode's monsters
     zombie: ZombieModel,
-    'zombie-runner': RunnerZombieModel
+    'zombie-runner': RunnerZombieModel,
+    'zombie-giant': GiantZombieModel
 };
 
 export function createCharacterModel(characterId) {

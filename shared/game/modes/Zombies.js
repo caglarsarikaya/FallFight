@@ -10,7 +10,8 @@ const CORPSE_TIME = 2.5;         // a dead zombie lies there this long before it
 const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a wave
 
 // Zombies: 1 to 4 players hold out against endless waves. Each wave sends more, tougher, faster
-// zombies; every few waves some are runners. Killed zombies drop ammo, potions, armor and guns.
+// zombies; every few waves some are runners, and every 5th wave brings giants (one more each time).
+// Killed zombies drop ammo, potions, armor and guns.
 // Players who die come back between waves. When everyone is down, the run is over.
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
 export class Zombies extends GameMode {
@@ -35,6 +36,7 @@ export class Zombies extends GameMode {
         this.phase = 'break';
         this.phaseEndsAt = this.room.time + ZOMBIES.firstWaveDelay;
         this.toSpawn = 0;
+        this.giantsToSpawn = 0;
         this.spawnTimer = 0;
         this.kills = 0;
         this.bestWave = this.bestWave ?? 0;
@@ -131,6 +133,7 @@ export class Zombies extends GameMode {
     waveStats(wave) {
         return {
             count: ZOMBIES.baseCount + ZOMBIES.perWave * (wave - 1),
+            giants: wave % ZOMBIES.giantEvery === 0 ? wave / ZOMBIES.giantEvery : 0,
             health: ZOMBIES.health + ZOMBIES.healthPerWave * (wave - 1),
             speed: Math.min(ZOMBIES.maxSpeed, ZOMBIES.speed + ZOMBIES.speedPerWave * (wave - 1))
         };
@@ -139,10 +142,13 @@ export class Zombies extends GameMode {
     startWave() {
         this.wave++;
         this.phase = 'wave';
-        this.toSpawn = this.waveStats(this.wave).count;
+        const { count, giants } = this.waveStats(this.wave);
+        this.toSpawn = count;
+        this.giantsToSpawn = giants;
+        this.normalsSpawned = 0;
         this.spawnTimer = 0;
         this.dirty = true;
-        this.room.emit(null, S2C.WAVE_START, { wave: this.wave, count: this.toSpawn });
+        this.room.emit(null, S2C.WAVE_START, { wave: this.wave, count, giants });
     }
 
     endWave() {
@@ -159,29 +165,47 @@ export class Zombies extends GameMode {
         this.room.emit(null, S2C.WAVE_END, { wave: this.wave, next: this.wave + 1, breakTime: ZOMBIES.waveBreak });
     }
 
-    spawnZombie() {
+    // Giants come spread through the wave: with 2 giants, one a third of the way in, one two thirds
+    giantDue() {
+        if (this.giantsToSpawn <= 0) return false;
+        if (this.toSpawn <= 0) return true;
+        const { count, giants } = this.waveStats(this.wave);
+        const spawned = giants - this.giantsToSpawn;
+        return this.normalsSpawned >= ((spawned + 1) * count) / (giants + 1);
+    }
+
+    spawnZombie(giant = false) {
         const stats = this.waveStats(this.wave);
+        const g = ZOMBIES.giant;
         // Every runnerEvery-th wave, a third of the zombies are fast and fragile runners
-        const runner = this.wave % ZOMBIES.runnerEvery === 0 && this.room.rng() < 0.33;
+        const runner = !giant && this.wave % ZOMBIES.runnerEvery === 0 && this.room.rng() < 0.33;
         const id = `zombie-${this.nextZombieId++}`;
         const zombie = this.room.addNpc({
             id,
-            name: runner ? 'Runner' : 'Zombie',
-            characterId: runner ? 'zombie-runner' : 'zombie',
+            name: giant ? 'Giant' : runner ? 'Runner' : 'Zombie',
+            characterId: giant ? 'zombie-giant' : runner ? 'zombie-runner' : 'zombie',
             setup: p => {
                 p.isZombie = true;
-                p.maxHealth = Math.round(stats.health * (runner ? 0.6 : 1));
+                p.isGiant = giant;
+                if (giant) p.scale = g.scale;
+                p.knockbackScale = giant ? 0 : ZOMBIES.knockback;
+                p.maxHealth = Math.round(stats.health * (giant ? g.health : runner ? 0.6 : 1));
                 p.health = p.maxHealth;
             }
         });
         const brain = new ZombieBrain(this, zombie, {
-            speed: stats.speed * (runner ? 1.35 : 1),
-            damage: ZOMBIES.damage,
+            speed: stats.speed * (giant ? g.speed : runner ? 1.35 : 1),
+            damage: Math.round(ZOMBIES.damage * (giant ? g.damage : 1)),
             attackInterval: ZOMBIES.attackInterval,
-            reach: ZOMBIES.reach
+            reach: giant ? g.reach : ZOMBIES.reach
         });
         this.room.npcs.set(id, brain);
-        this.toSpawn--;
+        if (giant) {
+            this.giantsToSpawn--;
+        } else {
+            this.toSpawn--;
+            this.normalsSpawned++;
+        }
     }
 
     // A zombie's claws: armor takes some of it
@@ -228,12 +252,12 @@ export class Zombies extends GameMode {
             }
             this.spawnTimer -= dt;
             let alive = census.zombiesAlive;
-            if (this.toSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
+            if (this.toSpawn + this.giantsToSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
                 this.spawnTimer = SPAWN_INTERVAL;
-                this.spawnZombie();
+                this.spawnZombie(this.giantDue());
                 alive++;
             }
-            if (this.toSpawn === 0 && alive === 0) this.endWave();
+            if (this.toSpawn + this.giantsToSpawn === 0 && alive === 0) this.endWave();
         }
     }
 
@@ -244,36 +268,43 @@ export class Zombies extends GameMode {
             this.kills++;
             if (killer) {
                 killer.score = killer.kills;
-                if (!killer.isZombie) this.pay(killer, ZOMBIES.killMoney);
-                this.dropLoot(victim);
+                if (!killer.isZombie) this.pay(killer, victim.isGiant ? ZOMBIES.giant.killMoney : ZOMBIES.killMoney);
+                this.dropLoot(victim, victim.isGiant ? 'weapon' : null);
             }
         }
     }
 
-    // One roll per kill: maybe ammo, a potion, armor or a better gun on the ground
-    dropLoot(zombie) {
+    // One roll per kill: maybe ammo, a potion, armor or a better gun on the ground.
+    // sure: a drop type that always comes (a giant always leaves a gun)
+    dropLoot(zombie, sure = null) {
         const rng = this.room.rng;
-        const roll = rng();
-        let acc = 0;
-        for (const [type, chance] of Object.entries(ZOMBIES.drops)) {
-            acc += chance;
-            if (roll >= acc) continue;
-            let extra = {};
-            if (type === 'weapon') {
-                // Better guns as the waves go on
-                const ladder = GUN_GAME.ladder;
-                const top = Math.min(ladder.length - 1, 2 + this.wave);
-                extra = { weapon: ladder[Math.floor(rng() * (top + 1))] };
+        let type = sure;
+        if (!type) {
+            const roll = rng();
+            let acc = 0;
+            for (const [kind, chance] of Object.entries(ZOMBIES.drops)) {
+                acc += chance;
+                if (roll < acc) {
+                    type = kind;
+                    break;
+                }
             }
-            const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, ZOMBIES.dropLife, extra);
-            if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);
-            return;
         }
+        if (!type) return;
+        let extra = {};
+        if (type === 'weapon') {
+            // Better guns as the waves go on
+            const ladder = GUN_GAME.ladder;
+            const top = Math.min(ladder.length - 1, 2 + this.wave);
+            extra = { weapon: ladder[Math.floor(rng() * (top + 1))] };
+        }
+        const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, ZOMBIES.dropLife, extra);
+        if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);
     }
 
     stateJSON() {
         const zombies = this.zombies;
-        const left = this.toSpawn + zombies.filter(z => z.alive).length;
+        const left = this.toSpawn + this.giantsToSpawn + zombies.filter(z => z.alive).length;
         return {
             mode: this.id,
             phase: this.phase,
@@ -286,7 +317,8 @@ export class Zombies extends GameMode {
     }
 
     playerJSON(player) {
-        return player.isZombie ? { isZombie: true, maxHealth: player.maxHealth } : { money: player.money ?? 0 };
+        if (!player.isZombie) return { money: player.money ?? 0 };
+        return player.isGiant ? { isZombie: true, maxHealth: player.maxHealth, scale: player.scale } : { isZombie: true, maxHealth: player.maxHealth };
     }
 
     standings() {

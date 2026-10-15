@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GUN, NET, PLAYER } from '../shared/constants.js';
 import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.js';
-import { getModeInfo } from '../shared/config/modes.js';
+import { ZOMBIES, getModeInfo } from '../shared/config/modes.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
 import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
@@ -13,7 +13,7 @@ import { GunEffects } from './effects/GunEffects.js';
 import { INTERPOLATION_DELAY, PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
 import { PickupView } from './entities/PickupView.js';
-import { CameraController } from './camera/CameraViews.js';
+import { CameraController, FirstPersonView, ThirdPersonView } from './camera/CameraViews.js';
 import { ViewModel } from './camera/ViewModel.js';
 import { InputManager } from './input/InputManager.js';
 import { LocalPlayerController } from './player/LocalPlayerController.js';
@@ -43,6 +43,7 @@ const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
 const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth'];
+const SPECTATE_DELAY = 2;   // seconds of the death cam before following a teammate
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 
 // Client game: renders the arena, predicts the local player and its gunfire, sends inputs and
@@ -78,6 +79,10 @@ export class Game {
         this.effects = new GunEffects(this.scene);
         this.viewModel = new ViewModel();
         this.cameraController = new CameraController(this.camera, profile.cameraMode);
+        // Dead and waiting for the wave or round: watch a living teammate
+        this.spectateViews = { chase: new ThirdPersonView({ distance: 3.5, height: 0.6, shoulder: 0 }), eye: new FirstPersonView() };
+        this.spectate = null;           // { id, view: 'chase' | 'eye', startAt }
+        this.spectateEye = { x: 0, y: 0, z: 0 };
         this.input = new InputManager(this.renderer.domElement);
         this.local = new LocalPlayerController();
         this.weapons = new WeaponController(this);
@@ -139,6 +144,7 @@ export class Game {
         this.protectedUntil = 0;
         this.buyClosedAt = -Infinity;
         this.deathCam = null;
+        this.spectate = null;
         this.editingProfile = false;
         this.serverOffset = null;       // server time - local time, smoothed
         this.modeId = 'ffa';
@@ -285,10 +291,17 @@ export class Game {
                 case 'buy': return this.toggleBuyMenu();
                 case 'slot': return this.local.alive && w.select(value);
                 case 'last': return this.local.alive && w.selectLast();
-                case 'camera': return this.toggleCamera();
-                case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
-                case 'primary': return w.setTrigger(value && !!this.canShoot);
-                case 'secondary': return this.canAct && w.secondary();
+                case 'camera': return this.spectating ? this.toggleSpectateView() : this.toggleCamera();
+                case 'scoreboard':
+                    // The death message would sit right on top of the table
+                    this.respawnOverlay.root.classList.toggle('behind', !!value);
+                    return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
+                case 'primary':
+                    if (value && this.spectating) return this.cycleSpectate(1);
+                    return w.setTrigger(value && !!this.canShoot);
+                case 'secondary':
+                    if (this.spectating) return this.cycleSpectate(-1);
+                    return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
                 case 'pause': return this.escape();
             }
@@ -507,7 +520,7 @@ export class Game {
         for (const info of this.players.values()) {
             if (info.id === this.selfId || !info.alive) continue;
             const p = info.avatar.group.position;
-            const hit = hitTest(origin, dir, maxDist, { x: p.x, y: p.y, z: p.z, crouching: info.avatar.crouching });
+            const hit = hitTest(origin, dir, maxDist, { x: p.x, y: p.y, z: p.z, crouching: info.avatar.crouching, scale: info.avatar.scale });
             if (hit && (best === null || hit.distance < best)) best = hit.distance;
         }
         return best;
@@ -646,10 +659,11 @@ export class Game {
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
             this.hud.toast('New match!');
         });
-        on(S2C.WAVE_START, ({ wave, count }) => {
-            this.hud.showBanner(`Wave ${wave} · ${count} zombies`, 'wave', 3000);
+        on(S2C.WAVE_START, ({ wave, count, giants = 0 }) => {
+            const giantText = giants ? ` · ${giants} GIANT${giants > 1 ? 'S' : ''}!` : '';
+            this.hud.showBanner(`Wave ${wave} · ${count} zombies${giantText}`, 'wave', giants ? 4500 : 3000);
             this.sound.play('roundStart');
-            setTimeout(() => this.sound.play('zombieGroan', { volume: 0.8, pitch: 0.8 }), 400);
+            setTimeout(() => this.sound.play(giants ? 'giantRoar' : 'zombieGroan', { volume: giants ? 1 : 0.8, pitch: 0.8 }), 400);
         });
         on(S2C.WAVE_END, ({ wave, breakTime }) => {
             this.hud.showBanner(`Wave ${wave} cleared! Next in ${breakTime}s`, 'team-ct', 3500);
@@ -759,6 +773,7 @@ export class Game {
         this.pickups.clear();
         this.projectiles.clear();
         this.deathCam = null;
+        this.spectate = null;
         this.respawnOverlay.hide();
     }
 
@@ -888,7 +903,7 @@ export class Game {
         victim.avatar.hurt();
         const self = victimId === this.selfId;
         const pos = self ? this.local.body : victim.avatar.group.position;
-        const hitPoint = { x: pos.x, y: pos.y + (ZONE_HEIGHT[zone] ?? 1.1) * (victim.avatar.crouching ? 0.72 : 1), z: pos.z };
+        const hitPoint = { x: pos.x, y: pos.y + (ZONE_HEIGHT[zone] ?? 1.1) * (victim.avatar.crouching ? 0.72 : 1) * victim.avatar.scale, z: pos.z };
 
         // Blood sprays away from the shooter (our own would spawn inside the camera)
         if (!self) {
@@ -932,13 +947,16 @@ export class Game {
         if (!victim) return;
         victim.alive = false;
         victim.avatar.die();
+        if (cause !== 'fall') this.bleed(victimId === this.selfId ? this.local.body : victim.avatar.group.position, victim, headshot);
         if (victim.isZombie) {
             // Zombie deaths stay out of the kill feed unless they're yours
             const pos = victim.avatar.group.position;
-            this.sound.play('zombieDeath', { at: { x: pos.x, y: pos.y + 1, z: pos.z }, range: 30 });
+            const giant = victim.avatar.scale > 1;
+            this.sound.play('zombieDeath', { at: { x: pos.x, y: pos.y + 1, z: pos.z }, range: giant ? 60 : 30, pitch: giant ? 0.55 : 1, volume: giant ? 1.4 : 1 });
             if (killerId === this.selfId) {
                 this.hud.hit(!!headshot, true);
-                this.sound.play('kill');
+                this.sound.play(headshot ? 'headshotKill' : 'kill');
+                if (giant) this.hud.toast(`Giant down! +$${ZOMBIES.giant.killMoney}`);
             }
             return;
         }
@@ -964,13 +982,28 @@ export class Game {
                     : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
                 : (cause === 'fall' ? 'You fell into the void' : 'You died');
             this.respawnOverlay.waitText = this.modeId === 'zombies' ? 'Back when this wave is cleared...' : null;
-            this.respawnOverlay.show(reason, this.modeId === 'teambuy' || this.modeId === 'zombies' ? null : PLAYER.respawnDelay);
+            const waiting = this.modeId === 'teambuy' || this.modeId === 'zombies';
+            this.respawnOverlay.show(reason, waiting ? null : PLAYER.respawnDelay);
+            if (waiting) this.spectate = { id: null, view: 'chase', startAt: performance.now() + SPECTATE_DELAY * 1000 };
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
-            this.sound.play('kill');
+            this.sound.play(headshot ? 'headshotKill' : 'kill');
             this.hud.hit(!!headshot, true);
-            this.hud.toast(`You killed ${victim.name}${headshot ? ' ◎' : ''}${this.modeId === 'ffa' ? ' · +1 Health Potion' : ''}`);
+            this.hud.toast(`${headshot ? '◎ HEADSHOT · ' : ''}You killed ${victim.name}${this.modeId === 'ffa' ? ' · +1 Health Potion' : ''}`);
         }
+    }
+
+    // A kill bleeds: a spray (a burst of it from the head on a headshot) and a pool on the floor
+    bleed(pos, victim, headshot) {
+        const scale = victim.avatar.scale;
+        if (headshot) {
+            const head = { x: pos.x, y: pos.y + ZONE_HEIGHT.head * scale, z: pos.z };
+            this.particles.burst(head, { count: 40, colors: BLOOD, speed: 3.2, up: 2.6, size: 0.07 * scale, spread: 0.2 * scale, life: 0.9 });
+            this.particles.burst(head, { count: 12, colors: BLOOD, speed: 1.4, up: 1.8, size: 0.13 * scale, spread: 0.15 * scale, life: 1.3 });
+        }
+        const block = this.arena.supportBlock(pos.x, pos.y, pos.z, PLAYER.radius);
+        if (!block || Math.abs(block.iy - pos.y) > 0.6) return;
+        this.effects.bloodPool(pos.x, block.iy, pos.z, (headshot ? 1.7 : 1.1) * scale, this.arena.index(block.ix, block.iy, block.iz));
     }
 
     onRespawn({ id, x, y, z, yaw, health, armor }) {
@@ -984,6 +1017,7 @@ export class Game {
             this.local.alive = true;
             this.weapons.resetLife();
             this.deathCam = null;
+            this.stopSpectating();
             this.respawnOverlay.hide();
             this.hud.setHealth(health);
             this.armor = armor ?? 0;
@@ -1095,6 +1129,7 @@ export class Game {
         const halfFov = (this.camera.fov * Math.PI) / 360;
         const gap = 4 + (Math.tan(this.weapons.currentCone()) / Math.tan(halfFov)) * (window.innerHeight / 2);
         this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1, this.weapons.canFireNow);
+        this.hud.setReload(this.local.alive ? this.weapons.reloadStatus() : null);
         this.hud.update();
 
         // Outline the block the knife would chop
@@ -1123,7 +1158,8 @@ export class Game {
                 if (info.groanTimer <= 0) {
                     info.groanTimer = 4 + Math.random() * 7;
                     const p = avatar.group.position;
-                    this.sound.play('zombieGroan', { at: { x: p.x, y: p.y + 1.5, z: p.z }, range: 26, pitch: 0.8 + Math.random() * 0.4 });
+                    const giant = avatar.scale > 1;
+                    this.sound.play(giant ? 'giantRoar' : 'zombieGroan', { at: { x: p.x, y: p.y + 1.5 * avatar.scale, z: p.z }, range: giant ? 50 : 26, pitch: 0.8 + Math.random() * 0.4 });
                 }
                 continue;
             }
@@ -1136,7 +1172,78 @@ export class Game {
         }
     }
 
+    // ---- spectating ---------------------------------------------------------------------------
+
+    get spectating() {
+        return !!this.spectate && !this.local.alive;
+    }
+
+    // Living teammates: the other humans in Zombies, our own team in Team Buy
+    spectateTargets() {
+        const team = this.self?.team;
+        const list = [];
+        for (const info of this.players.values()) {
+            if (info.id === this.selfId || !info.alive || info.isZombie) continue;
+            if (this.modeId === 'teambuy' && info.team !== team) continue;
+            list.push(info);
+        }
+        return list;
+    }
+
+    cycleSpectate(step) {
+        const s = this.spectate;
+        const list = this.spectateTargets();
+        if (!list.length) return this.setSpectateTarget(null);
+        s.startAt = 0;
+        const i = list.findIndex(info => info.id === s.id);
+        this.setSpectateTarget(list[(i < 0 ? 0 : i + step + list.length) % list.length]);
+    }
+
+    setSpectateTarget(info) {
+        const s = this.spectate;
+        if (s.id === (info?.id ?? null)) return;
+        this.players.get(s.id)?.avatar.setVisible(true);
+        s.id = info?.id ?? null;
+        this.respawnOverlay.setSpectating(info?.name ?? null);
+    }
+
+    toggleSpectateView() {
+        const s = this.spectate;
+        s.view = s.view === 'chase' ? 'eye' : 'chase';
+        this.players.get(s.id)?.avatar.setVisible(true);
+    }
+
+    stopSpectating() {
+        if (!this.spectate) return;
+        this.setSpectateTarget(null);
+        this.spectate = null;
+    }
+
+    // Puts the camera on the watched teammate; false when there's nobody to watch
+    updateSpectateCamera() {
+        const s = this.spectate;
+        if (performance.now() < s.startAt) return false;
+        let target = this.players.get(s.id);
+        if (!target?.alive) {
+            const next = this.spectateTargets()[0] || null;
+            this.setSpectateTarget(next);
+            target = next;
+        }
+        if (!target) return false;
+        const avatar = target.avatar;
+        const p = avatar.group.position;
+        const eye = this.spectateEye;
+        eye.x = p.x;
+        eye.y = p.y + (avatar.crouching ? PLAYER.crouchEyeHeight : PLAYER.eyeHeight);
+        eye.z = p.z;
+        const view = this.spectateViews[s.view];
+        view.apply(this.camera, { eye, yaw: avatar.group.rotation.y, pitch: avatar.pitch, arena: this.arena });
+        avatar.setVisible(s.view === 'chase');
+        return true;
+    }
+
     updateCamera(dt) {
+        if (this.spectating && this.updateSpectateCamera()) return;
         if (this.deathCam) {
             // Slowly circle above where we died
             const c = this.deathCam;

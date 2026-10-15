@@ -11,7 +11,9 @@ const MAX_DAMAGE_ARCS = 4;
 // a crosshair that opens up with inaccuracy, weapon slots on switching, kill feed top right.
 export class Hud {
     constructor(root) {
-        this.crosshair = el('div.crosshair', {}, ['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)));
+        this.reloadText = el('span');
+        this.reloadRing = el('div.reload-ring', {}, [this.reloadText]);
+        this.crosshair = el('div.crosshair', {}, [...['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)), this.reloadRing]);
         this.hitmarker = el('div.hitmarker');
         this.scope = el('div.scope.hidden', {}, [el('div.scope-h'), el('div.scope-v')]);
         this.damageArcs = [];
@@ -71,6 +73,7 @@ export class Hud {
         this.inventory = null;
         this.crosshairGap = -1;
         this.crosshairReady = true;
+        this.reloadShown = null;
         this.hitUntil = 0;
         this.hitLength = 1;
         this.hitOpacity = 0;
@@ -194,6 +197,18 @@ export class Hud {
         this.crosshair.style.setProperty('--gap', `${g}px`);
     }
 
+    // Reloading: the crosshair turns into a ring that fills up, with the seconds left inside.
+    // status: { progress 0..1, left seconds } or null
+    setReload(status) {
+        const key = status ? `${Math.round(status.progress * 60)}|${status.left.toFixed(1)}` : null;
+        if (key === this.reloadShown) return;
+        if (!status !== !this.reloadShown) this.crosshair.classList.toggle('reloading', !!status);
+        this.reloadShown = key;
+        if (!status) return;
+        this.reloadRing.style.setProperty('--p', `${(status.progress * 360).toFixed(0)}deg`);
+        this.reloadText.textContent = status.left.toFixed(1);
+    }
+
     // Team Buy money, with a +$300 / -$2500 flash on changes
     setMoney(money) {
         if (money === undefined || money === null) return;
@@ -236,7 +251,7 @@ export class Hud {
         // hm- prefix: plain 'kill' is the kill feed row class (with its own fade animation)
         this.hitmarker.classList.toggle('hm-head', head);
         this.hitmarker.classList.toggle('hm-kill', kill);
-        this.hitLength = kill ? 0.45 : head ? 0.32 : 0.2;
+        this.hitLength = kill ? (head ? 0.75 : 0.45) : head ? 0.32 : 0.2;
         this.hitUntil = performance.now() / 1000 + this.hitLength;
     }
 

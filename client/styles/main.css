@@ -91,6 +91,7 @@ button, input, select, textarea { font-size-adjust: inherit; }
     padding: 16px;
 }
 .overlay.dim { background: rgba(0, 0, 0, 0.55); }
+.overlay.scores { z-index: 5; }
 
 h1, h2, h3 { font-family: var(--font); font-weight: 600; margin: 0; }
 
@@ -315,6 +316,23 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .ch-b { top: var(--gap); }
 .ch-l { right: var(--gap); }
 .ch-r { left: var(--gap); }
+/* Reloading: a ring that fills clockwise, seconds left in the middle */
+.reload-ring { display: none; }
+.crosshair.reloading { opacity: 1; }
+.crosshair.reloading .ch { display: none; }
+.crosshair.reloading .reload-ring {
+    display: block; position: absolute; left: -19px; top: -19px; width: 38px; height: 38px; --p: 0deg;
+}
+.reload-ring::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(#5dff5d var(--p), rgba(255, 255, 255, 0.22) var(--p));
+    -webkit-mask: radial-gradient(circle, transparent 13px, #000 14px);
+            mask: radial-gradient(circle, transparent 13px, #000 14px);
+}
+.reload-ring span {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-family: var(--font); font-size: 13px; color: #fff; text-shadow: 1px 1px 0 #000;
+}
 
 /* Hit confirmation X; its opacity is set every frame by Hud.update, so it always fades out */
 .hitmarker {
@@ -333,6 +351,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .hitmarker.hm-kill { width: 30px; height: 30px; }
 .hitmarker.hm-kill::before { left: 14px; width: 3px; height: 30px; }
 .hitmarker.hm-kill::after { top: 14px; height: 3px; width: 30px; }
+/* Headshot kill: the biggest, gold, glowing */
+.hitmarker.hm-kill.hm-head { width: 40px; height: 40px; filter: drop-shadow(0 0 4px rgba(255, 200, 60, 0.9)); }
+.hitmarker.hm-kill.hm-head::before { left: 18px; width: 4px; height: 40px; }
+.hitmarker.hm-kill.hm-head::after { top: 18px; height: 4px; width: 40px; }
 
 /* Sniper scope: black everywhere except a circle, with thin cross hairs */
 .scope {
@@ -507,7 +529,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* ---------- Scoreboard / respawn ---------- */
 
-.scoreboard { min-width: min(520px, 92vw); }
+.scoreboard { min-width: min(520px, 92vw); background: rgba(10, 12, 18, 0.94); }
 .scoreboard h3 { font-size: 25px; margin-bottom: 12px; text-align: center; }
 .scoreboard table { width: 100%; border-collapse: collapse; font-size: 22px; }
 .scoreboard th { font-family: var(--font); font-size: 18px; color: var(--muted); text-align: left; padding: 4px 8px; }
@@ -525,6 +547,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .respawn h2 { font-size: 65px; color: #ff8a8a; text-shadow: 4px 4px 0 #3a0000; }
 .respawn .reason { font-size: 26px; }
 .respawn .countdown { font-family: var(--font); font-size: 25px; color: var(--muted); }
+.respawn .watching { font-family: var(--font); font-size: 22px; color: var(--gold); }
+.respawn .watching:empty { display: none; }
+/* Watching a teammate: a strip along the top instead of the red full screen */
+.respawn.spectating {
+    inset: 0 0 auto 0; flex-direction: row; flex-wrap: wrap; gap: 6px 18px; padding: 10px 16px;
+    background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+}
+.respawn.spectating h2 { font-size: 26px; text-shadow: 2px 2px 0 #3a0000; }
+.respawn.spectating .reason, .respawn.spectating .countdown { font-size: 18px; }
+/* Tab held: the scoreboard owns the screen */
+.respawn.behind { opacity: 0; }
 
 .click-to-play {
     font-family: var(--font);

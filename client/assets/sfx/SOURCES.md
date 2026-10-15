@@ -59,6 +59,8 @@ Each gun has a close sound and a far sound. Past about 50 blocks the game plays 
 | `hitKevlar` | bullet into a vest |
 | `headshotHelmet` | the helmet "dink" |
 | `headshotFlesh` | headshot without a helmet |
+| `headshotKill` | your own headshot kill (crack, thump and a reward ding) |
+| `giantRoar` | a giant zombie joins the wave |
 | `impactStone` / `impactWood` / `impactDirt` | bullets hitting blocks |
 | `whiz` | a bullet passing just past your head |
 
