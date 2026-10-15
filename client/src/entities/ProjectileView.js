@@ -1,20 +1,18 @@
 import * as THREE from 'three';
 import { PROJECTILE } from '../../shared/constants.js';
-import { createArrowModel } from '../items/BowView.js';
 
 const STUCK_TIME = 4;
 
-// A flying arrow, replayed locally from its spawn velocity with the same gravity as the server
+// A flying projectile (future grenades), replayed locally from its spawn velocity with the same
+// gravity as the server
 export class ProjectileView {
     constructor(scene, data) {
         this.scene = scene;
         this.position = new THREE.Vector3(data.x, data.y, data.z);
         this.velocity = new THREE.Vector3(data.vx, data.vy, data.vz);
         this.group = new THREE.Group();
-        const arrow = createArrowModel(0.7);
-        arrow.rotation.y = Math.PI; // the model points -Z; lookAt aims +Z
-        arrow.position.z = 0.35;
-        this.group.add(arrow);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.2), new THREE.MeshLambertMaterial({ color: '#3d4045' }));
+        this.group.add(body);
         this.group.position.copy(this.position);
         scene.add(this.group);
         this.stuckTime = null;

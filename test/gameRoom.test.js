@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ARENA, LOADOUT, PICKUPS, PLAYER } from '../shared/constants.js';
 import { Arena } from '../shared/world/Arena.js';
 import { stepMovement } from '../shared/physics.js';
-import { createRoom, place, run } from './helpers.js';
+import { createRoom, drawKnife, place, run } from './helpers.js';
 
 test('a kill grants the killer exactly one health potion', () => {
     const room = createRoom();
@@ -13,7 +13,9 @@ test('a kill grants the killer exactly one health potion', () => {
     place(room, b, 22, 20);
     b.health = 10;
 
-    room.useItem(a, 1, { x: 0, y: -0.1, z: -1 });
+    drawKnife(room, a);
+    room.fire(a, { slot: 2, dir: { x: 0, y: -0.2, z: -1 } }); // knife slash
+    assert.equal(room.eventsOf('death').at(-1)?.cause, 'knife');
     assert.equal(b.alive, false);
     assert.equal(a.kills, 1);
     assert.equal(b.deaths, 1);
@@ -29,8 +31,9 @@ test('falling after an opponent broke your block credits them', () => {
     place(room, a, 22, 22);
     place(room, b, 22, 20);
 
-    // A chops the block B stands on
-    room.useItem(a, 1, { x: 0, y: -1.6, z: -2 });
+    // A knifes the block B stands on
+    drawKnife(room, a);
+    room.fire(a, { slot: 2, dir: { x: 0, y: -1.6, z: -2 } });
     run(room, 0.5);
     // B's client reports falling into the void
     room.handleMessage('b', 'state', { x: b.x, y: ARENA.voidY - 1, z: b.z, vx: 0, vy: -10, vz: 0, yaw: 0, pitch: 0, onGround: false });
@@ -48,11 +51,12 @@ test('falling on your own gives no credit', () => {
     assert.equal(room.eventsOf('death').at(-1).killerId, null);
 });
 
-test('respawn after the delay with full health and the default loadout', () => {
+test('respawn after the delay with full health, armor and a fresh loadout', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     a.inventory.add('health_potion', 3);
-    a.inventory.counts.arrow = 0;
+    a.armor = 0;
+    for (const ammo of Object.values(a.inventory.ammo)) ammo.mag = ammo.reserve = 0;
     room.kill(a, null, 'test');
 
     run(room, PLAYER.respawnDelay - 0.2);
@@ -60,7 +64,10 @@ test('respawn after the delay with full health and the default loadout', () => {
     run(room, 0.4);
     assert.equal(a.alive, true);
     assert.equal(a.health, PLAYER.maxHealth);
-    assert.equal(a.inventory.count('arrow'), LOADOUT.arrow);
+    assert.equal(a.armor, LOADOUT.armor);
+    assert.ok(LOADOUT.primary.includes(a.inventory.hotbar[0]), 'random primary');
+    assert.ok(LOADOUT.secondary.includes(a.inventory.hotbar[1]), 'random pistol');
+    for (const ammo of Object.values(a.inventory.ammo)) assert.ok(ammo.mag > 0 && ammo.reserve > 0, 'full ammo');
     assert.equal(a.inventory.count('health_potion'), 0);
     assert.ok(a.isProtected(room.time), 'spawn protection');
 });
@@ -70,32 +77,36 @@ test('spawn protection blocks damage', () => {
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
     assert.ok(b.isProtected(room.time));
-    assert.equal(room.damage(b, 10, a, 'axe'), false);
+    assert.equal(room.damage(b, 10, a, 'knife'), false);
     assert.equal(b.health, PLAYER.maxHealth);
 });
 
-test('pickups spawn every 15s (arrows) and 60s (potion); first player to touch takes it', () => {
+test('pickups spawn every 15s (ammo) and 60s (potion); first player to touch takes it', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
     place(room, a, 0, 0);
     place(room, b, 1, 0);
 
-    run(room, PICKUPS.arrow.interval - 0.5);
+    for (const p of [a, b]) {
+        for (const ammo of Object.values(p.inventory.ammo)) ammo.reserve = 0;
+    }
+    run(room, PICKUPS.ammo.interval - 0.5);
     assert.equal(room.eventsOf('pickupSpawned').length, 0);
     run(room, 1);
-    const arrow = room.eventsOf('pickupSpawned')[0];
-    assert.equal(arrow.type, 'arrow');
+    const box = room.eventsOf('pickupSpawned')[0];
+    assert.equal(box.type, 'ammo');
 
     // Both players arrive; whoever is processed first wins, the other gets nothing
-    for (const p of [a, b]) Object.assign(p, { x: arrow.x, z: arrow.z, y: 0 });
+    for (const p of [a, b]) Object.assign(p, { x: box.x, z: box.z, y: 0 });
     room.tick(1 / 30);
     const taken = room.eventsOf('pickupTaken');
     assert.equal(taken.length, 1);
     const winner = taken[0].by === 'a' ? a : b;
     const loser = winner === a ? b : a;
-    assert.equal(winner.inventory.count('arrow'), LOADOUT.arrow + PICKUPS.arrow.amount);
-    assert.equal(loser.inventory.count('arrow'), LOADOUT.arrow);
+    const reserves = p => Object.values(p.inventory.ammo).map(ammo => ammo.reserve);
+    assert.ok(reserves(winner).every(r => r > 0), 'a magazine for every gun');
+    assert.ok(reserves(loser).every(r => r === 0));
     assert.equal(room.pickups.pickups.size, 0);
 
     for (const p of [a, b]) place(room, p, 0, p === a ? 0 : 1);

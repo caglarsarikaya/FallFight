@@ -165,14 +165,13 @@ test('players spawn on the floor, never on towers', () => {
     }
 });
 
-test('arrows fly straight: no drop over 20 blocks, even at the weakest draw', async () => {
-    const { BOW } = await import('../shared/constants.js');
+test('projectiles fly straight: no drop over 20 blocks', async () => {
     const { Projectile } = await import('../shared/game/Projectile.js');
     const room = createRoom();
     room.players.clear();
     const { ix, from } = LANDMARKS.lane;
     const c = room.arena.tileCenter(ix, from);
-    const arrow = new Projectile({ id: 1, x: c.x, y: 1.5, z: c.z, vx: 0, vy: 0, vz: -BOW.minSpeed, born: 0 });
+    const arrow = new Projectile({ id: 1, x: c.x, y: 1.5, z: c.z, vx: 0, vy: 0, vz: -40, born: 0 });
     let t = 0;
     while (c.z - arrow.z < 20 && t < 3) {
         assert.equal(arrow.step(1 / 30, room, t), null);
@@ -185,7 +184,7 @@ test('arrows fly straight: no drop over 20 blocks, even at the weakest draw', as
 test('all pickups on the map can be collected (regression)', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
-    const pickups = [room.pickups.spawn('arrow', room.arena), room.pickups.spawn('arrow', room.arena), room.pickups.spawn('health_potion', room.arena)];
+    const pickups = [room.pickups.spawn('ammo', room.arena), room.pickups.spawn('ammo', room.arena), room.pickups.spawn('health_potion', room.arena)];
     // Visit the newest first: with the old iterator bug only the first-inserted could be taken
     for (const pickup of [...pickups].reverse()) {
         Object.assign(a, { x: pickup.x, y: pickup.baseY, z: pickup.z });

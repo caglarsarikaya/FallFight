@@ -22,6 +22,12 @@ export function place(room, player, ix, iz, yaw = 0) {
     player.lastGroundBlock = { ix, iy: y, iz };
 }
 
+// Switch to the knife and wait out its deploy time
+export function drawKnife(room, player) {
+    room.select(player, 2);
+    player.gun.readyAt = room.time;
+}
+
 export function run(room, seconds, dt = 1 / 30) {
     for (let t = 0; t < seconds; t += dt) room.tick(dt);
 }

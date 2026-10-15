@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PLAYER } from '../../shared/constants.js';
 import { createCharacterModel } from '../characters/registry.js';
 import { getItemView } from '../items/registry.js';
-import { BowView } from '../items/BowView.js';
+import { isGun } from '../../shared/config/weapons.js';
 
 export const INTERPOLATION_DELAY = 100; // ms behind the newest snapshot, for smooth remote movement
 
@@ -17,8 +17,9 @@ export class PlayerAvatar {
         this.buffer = [];
         this.speed = 0;
         this.onGround = true;
-        this.drawing = false;
+        this.crouching = !!info.crouching;
         this.pitch = 0;
+        this.stepTimer = Math.random();
         this.alive = info.alive !== false;
         this.health = info.health ?? PLAYER.maxHealth;
         this.name = info.name;
@@ -29,7 +30,7 @@ export class PlayerAvatar {
         this.nameTag.visible = !isSelf;
         this.group.add(this.nameTag);
         this.setCharacter(info.characterId);
-        this.setHeldItem(info.item || 'bow');
+        this.setHeldItem(info.item || 'knife');
         this.group.position.copy(this.lastPosition);
         this.group.rotation.y = info.yaw || 0;
         scene.add(this.group);
@@ -109,8 +110,8 @@ export class PlayerAvatar {
         const now = performance.now();
         this.buffer.push({ t: now, state });
         while (this.buffer.length > 2 && this.buffer[1].t < now - 1000) this.buffer.shift();
-        this.drawing = state.drawing;
         this.onGround = state.onGround;
+        this.crouching = !!state.crouching;
         this.setHeldItem(state.item);
         if (state.health !== this.health) this.setHealth(state.health);
     }
@@ -124,11 +125,26 @@ export class PlayerAvatar {
     }
 
     // Direct pose for the local player's own body
-    setPose(x, y, z, yaw, pitch, onGround) {
+    setPose(x, y, z, yaw, pitch, onGround, crouching = false) {
         this.group.position.set(x, y, z);
         this.group.rotation.y = yaw;
         this.pitch = pitch;
         this.onGround = onGround;
+        this.crouching = crouching;
+    }
+
+    // Roughly where this player's gun barrel is, for remote muzzle flashes and tracers
+    muzzlePosition(out = new THREE.Vector3()) {
+        const yaw = this.group.rotation.y;
+        const p = this.group.position;
+        const eye = this.crouching ? PLAYER.crouchEyeHeight : PLAYER.eyeHeight;
+        const fx = -Math.sin(yaw) * Math.cos(this.pitch);
+        const fz = -Math.cos(yaw) * Math.cos(this.pitch);
+        return out.set(
+            p.x + fx * 0.9 + Math.cos(yaw) * 0.22,
+            p.y + eye - 0.25 + Math.sin(this.pitch) * 0.9,
+            p.z + fz * 0.9 - Math.sin(yaw) * 0.22
+        );
     }
 
     interpolate(now) {
@@ -195,12 +211,10 @@ export class PlayerAvatar {
         this.model.animate(dt, {
             speed: this.alive ? this.speed : 0,
             onGround: this.onGround,
-            drawing: this.drawing && this.alive,
+            aiming: this.alive && isGun(this.heldItemId),
+            crouching: this.alive && this.crouching,
             pitch: this.pitch
         });
-        if (this.heldItemId === 'bow' && this.held) {
-            BowView.setDraw(this.held.userData.model, this.drawing ? 0.85 : 0);
-        }
     }
 
     dispose() {

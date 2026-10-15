@@ -1,24 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRoom, run } from './helpers.js';
+import { createRoom, place, run } from './helpers.js';
 
-test('bots-only match: bots fight, dig, use both weapons and score kills', () => {
+test('bots-only match: bots shoot, reload, land headshots and score kills', () => {
     const room = createRoom(42);
     room.setBotCount(4);
     run(room, 180);
 
     const deaths = room.eventsOf('death');
-    const actions = room.eventsOf('action');
-    assert.ok(deaths.length >= 4, `expected kills, got ${deaths.length} deaths`);
+    const shots = room.eventsOf('shot');
+    assert.ok(deaths.length >= 6, `expected kills, got ${deaths.length} deaths`);
     assert.ok(deaths.some(d => d.killerId), 'some deaths are credited kills');
-    assert.ok(actions.some(a => a.item === 'axe'), 'bots swing axes');
-    assert.ok(actions.some(a => a.item === 'bow'), 'bots shoot bows');
-    assert.ok(room.eventsOf('blockCracking').length > 0, 'bots dig the floor');
+    assert.ok(shots.length > 100, `shots fired: ${shots.length}`);
+    assert.ok(new Set(shots.map(s => s.w)).size >= 3, 'several different guns');
+    assert.ok(room.eventsOf('action').some(a => a.action === 'reload'), 'bots reload');
+    assert.ok(room.eventsOf('damage').some(d => d.zone === 'head'), 'some headshots');
     assert.ok(room.eventsOf('pickupTaken').some(p => p.by), 'bots collect pickups');
 
     const players = [...room.players.values()];
-    const kills = players.reduce((n, p) => n + p.kills, 0);
-    assert.ok(kills > 0);
+    assert.ok(players.reduce((n, p) => n + p.kills, 0) > 0);
     for (const p of players) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.z));
 });
 
@@ -29,36 +29,43 @@ test('setBotCount adds and removes bots', () => {
     room.setBotCount(1);
     assert.equal(room.bots.size, 1);
     assert.equal(room.players.size, 1);
+    assert.equal(room.humanCount, 0);
 });
 
-test('bots race for pickups and grab them quickly', () => {
-    const room = createRoom(11);
-    room.setBotCount(4);
-    run(room, 240);
-
-    const spawned = room.timedEventsOf('pickupSpawned');
-    const taken = new Map(room.timedEventsOf('pickupTaken').map(e => [e.data.id, e]));
-    const waits = spawned
-        .filter(e => taken.get(e.data.id)?.data.by)
-        .map(e => taken.get(e.data.id).time - e.time);
-    // The 60x60 arena means longer runs, but bots still go after them
-    assert.ok(spawned.length >= 8, `pickups spawned: ${spawned.length}`);
-    assert.ok(waits.length >= spawned.length * 0.7, `collected ${waits.length}/${spawned.length}`);
-    const average = waits.reduce((a, b) => a + b, 0) / waits.length;
-    assert.ok(average < 25, `average wait ${average.toFixed(1)}s`);
+test('bots go for ammo when they run low and potions when hurt', () => {
+    for (const type of ['ammo', 'health_potion']) {
+        const room = createRoom(11);
+        const bot = room.addBot();
+        if (type === 'ammo') {
+            for (const ammo of Object.values(bot.inventory.ammo)) ammo.reserve = 0;
+        } else {
+            bot.health = 40;
+        }
+        const pickup = room.pickups.spawn(type, room.arena, room.time);
+        // Start the bot a short walk away on the floor
+        const ix = pickup.ix + (pickup.ix < 30 ? 9 : -9);
+        place(room, bot, ix, pickup.iz);
+        let takenAt = null;
+        for (let t = 0; t < 30 && takenAt === null; t += 1 / 30) {
+            room.tick(1 / 30);
+            if (!room.pickups.pickups.has(pickup.id)) takenAt = t;
+        }
+        assert.ok(takenAt !== null, `${type} collected`);
+        assert.equal(room.eventsOf('pickupTaken').at(-1).by, bot.id);
+    }
 });
 
-test('bots climb sniper towers and shoot from the top', () => {
+test('bots with long guns climb sniper towers and shoot from the top', () => {
     const room = createRoom(5);
     room.setBotCount(4);
     let topShots = 0;
     room.emit = ((emit) => (target, type, data) => {
-        if (type === 'projectile') {
-            const shooter = room.players.get(data.ownerId);
+        if (type === 'shot') {
+            const shooter = room.players.get(data.id);
             if (shooter && shooter.y >= 8) topShots++;
         }
         emit(target, type, data);
     })(room.emit);
-    run(room, 240);
-    assert.ok(topShots > 0, 'some arrows were fired from a sniper top');
+    run(room, 300);
+    assert.ok(topShots > 0, 'some shots were fired from a sniper top');
 });

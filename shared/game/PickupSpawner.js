@@ -1,6 +1,6 @@
 import { PICKUPS } from '../constants.js';
 
-// Spawns arrow and potion pickups on a timer; the first player to touch one takes it.
+// Spawns ammo and potion pickups on a timer; the first player to touch one takes it.
 export class PickupSpawner {
     constructor(rng) {
         this.rng = rng;
@@ -10,7 +10,7 @@ export class PickupSpawner {
     }
 
     types() {
-        return ['arrow', 'health_potion'];
+        return ['ammo', 'health_potion'];
     }
 
     // Returns newly spawned pickups

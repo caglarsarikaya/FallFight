@@ -1,5 +1,11 @@
 import { PLAYER } from '../constants.js';
 import { Inventory } from '../inventory/Inventory.js';
+import { bodyHeight } from './Hitbox.js';
+
+// Per-player weapon timers (server time): deploy, rate of fire, spray heat, reload, scope
+export function freshGunState() {
+    return { readyAt: 0, nextFireAt: 0, heat: 0, lastShotAt: -Infinity, reload: null, scoped: 0 };
+}
 
 // Authoritative per-player state held by a GameRoom
 export class PlayerState {
@@ -18,14 +24,20 @@ export class PlayerState {
         this.yaw = 0;
         this.pitch = 0;
         this.onGround = true;
+        this.crouching = false;
+        this.walking = false;
         this.lastGroundBlock = null; // { ix, iy, iz } last block stood on, for fall kill credit
 
         this.health = PLAYER.maxHealth;
+        this.armor = 0;
+        this.helmet = false;
         this.alive = true;
         this.respawnAt = 0;
         this.protectedUntil = 0;
+        this.taggedUntil = 0;
         this.inventory = new Inventory();
         this.cooldowns = {};
+        this.gun = freshGunState();
         this.drawing = false;
 
         this.kills = 0;
@@ -33,16 +45,20 @@ export class PlayerState {
         this.lastDamage = null; // { by, weapon, time }
     }
 
-    get eye() {
-        return { x: this.x, y: this.y + PLAYER.eyeHeight, z: this.z };
+    get height() {
+        return bodyHeight(this.crouching);
     }
 
-    // Collision box for weapon hits
+    get eye() {
+        return { x: this.x, y: this.y + (this.crouching ? PLAYER.crouchEyeHeight : PLAYER.eyeHeight), z: this.z };
+    }
+
+    // Collision box for projectiles and block checks
     get bounds() {
         const r = PLAYER.radius + 0.1;
         return {
             min: { x: this.x - r, y: this.y, z: this.z - r },
-            max: { x: this.x + r, y: this.y + PLAYER.height, z: this.z + r }
+            max: { x: this.x + r, y: this.y + this.height, z: this.z + r }
         };
     }
 
@@ -67,10 +83,11 @@ export class PlayerState {
             x: round(this.x), y: round(this.y), z: round(this.z),
             yaw: round(this.yaw), pitch: round(this.pitch),
             onGround: this.onGround,
+            crouching: this.crouching,
             health: this.health,
+            armor: this.armor,
             alive: this.alive,
-            item: this.inventory.hotbar[this.inventory.selected],
-            drawing: this.drawing,
+            item: this.inventory.selectedId,
             kills: this.kills,
             deaths: this.deaths
         };

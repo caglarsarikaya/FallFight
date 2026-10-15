@@ -13,8 +13,8 @@ const DEFAULT_DIMS = {
 const easeOut = t => 1 - (1 - t) * (1 - t);
 
 // Base class for the blocky player characters. Builds a rig (legs, torso, arms, head on pivots,
-// origin at the feet, facing -Z) and animates walking, attacking, bow drawing, drinking, getting
-// hurt and dying. Subclasses customise the look by overriding the build* hooks and add their own
+// origin at the feet, facing -Z) and animates walking, crouching, aiming a gun, knifing, recoil,
+// reloading, drinking, getting hurt and dying. Subclasses customise the look by overriding the build* hooks and add their own
 // motion in animateExtras().
 export class CharacterModel {
     constructor() {
@@ -29,6 +29,7 @@ export class CharacterModel {
         this.action = null;      // { name, t, duration }
         this.hurtTimer = 0;
         this.deathTimer = null;
+        this.crouch = 0;
 
         this.build();
         this.root.traverse(o => {
@@ -89,6 +90,7 @@ export class CharacterModel {
         this.leftArm = this.pivot(-shoulderX, shoulderY, 0);
         this.rightArm = this.pivot(shoulderX, shoulderY, 0);
         this.head = this.pivot(0, legH + torsoH, 0);
+        this.restY = { shoulder: shoulderY, head: legH + torsoH };
 
         // Weapons attach here (in the right hand, pointing forward)
         this.handAnchor = new THREE.Group();
@@ -153,7 +155,7 @@ export class CharacterModel {
     // ---- animation -------------------------------------------------------------------
 
     playAction(name) {
-        const durations = { swing: 0.35, shoot: 0.25, drink: 0.6 };
+        const durations = { swing: 0.35, stab: 0.5, shoot: 0.14, drink: 0.6, reload: 1.4 };
         this.action = { name, t: 0, duration: durations[name] || 0.3 };
     }
 
@@ -171,10 +173,21 @@ export class CharacterModel {
         this.rig.position.set(0, 0, 0);
     }
 
-    // state: { speed, onGround, drawing, drawProgress, pitch }
+    // state: { speed, onGround, aiming (holding a gun), crouching, pitch }
     animate(dt, state) {
         this.time += dt;
-        const { speed = 0, onGround = true, drawing = false, pitch = 0 } = state;
+        const { speed = 0, onGround = true, aiming = false, crouching = false, pitch = 0 } = state;
+
+        // Crouch: shorter legs, everything above them lower
+        this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
+        const { legH } = this.dims;
+        const drop = legH * 0.42 * this.crouch;
+        for (const leg of [this.leftLeg, this.rightLeg]) {
+            leg.position.y = legH - drop;
+            leg.scale.y = 1 - 0.42 * this.crouch;
+        }
+        this.leftArm.position.y = this.rightArm.position.y = this.restY.shoulder - drop;
+        this.head.position.y = this.restY.head - drop;
 
         // Walk cycle
         const stride = Math.min(speed / 4.6, 1);
@@ -188,12 +201,13 @@ export class CharacterModel {
         this.head.rotation.set(THREE.MathUtils.clamp(pitch, -0.8, 0.8), 0, 0);
         this.body.rotation.set(0, 0, 0);
         // Idle breathing
-        this.body.position.y = this.dims.legH + Math.sin(this.time * 2) * 0.008;
+        this.body.position.y = this.dims.legH - drop + Math.sin(this.time * 2) * 0.008;
+        if (this.crouch > 0.01) this.body.rotation.x = -0.2 * this.crouch;
 
-        if (drawing) {
-            // Bow up in the right hand, left hand pulls the string
-            this.rightArm.rotation.set(Math.PI / 2 + pitch, 0, 0.08);
-            this.leftArm.rotation.set(Math.PI / 2 + pitch, 0, -0.55);
+        if (aiming) {
+            // Gun up at the shoulder: right hand on the grip, left hand on the handguard
+            this.rightArm.rotation.set(Math.PI / 2 + pitch, 0, 0.06);
+            this.leftArm.rotation.set(Math.PI / 2 + pitch - 0.12, 0.5, 0);
         }
 
         if (this.action) {
@@ -203,9 +217,19 @@ export class CharacterModel {
                 const raise = t < 0.35 ? easeOut(t / 0.35) * 2.6 : 2.6 - easeOut((t - 0.35) / 0.65) * 2.2;
                 this.rightArm.rotation.set(raise + 0.2, 0, 0.15);
                 this.body.rotation.y = -Math.sin(t * Math.PI) * 0.25;
+            } else if (this.action.name === 'stab') {
+                const thrust = Math.sin(t * Math.PI);
+                this.rightArm.rotation.set(0.6 + thrust * 1.1 + pitch * thrust, 0, 0.1);
+                this.body.rotation.y = thrust * 0.2;
             } else if (this.action.name === 'shoot') {
-                this.rightArm.rotation.set(Math.PI / 2 + pitch - Math.sin(t * Math.PI) * 0.2, 0, 0.08);
-                this.leftArm.rotation.set(Math.PI / 2 + pitch - 0.3 * (1 - t), 0, -0.3);
+                const kick = Math.sin(t * Math.PI) * 0.18;
+                this.rightArm.rotation.set(Math.PI / 2 + pitch + kick, 0, 0.06);
+                this.leftArm.rotation.set(Math.PI / 2 + pitch - 0.12 + kick, 0.5, 0);
+            } else if (this.action.name === 'reload') {
+                // Left hand down to the magazine and back
+                const reach = Math.sin(Math.min(1, t * 1.2) * Math.PI);
+                this.rightArm.rotation.set(Math.PI / 2 + pitch - 0.5 * reach, 0, 0.06 + 0.3 * reach);
+                this.leftArm.rotation.set(Math.PI / 2 + pitch - 0.12 - 1.1 * reach, 0.5, 0);
             } else if (this.action.name === 'drink') {
                 this.rightArm.rotation.set(2.3, 0, 0.6);
                 this.head.rotation.x = 0.45 * Math.sin(t * Math.PI);
@@ -244,7 +268,7 @@ export class CharacterModel {
 
     dispose() {
         this.root.traverse(o => {
-            if (o.isMesh) o.geometry.dispose();
+            if (o.isMesh && !o.userData.shared) o.geometry.dispose();
         });
         this.materials.forEach(m => {
             m.map?.dispose();

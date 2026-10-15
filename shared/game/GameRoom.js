@@ -1,16 +1,22 @@
-import { ARENA, KILL_CREDIT_WINDOW, NET, PLAYER } from '../constants.js';
+import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, LOADOUT, NET, PLAYER } from '../constants.js';
 import { C2S, S2C } from '../protocol.js';
-import { normalize, rayBox } from '../math.js';
+import { normalize } from '../math.js';
 import { Arena } from '../world/Arena.js';
 import { getItem } from '../items/ItemRegistry.js';
+import { weaponSpec } from '../config/weapons.js';
 import { CHARACTERS, DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../characters/definitions.js';
 import { stepMovement } from '../physics.js';
 import { BotBrain } from '../ai/BotBrain.js';
-import { PlayerState } from './PlayerState.js';
+import { PlayerState, freshGunState } from './PlayerState.js';
 import { Projectile } from './Projectile.js';
 import { PickupSpawner } from './PickupSpawner.js';
+import { LagComp } from './LagComp.js';
+import { hitTest } from './Hitbox.js';
 
 const BOT_NAMES = ['Steve', 'Alex', 'Notch', 'Herobrine', 'Creeper', 'Blaze', 'Ender', 'Wither'];
+const ZONE_RANK = { legs: 0, body: 1, head: 2 };
+const round2 = v => Math.round(v * 100) / 100;
+const round4 = v => Math.round(v * 10000) / 10000;
 
 // Authoritative arena simulation. Transport-agnostic: messages come in through handleMessage()
 // and go out through emit(targetId | null, type, data), where null means everyone in the room.
@@ -25,13 +31,15 @@ export class GameRoom {
         this.bots = new Map();          // id -> BotBrain
         this.projectiles = new Map();
         this.pickups = new PickupSpawner(rng);
+        this.lagComp = new LagComp();
         this.nextProjectileId = 1;
         this.nextBotId = 1;
         this.snapshotTimer = 0;
+        this.humans = 0;
     }
 
     get humanCount() {
-        return [...this.players.values()].filter(p => !p.isBot).length;
+        return this.humans;
     }
 
     // ---- membership -------------------------------------------------------------------
@@ -44,8 +52,10 @@ export class GameRoom {
             characterId: isValidCharacter(characterId) ? characterId : DEFAULT_CHARACTER,
             isBot
         });
+        this.equip(player);
         this.placeAtSpawn(player);
         this.players.set(id, player);
+        if (!isBot) this.humans++;
 
         if (!isBot) {
             this.emit(id, S2C.WELCOME, {
@@ -64,8 +74,12 @@ export class GameRoom {
     }
 
     removePlayer(id) {
-        if (!this.players.delete(id)) return;
+        const player = this.players.get(id);
+        if (!player) return;
+        this.players.delete(id);
+        if (!player.isBot) this.humans--;
         this.bots.delete(id);
+        this.lagComp.forget(id);
         this.emit(null, S2C.PLAYER_LEFT, { id });
     }
 
@@ -84,6 +98,18 @@ export class GameRoom {
         while (this.bots.size > count) this.removePlayer([...this.bots.keys()].pop());
     }
 
+    // Spawn loadout: a random rifle/SMG/sniper and pistol, kevlar and helmet
+    equip(player) {
+        const pick = list => list[Math.floor(this.rng() * list.length)];
+        player.inventory.reset({
+            weapons: [pick(LOADOUT.primary), pick(LOADOUT.secondary)],
+            counts: { health_potion: LOADOUT.health_potion }
+        });
+        player.armor = LOADOUT.armor;
+        player.helmet = LOADOUT.helmet;
+        player.gun = freshGunState();
+    }
+
     // ---- client messages --------------------------------------------------------------
 
     handleMessage(id, type, data = {}) {
@@ -92,8 +118,10 @@ export class GameRoom {
         switch (type) {
             case C2S.STATE: return this.onState(player, data);
             case C2S.SELECT: return this.select(player, data.slot);
-            case C2S.DRAW: return this.setDrawing(player, !!data.drawing);
-            case C2S.USE: return this.useItem(player, data.slot, data.dir, data.charge);
+            case C2S.USE: return this.useItem(player, data.slot, data.dir);
+            case C2S.FIRE: return this.fire(player, data);
+            case C2S.RELOAD: return this.reload(player);
+            case C2S.SCOPE: return this.setScope(player, data.level);
             case C2S.PROFILE: return this.onProfile(player, data);
         }
     }
@@ -112,6 +140,8 @@ export class GameRoom {
         player.yaw = data.yaw;
         player.pitch = data.pitch;
         player.onGround = !!data.onGround;
+        player.crouching = !!data.crouching;
+        player.walking = !!data.walking;
         this.afterMove(player);
     }
 
@@ -124,69 +154,227 @@ export class GameRoom {
     // ---- actions (used by clients and bots) ---------------------------------------------
 
     select(player, slot) {
-        if (player.inventory.select(slot)) {
-            player.drawing = false;
+        if (slot === player.inventory.selected || !player.inventory.select(slot)) return false;
+        const spec = weaponSpec(player.inventory.selectedId);
+        player.gun.reload = null;
+        player.gun.scoped = 0;
+        player.gun.readyAt = this.time + (spec?.deploy ?? 0.3);
+        this.notifyInventory(player);
+        return true;
+    }
+
+    // Consumables (health potion)
+    useItem(player, slot, dir) {
+        if (!player.alive) return false;
+        if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
+        const item = player.inventory.selectedItem;
+        if (!item || item.isGun || item.isKnife || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
+
+        const used = item.tryUse({ room: this, player, origin: player.eye, dir: normalize(dir), now: this.time });
+        if (used) this.emit(null, S2C.ACTION, { id: player.id, action: item.action, item: item.id });
+        return used;
+    }
+
+    // Gun shot or knife attack. data: { slot, seq, dir, t, alt }
+    fire(player, { slot, seq = 0, dir, t, alt = false } = {}) {
+        if (!player.alive || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
+        if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
+        const item = player.inventory.selectedItem;
+        if (!item) return false;
+        // Rewind to what the shooter saw, but never further than the lag compensation window
+        const rewind = Number.isFinite(t) ? Math.min(this.time, Math.max(this.time - GUN.lagCompensation, t)) : this.time;
+        const ctx = { room: this, player, origin: player.eye, dir: normalize(dir), seq: seq | 0, rewind, alt: !!alt, now: this.time };
+
+        let fired = false;
+        if (item.isGun) {
+            fired = item.fire(ctx);
+        } else if (item.isKnife) {
+            fired = item.attack(ctx);
+            if (fired) this.emit(null, S2C.ACTION, { id: player.id, action: alt ? 'stab' : 'swing', item: item.id });
+        }
+        if (fired) player.protectedUntil = 0; // attacking ends spawn protection
+        return fired;
+    }
+
+    reload(player) {
+        const id = player.inventory.selectedId;
+        const spec = weaponSpec(id);
+        const ammo = player.inventory.ammo[id];
+        const g = player.gun;
+        if (!player.alive || !ammo || g.reload || ammo.mag >= spec.mag || ammo.reserve <= 0) return false;
+        // Shotguns load shell by shell after a short start
+        const first = spec.reloadStyle === 'shell' ? spec.reloadTime + 0.35 : spec.reloadTime;
+        g.reload = { id, at: this.time + first };
+        g.scoped = 0;
+        this.emit(null, S2C.ACTION, { id: player.id, action: 'reload', item: id });
+        return true;
+    }
+
+    setScope(player, level) {
+        const spec = weaponSpec(player.inventory.selectedId);
+        if (!spec?.scope || !Number.isInteger(level)) return;
+        player.gun.scoped = Math.max(0, Math.min(spec.scope.zooms.length, level));
+    }
+
+    updateReloads() {
+        for (const player of this.players.values()) {
+            const r = player.gun.reload;
+            if (!r || this.time < r.at) continue;
+            const spec = weaponSpec(r.id);
+            const ammo = player.inventory.ammo[r.id];
+            if (!ammo || player.inventory.selectedId !== r.id) {
+                player.gun.reload = null;
+                continue;
+            }
+            if (spec.reloadStyle === 'shell') {
+                ammo.mag++;
+                ammo.reserve--;
+                if (ammo.mag < spec.mag && ammo.reserve > 0) r.at += spec.reloadTime;
+                else player.gun.reload = null;
+            } else {
+                const take = Math.min(spec.mag - ammo.mag, ammo.reserve);
+                ammo.mag += take;
+                ammo.reserve -= take;
+                player.gun.reload = null;
+            }
             this.notifyInventory(player);
         }
     }
 
-    setDrawing(player, drawing) {
-        const item = player.inventory.selectedItem;
-        player.drawing = drawing && player.alive && !!item?.chargeable;
+    // ---- shooting ------------------------------------------------------------------------
+
+    // Everyone the shot could hit, where they were at the rewound time
+    shotTargets(shooter, time) {
+        const targets = [];
+        for (const p of this.players.values()) {
+            if (!p.alive || p === shooter) continue;
+            const pose = this.lagComp.poseAt(p, time);
+            targets.push({ player: p, x: pose.x, y: pose.y, z: pose.z, crouching: pose.crouching });
+        }
+        return targets;
     }
 
-    useItem(player, slot, dir, charge = 0) {
-        if (!player.alive) return false;
-        if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
-        const item = player.inventory.selectedItem;
-        if (!item || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
-
-        const used = item.tryUse({
-            room: this,
-            player,
-            origin: player.eye,
-            dir: normalize(dir),
-            charge: Number(charge) || 0,
-            now: this.time
-        });
-        player.drawing = false;
-        if (used) {
-            player.protectedUntil = 0; // attacking ends spawn protection
-            this.emit(null, S2C.ACTION, { id: player.id, action: item.action, item: item.id });
+    // Trace every pellet, apply the damage (one DAMAGE per victim), and tell everyone about the
+    // shot so they see the tracer and hear it.
+    resolveShot(shooter, gun, origin, dirs, time) {
+        const spec = gun.spec;
+        const targets = this.shotTargets(shooter, time);
+        const hits = new Map(); // victim -> { health, zone, headshot, armorHit, armorBefore }
+        const pellets = [];
+        for (const dir of dirs) {
+            const end = this.traceBullet(shooter, origin, dir, spec, targets, hits);
+            pellets.push(round4(dir.x), round4(dir.y), round4(dir.z), round2(end.distance), end.kind);
         }
-        return used;
+        this.emit(null, S2C.SHOT, {
+            id: shooter.id, w: gun.id,
+            o: [round2(origin.x), round2(origin.y), round2(origin.z)],
+            p: pellets
+        });
+        for (const [victim, hit] of hits) {
+            const amount = Math.max(1, Math.round(hit.health));
+            this.damage(victim, amount, shooter, gun.id,
+                spec.knockback ? { x: dirs[0].x, z: dirs[0].z, strength: spec.knockback } : null,
+                { zone: hit.zone, headshot: hit.zone === 'head', armorHit: hit.armorHit, dir: dirs[0], armorDone: true });
+        }
+    }
+
+    // One bullet: stops at the first player, punches through up to spec.penetration blocks.
+    // Returns { distance, kind } with kind 0 = nothing, 1 = block, 2 = player.
+    traceBullet(shooter, origin, dir, spec, targets, hits) {
+        let damage = spec.damage;
+        let penetration = spec.penetration;
+        let travelled = 0;
+        let remaining = GUN.maxRange;
+        const o = { x: origin.x, y: origin.y, z: origin.z };
+        for (;;) {
+            const block = this.arena.raycast(o, dir, remaining);
+            const reach = block ? block.distance : remaining;
+
+            let best = null;
+            for (const target of targets) {
+                if (!target.player.alive) continue;
+                const hit = hitTest(o, dir, reach, target);
+                if (hit && (!best || hit.distance < best.distance)) best = { target, distance: hit.distance, zone: hit.zone };
+            }
+            if (best) {
+                const distance = travelled + best.distance;
+                const raw = damage * Math.pow(spec.rangeModifier, distance / GUN.falloffUnit) * GUN.zoneMultiplier[best.zone];
+                this.addBulletHit(hits, best.target.player, raw, best.zone, spec);
+                return { distance, kind: 2 };
+            }
+            if (!block) return { distance: travelled + remaining, kind: 0 };
+
+            // Bullets chip blocks; enough of them cracks it
+            if (this.arena.damageBlock(block.ix, block.iy, block.iz, damage * GUN.blockDamage)) {
+                this.breakBlock(block.ix, block.iy, block.iz, shooter);
+            }
+            if (penetration <= 0) return { distance: travelled + block.distance, kind: 1 };
+            const exit = this.arena.cellExit(block.ix, block.iy, block.iz, o, dir) + 0.01;
+            penetration--;
+            damage *= GUN.penetrationLoss;
+            o.x += dir.x * exit;
+            o.y += dir.y * exit;
+            o.z += dir.z * exit;
+            travelled += exit;
+            remaining -= exit;
+            if (remaining <= 0) return { distance: travelled, kind: 1 };
+        }
+    }
+
+    // Armor works per pellet, like CS: kevlar covers body and head (head only with a helmet)
+    addBulletHit(hits, victim, raw, zone, spec) {
+        let entry = hits.get(victim);
+        if (!entry) {
+            entry = { health: 0, zone, armorHit: false };
+            hits.set(victim, entry);
+        }
+        if (ZONE_RANK[zone] > ZONE_RANK[entry.zone]) entry.zone = zone;
+        if (victim.isProtected(this.time)) return;
+        const covered = victim.armor > 0 && zone !== 'legs' && (zone !== 'head' || victim.helmet);
+        if (!covered) {
+            entry.health += raw;
+            return;
+        }
+        let health = raw * spec.armorPen;
+        const armorLoss = (raw - health) * ARMOR.absorb;
+        if (armorLoss > victim.armor) {
+            health = raw - victim.armor / ARMOR.absorb;
+            victim.armor = 0;
+        } else {
+            victim.armor = Math.max(0, Math.floor(victim.armor - armorLoss));
+        }
+        entry.health += health;
+        entry.armorHit = true;
     }
 
     // ---- services used by items --------------------------------------------------------
 
-    findPlayerHit(origin, dir, maxDist, excludeId) {
+    // Nearest player along the aim ray (hitboxes, lag compensated): { player, distance, zone } or null
+    findPlayerHit(origin, dir, maxDist, excludeId, time = this.time) {
         let best = null;
         for (const player of this.players.values()) {
             if (!player.alive || player.id === excludeId) continue;
-            const { min, max } = player.bounds;
-            const t = rayBox(origin, dir, min, max, maxDist);
-            if (t !== null && (!best || t < best.distance)) best = { player, distance: t };
+            const hit = hitTest(origin, dir, maxDist, this.lagComp.poseAt(player, time));
+            if (hit && (!best || hit.distance < best.distance)) best = { player, distance: hit.distance, zone: hit.zone };
         }
         // Blocks in the way stop the hit
-        if (best) {
-            const block = this.arena.raycast(origin, dir, best.distance);
-            if (block) return null;
-        }
+        if (best && this.arena.raycast(origin, dir, best.distance)) return null;
         return best;
     }
 
-    // info: { zone, headshot } for projectile hits
+    // info: { zone, headshot, armorHit, dir, ignoreArmor, armorDone }
     damage(victim, amount, attacker, weapon, knockback, info = {}) {
         if (!victim.alive || victim.isProtected(this.time)) return false;
         victim.health = Math.max(0, victim.health - amount);
         victim.lastDamage = { by: attacker?.id ?? null, weapon, time: this.time };
+        victim.taggedUntil = this.time + PLAYER.tagTime;
 
         let kb = null;
         if (knockback) {
             const len = Math.hypot(knockback.x, knockback.z) || 1;
             kb = {
                 x: (knockback.x / len) * knockback.strength,
-                y: 4,
+                y: Math.min(4, knockback.strength),
                 z: (knockback.z / len) * knockback.strength
             };
             if (victim.isBot) {
@@ -201,12 +389,15 @@ export class GameRoom {
             attackerId: attacker?.id ?? null,
             amount,
             health: victim.health,
+            armor: victim.armor,
             weapon,
             zone: info.zone ?? null,
             headshot: !!info.headshot,
+            armorHit: !!info.armorHit,
+            from: attacker ? { x: round2(attacker.x), z: round2(attacker.z) } : null,
             knockback: kb
         });
-        if (victim.health <= 0) this.kill(victim, attacker, info.headshot ? 'headshot' : weapon);
+        if (victim.health <= 0) this.kill(victim, attacker, weapon, !!info.headshot);
         return true;
     }
 
@@ -242,7 +433,7 @@ export class GameRoom {
     }
 
     notifyInventory(player) {
-        if (!player.isBot) this.emit(player.id, S2C.INVENTORY, player.inventory.toJSON());
+        if (!player.isBot) this.emit(player.id, S2C.INVENTORY, { ...player.inventory.toJSON(), armor: player.armor, helmet: player.helmet });
     }
 
     // ---- life and death ---------------------------------------------------------------
@@ -263,11 +454,12 @@ export class GameRoom {
         this.kill(victim, this.players.get(creditId) || null, 'fall');
     }
 
-    kill(victim, killer, cause) {
+    kill(victim, killer, cause, headshot = false) {
         if (!victim.alive) return;
         victim.alive = false;
         victim.health = 0;
-        victim.drawing = false;
+        victim.gun.reload = null;
+        victim.gun.scoped = 0;
         victim.deaths++;
         victim.respawnAt = this.time + PLAYER.respawnDelay;
 
@@ -277,29 +469,30 @@ export class GameRoom {
             credited.inventory.add('health_potion', 1); // kill reward
             this.notifyInventory(credited);
         }
-        this.emit(null, S2C.DEATH, { victimId: victim.id, killerId: credited?.id ?? null, cause });
+        this.emit(null, S2C.DEATH, { victimId: victim.id, killerId: credited?.id ?? null, cause, headshot });
     }
 
     placeAtSpawn(player) {
         const others = [...this.players.values()].filter(p => p.alive && p !== player);
         const spot = this.arena.findSpawn(this.rng, others, { maxY: 0 });
         const center = spot ? this.arena.tileCenter(spot.ix, spot.iz) : { x: 0, z: 0 };
-        Object.assign(player, { x: center.x, y: spot ? spot.y : 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true });
+        Object.assign(player, { x: center.x, y: spot ? spot.y : 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false });
         // Face the middle of the arena
         player.yaw = Math.atan2(player.x, player.z);
         player.pitch = 0;
         player.lastGroundBlock = spot ? { ix: spot.ix, iy: spot.y, iz: spot.iz } : null;
         player.protectedUntil = this.time + PLAYER.spawnProtection;
+        this.lagComp.reset(player.id);
     }
 
     respawn(player) {
+        this.equip(player);
         this.placeAtSpawn(player);
         player.alive = true;
         player.health = PLAYER.maxHealth;
-        player.inventory.reset();
         player.cooldowns = {};
         player.lastDamage = null;
-        this.emit(null, S2C.RESPAWN, { id: player.id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, health: player.health });
+        this.emit(null, S2C.RESPAWN, { id: player.id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, health: player.health, armor: player.armor });
         this.notifyInventory(player);
     }
 
@@ -311,9 +504,16 @@ export class GameRoom {
             if (!p.alive) continue;
             if (p.x + r > c.x - 0.5 && p.x - r < c.x + 0.5 &&
                 p.z + r > c.z - 0.5 && p.z - r < c.z + 0.5 &&
-                p.y + PLAYER.height > c.y - 0.5 && p.y < c.y + 0.5) return true;
+                p.y + p.height > c.y - 0.5 && p.y < c.y + 0.5) return true;
         }
         return false;
+    }
+
+    // Movement input extras for a bot: weapon weight and being slowed by hits
+    botMoveInput(bot, input) {
+        input.speedMul = weaponSpec(bot.inventory.selectedId)?.moveSpeed ?? 1;
+        input.slow = this.time < bot.taggedUntil ? PLAYER.tagSpeed : 1;
+        return input;
     }
 
     // ---- simulation -------------------------------------------------------------------
@@ -332,20 +532,21 @@ export class GameRoom {
             const bot = this.players.get(id);
             const input = brain.update(dt);
             if (!bot.alive) continue;
-            stepMovement(bot, input, this.arena, dt);
+            stepMovement(bot, this.botMoveInput(bot, input), this.arena, dt);
             this.afterMove(bot);
         }
+        this.updateReloads();
 
         for (const projectile of this.projectiles.values()) {
             const hit = projectile.step(dt, this, this.time);
             if (!hit) continue;
             this.projectiles.delete(projectile.id);
-            if (hit.type === 'player') {
-                const weapon = getItem(projectile.itemId);
+            const weapon = getItem(projectile.itemId);
+            if (hit.type === 'player' && weapon?.damageFor) {
                 const owner = this.players.get(projectile.ownerId) || null;
                 const { amount, headshot } = weapon.damageFor({ zone: hit.zone, power: projectile.power });
                 this.damage(hit.player, amount, owner, weapon.id,
-                    { x: projectile.vx, z: projectile.vz, strength: weapon.knockback * (0.5 + projectile.power / 2) },
+                    { x: projectile.vx, z: projectile.vz, strength: weapon.knockback },
                     { zone: hit.zone, headshot });
             }
             this.emit(null, S2C.PROJECTILE_END, {
@@ -361,7 +562,8 @@ export class GameRoom {
             this.emit(null, S2C.PICKUP_SPAWNED, pickup);
         }
         for (const { pickup, player } of this.pickups.collect(this.players.values())) {
-            player.inventory.add(pickup.type, pickup.amount);
+            if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount);
+            else player.inventory.add(pickup.type, pickup.amount);
             this.notifyInventory(player);
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: player.id, type: pickup.type, amount: pickup.amount });
         }
@@ -369,6 +571,7 @@ export class GameRoom {
         for (const player of this.players.values()) {
             if (!player.alive && this.time >= player.respawnAt) this.respawn(player);
         }
+        this.lagComp.record(this.time, this.players.values());
 
         this.snapshotTimer -= dt;
         if (this.snapshotTimer <= 0) {

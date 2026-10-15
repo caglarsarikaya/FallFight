@@ -26,39 +26,50 @@ export const PLAYER = {
     radius: 0.3,
     height: 1.8,
     eyeHeight: 1.6,
-    walkSpeed: 4.6,
+    crouchHeight: 1.3,
+    crouchEyeHeight: 1.1,
+    walkSpeed: 5.2,    // knife out; guns scale it by their moveSpeed
+    crouchSpeed: 0.34, // multipliers while crouching / holding walk (CS: 34% and 52%)
+    slowWalkSpeed: 0.52,
     jumpSpeed: 7.6,    // ~1.2 block jump with the gravity below
     gravity: 24,
     groundAccel: 14,
     airAccel: 3,
     respawnDelay: 3,
     spawnProtection: 2,
-    // Hit zones by height above the feet
-    zones: { headFrom: 1.4, bodyFrom: 0.75 }
+    // Hit zones by height above the feet (projectiles)
+    zones: { headFrom: 1.4, bodyFrom: 0.75 },
+    // Getting shot slows you down for a moment (CS "tagging")
+    tagSpeed: 0.55,
+    tagTime: 0.35
+};
+
+// Hitboxes for bullets and the knife, relative to the feet; scaled down when crouching.
+// Tighter than the movement box, like CS: the head is a small box on top.
+export const HITBOX = {
+    head: { radius: 0.19, height: 0.36 },
+    body: { radius: 0.33, from: 0.82 },
+    legs: { radius: 0.27 }
+};
+
+export const ARMOR = {
+    max: 100,
+    absorb: 0.5       // armor points lost per point of damage it stops
+};
+
+export const GUN = {
+    maxRange: 160,
+    falloffUnit: 12.5,              // blocks per CS 500 units
+    zoneMultiplier: { head: 4, body: 1, legs: 0.75 },
+    penetrationLoss: 0.55,          // damage kept after punching through a block
+    fireTolerance: 0.1,             // seconds of bunching allowed between shots arriving over the network
+    lagCompensation: 0.25,          // max seconds the server rewinds targets for hit checks
+    blockDamage: 1                  // share of bullet damage that goes into blocks
 };
 
 export const BLOCK = {
     breakDelay: 0.4,   // cracking time before a block disappears
     regrowDelay: 20
-};
-
-export const AXE = {
-    damage: 10,
-    reach: 3.5,
-    cooldown: 0.45,
-    knockback: 5
-};
-
-export const BOW = {
-    // [weakest, strongest] damage by zone; scales with draw power (0.15..1)
-    damage: { legs: [8, 24], body: [12, 35], head: [50, 80] },
-    headshotPower: 0.95, // a head hit at (almost) full draw kills outright
-    minDraw: 0.15,
-    fullDraw: 1.0,
-    minSpeed: 40,
-    maxSpeed: 100,
-    cooldown: 0.3,
-    knockback: 6
 };
 
 export const POTION = {
@@ -67,18 +78,22 @@ export const POTION = {
 };
 
 export const PROJECTILE = {
-    gravity: 0,        // arrows fly straight, no drop
-    maxLife: 1.5,      // seconds; without gravity, stray arrows simply expire
+    gravity: 0,        // projectiles fly straight, no drop
+    maxLife: 1.5,      // seconds; without gravity, strays simply expire
     radius: 0.1
 };
 
+// Free-for-all spawn loadout: a random primary and pistol, the knife and an empty potion slot
 export const LOADOUT = {
-    arrow: 20,
+    primary: ['ak47', 'm4a1', 'mp5', 'p90', 'm3', 'scout', 'awp'],
+    secondary: ['usp', 'glock', 'deagle'],
+    armor: 100,
+    helmet: true,
     health_potion: 0
 };
 
 export const PICKUPS = {
-    arrow: { interval: 15, amount: 3, max: 5 },
+    ammo: { interval: 15, amount: 1, max: 5 },   // amount = magazines for every gun carried
     health_potion: { interval: 60, amount: 1, max: 2 },
     radius: 0.9
 };

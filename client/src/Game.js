@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { AXE, BOW, NET, PLAYER } from '../shared/constants.js';
+import { GUN, NET, PLAYER } from '../shared/constants.js';
+import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
-import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
-import { getItem } from '../shared/items/ItemRegistry.js';
-import { Bow } from '../shared/items/Bow.js';
+import { Arena, BLOCK_KIND, BLOCK_STATE } from '../shared/world/Arena.js';
+import { hitTest } from '../shared/game/Hitbox.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
+import { GunEffects } from './effects/GunEffects.js';
 import { INTERPOLATION_DELAY, PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
 import { PickupView } from './entities/PickupView.js';
@@ -14,6 +15,7 @@ import { CameraController } from './camera/CameraViews.js';
 import { ViewModel } from './camera/ViewModel.js';
 import { InputManager } from './input/InputManager.js';
 import { LocalPlayerController } from './player/LocalPlayerController.js';
+import { WeaponController } from './weapons/WeaponController.js';
 import { Hud } from './ui/Hud.js';
 import { Scoreboard } from './ui/Scoreboard.js';
 import { RespawnOverlay } from './ui/RespawnOverlay.js';
@@ -21,11 +23,19 @@ import { PauseMenu } from './ui/PauseMenu.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { arrow: 'Arrows', health_potion: 'Health Potion' };
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion' };
 const STATS_INTERVAL_MS = 500;
+const BASE_FOV = 75;
+const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
+const WHIZ_DISTANCE = 1.6;       // bullets passing this close to your head crack past your ears
+const BLOOD = ['#9c0a0a', '#6e0606', '#c21a1a'];
+const IMPACT_SOUND = { [BLOCK_KIND.GRASS]: 'impactDirt', [BLOCK_KIND.STONE]: 'impactStone', [BLOCK_KIND.PLANKS]: 'impactWood' };
+const STEP_SOUND = { [BLOCK_KIND.GRASS]: 'step', [BLOCK_KIND.STONE]: 'stepStone', [BLOCK_KIND.PLANKS]: 'stepWood' };
+const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 
-// Client game: renders the arena, predicts the local player, sends inputs and reacts to the
-// authoritative room's events. Works the same with a LocalConnection or an OnlineConnection.
+// Client game: renders the arena, predicts the local player and its gunfire, sends inputs and
+// reacts to the authoritative room's events. Works the same with a LocalConnection or an
+// OnlineConnection.
 export class Game {
     constructor({ container, ui, connection, profile, sound, onEditProfile, onLeave }) {
         this.connection = connection;
@@ -43,14 +53,16 @@ export class Game {
         container.append(this.renderer.domElement);
 
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 1000);
+        this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.05, 1000);
         this.scene.add(this.camera);
         this.world = new WorldRenderer(this.scene);
         this.particles = new Particles(this.scene);
+        this.effects = new GunEffects(this.scene);
         this.viewModel = new ViewModel();
         this.cameraController = new CameraController(this.camera, profile.cameraMode);
         this.input = new InputManager(this.renderer.domElement);
         this.local = new LocalPlayerController();
+        this.weapons = new WeaponController(this);
 
         this.hud = new Hud(ui);
         this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · BOTS');
@@ -85,19 +97,24 @@ export class Game {
         this.clickToPlay = el('div.overlay.hidden', {}, el('div.click-to-play', { text: 'Click to play', onclick: () => this.resume() }));
         ui.append(this.clickToPlay);
 
-        this.players = new Map();       // id -> { id, name, characterId, isBot, alive, health, kills, deaths, avatar }
+        this.players = new Map();       // id -> { id, name, characterId, isBot, alive, health, kills, deaths, avatar, stepTimer }
         this.projectiles = new Map();
         this.pickups = new Map();
         this.selfId = null;
         this.arena = null;
-        this.inventory = null;
-        this.drawStartedAt = null;
         this.nextUseAt = 0;
         this.sendTimer = 0;
         this.stepTimer = 0;
+        this.heartbeatTimer = 0;
         this.protectedUntil = 0;
         this.deathCam = null;
         this.editingProfile = false;
+        this.serverOffset = null;       // server time - local time, smoothed
+        this.zoom = 1;
+        this.armor = 0;
+        this.helmet = false;
+        this.look = { dx: 0, dy: 0 };
+        this.tmpVec = new THREE.Vector3();
 
         this.bindInput();
         this.bindNetwork();
@@ -135,6 +152,12 @@ export class Game {
         this.hud.setStats({ fps, ping, online: isOnline, latency: (ping ?? 0) / 2 + INTERPOLATION_DELAY });
     }
 
+    // The server time of the remote player positions currently on screen (for lag compensation)
+    serverRenderTime() {
+        if (this.serverOffset === null) return undefined;
+        return performance.now() / 1000 + this.serverOffset - INTERPOLATION_DELAY / 1000;
+    }
+
     // ---- menus and pointer lock -------------------------------------------------------------
 
     resume() {
@@ -146,7 +169,7 @@ export class Game {
 
     pause() {
         if (this.editingProfile) return;
-        this.cancelDraw();
+        this.weapons.setTrigger(false);
         this.scoreboard.hide();
         this.clickToPlay.classList.add('hidden');
         this.pauseMenu.show();
@@ -197,114 +220,177 @@ export class Game {
         };
         this.input.onAction = (action, value) => {
             if (!this.selfId) return;
+            const w = this.weapons;
             switch (action) {
-                case 'slot': return this.selectSlot(value);
-                case 'cycle': return this.inventory && this.selectSlot((this.inventory.selected + value + this.inventory.hotbar.length) % this.inventory.hotbar.length);
+                case 'slot': return this.local.alive && w.select(value);
+                case 'cycle': return this.local.alive && w.cycle(value);
+                case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.toggleCamera();
                 case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId) : this.scoreboard.hide();
-                case 'primary': return this.onPrimary(value);
+                case 'primary': return w.setTrigger(value && !!this.canAct);
+                case 'secondary': return this.canAct && w.secondary();
+                case 'reload': return this.canAct && w.startReload();
                 case 'pause': return this.input.exitLock();
             }
         };
     }
 
     get canAct() {
-        return this.selfId && this.local.alive && this.input.locked && this.inventory;
+        return this.selfId && this.local.alive && this.input.locked && this.weapons.inventory && !this.pauseMenu.visible;
     }
 
-    get selectedItem() {
-        return this.inventory ? getItem(this.inventory.hotbar[this.inventory.selected]) : null;
-    }
-
-    selectSlot(slot) {
-        if (!this.inventory || slot < 0 || slot >= this.inventory.hotbar.length || slot === this.inventory.selected) return;
-        this.cancelDraw();
-        this.inventory.selected = slot;
-        this.hud.setSelected(slot);
-        this.viewModel.setItem(this.inventory.hotbar[slot]);
-        this.self?.avatar.setHeldItem(this.inventory.hotbar[slot]);
-        this.connection.send(C2S.SELECT, { slot });
-        this.sound.play('select');
-    }
-
-    onPrimary(down) {
-        const item = this.selectedItem;
-        if (!this.canAct || !item) return;
-        if (item.chargeable) {
-            if (down) this.startDraw(item);
-            else this.releaseDraw();
-        } else if (down) {
-            this.useHeldItem();
-        }
-    }
-
-    startDraw(item) {
-        if (this.inventory.counts[item.countKey] <= 0) {
-            this.sound.play('empty');
-            this.hud.toast('No arrows! Grab the yellow pickups');
-            return;
-        }
-        this.drawStartedAt = performance.now();
-        this.connection.send(C2S.DRAW, { drawing: true });
-        this.self.avatar.drawing = true;
-        this.sound.play('bowDraw');
-    }
-
-    releaseDraw() {
-        if (this.drawStartedAt === null) return;
-        const charge = (performance.now() - this.drawStartedAt) / 1000;
-        this.drawStartedAt = null;
-        this.self.avatar.drawing = false;
-        if (charge < BOW.minDraw) {
-            this.connection.send(C2S.DRAW, { drawing: false });
-            return;
-        }
-        this.connection.send(C2S.USE, { slot: this.inventory.selected, dir: this.aimDirection(), charge });
-        this.viewModel.play('shoot');
-        this.self.avatar.playAction('shoot');
-        this.sound.play('bowShoot');
-        this.protectedUntil = 0;
-    }
-
-    cancelDraw() {
-        if (this.drawStartedAt === null) return;
-        this.drawStartedAt = null;
-        if (this.self) this.self.avatar.drawing = false;
-        this.connection.send(C2S.DRAW, { drawing: false });
-    }
-
-    useHeldItem() {
+    useConsumable() {
         const now = performance.now();
-        const item = this.selectedItem;
-        if (!item || now < this.nextUseAt) return;
-        if (item.countKey && (this.inventory.counts[item.countKey] || 0) <= 0) {
+        if (now < this.nextUseAt) return;
+        const inv = this.weapons.inventory;
+        if (!(inv.counts.health_potion > 0)) {
             this.sound.play('empty');
-            this.hud.toast(item.id === 'health_potion' ? 'No potions! Get a kill or find one' : `No ${item.name}`);
+            this.hud.toast('No potions! Get a kill or find one');
             this.nextUseAt = now + 600;
             return;
         }
-        if (item.id === 'health_potion' && this.self.health >= PLAYER.maxHealth) {
+        if (this.self.health >= PLAYER.maxHealth) {
             this.hud.toast('Already at full health');
             this.nextUseAt = now + 600;
             return;
         }
-        this.connection.send(C2S.USE, { slot: this.inventory.selected, dir: this.aimDirection() });
-        this.nextUseAt = now + item.cooldown * 1000;
-        this.viewModel.play(item.action);
-        this.self.avatar.playAction(item.action);
-        this.sound.play(item.action === 'drink' ? 'drink' : 'swing', { pitch: 0.9 + Math.random() * 0.2 });
-        if (item.action === 'swing') this.protectedUntil = 0;
+        this.connection.send(C2S.USE, { slot: inv.selected, dir: this.aimDirection() });
+        this.nextUseAt = now + 600;
+        this.viewModel.play('drink');
+        this.self.avatar.playAction('drink');
+        this.sound.play('drink');
     }
 
     // Where the crosshair points, as a direction from the player's eye
     aimDirection() {
-        const forward = directionFromAngles(this.local.yaw, this.local.pitch);
+        const punch = this.weapons.punch;
+        const forward = directionFromAngles(this.local.yaw + punch.yaw, this.local.pitch + punch.pitch);
         if (this.cameraController.view.id === 'first') return forward;
         const cam = this.camera.position;
-        const hit = this.arena.raycast(cam, forward, 60);
-        const target = hit ? hit.point : { x: cam.x + forward.x * 60, y: cam.y + forward.y * 60, z: cam.z + forward.z * 60 };
+        const hit = this.arena.raycast(cam, forward, 80);
+        const target = hit ? hit.point : { x: cam.x + forward.x * 80, y: cam.y + forward.y * 80, z: cam.z + forward.z * 80 };
         const eye = this.local.eye;
         return normalize({ x: target.x - eye.x, y: target.y - eye.y, z: target.z - eye.z });
+    }
+
+    // ---- weapon callbacks (from WeaponController) -------------------------------------------
+
+    onWeaponChanged() {
+        const w = this.weapons;
+        if (!w.inventory) return;
+        this.hud.setInventory(w.inventory);
+        this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : ''), w.reloading);
+        this.viewModel.setItem(w.id);
+        this.self?.avatar.setHeldItem(w.id);
+    }
+
+    onScopeChanged(zoom) {
+        this.zoom = zoom;
+        this.camera.fov = BASE_FOV / zoom;
+        this.camera.updateProjectionMatrix();
+        this.hud.setScope(zoom > 1);
+    }
+
+    onReload() {
+        this.self?.avatar.playAction('reload');
+        this.onWeaponChanged();
+    }
+
+    // Our own shot: everything we can show without waiting for the server
+    onLocalShot(spec, dirs) {
+        this.protectedUntil = 0;
+        this.sound.playShot(spec.id, null, { self: true });
+        this.viewModel.fire({ shell: spec.kind !== WEAPON_KIND.SHOTGUN });
+        this.self?.avatar.playAction('shoot');
+        const eye = this.local.eye;
+        const yaw = this.local.yaw;
+        const forward = directionFromAngles(yaw, this.local.pitch);
+        // Tracers start at the barrel, low and to the right of the eye
+        const muzzle = {
+            x: eye.x + forward.x * 0.7 + Math.cos(yaw) * 0.14,
+            y: eye.y + forward.y * 0.7 - 0.14,
+            z: eye.z + forward.z * 0.7 - Math.sin(yaw) * 0.14
+        };
+        this.effects.lightAt(muzzle);
+        const tracerEvery = spec.pellets > 1 ? 3 : 1;
+        dirs.forEach((dir, i) => {
+            const distance = this.traceLocal(eye, dir, spec);
+            if (i % tracerEvery === 0 && Math.random() < 0.7) {
+                this.effects.tracer(muzzle, { x: eye.x + dir.x * distance, y: eye.y + dir.y * distance, z: eye.z + dir.z * distance });
+            }
+        });
+        if (spec.kind !== WEAPON_KIND.SHOTGUN && spec.kind !== WEAPON_KIND.SNIPER) {
+            setTimeout(() => this.sound.play('shell', { volume: 0.5 }), 380 + Math.random() * 200);
+        }
+        this.onWeaponChanged();
+    }
+
+    onKnife(stab, dir) {
+        this.protectedUntil = 0;
+        this.viewModel.play(stab ? 'stab' : 'swing');
+        this.self?.avatar.playAction(stab ? 'stab' : 'swing');
+        this.sound.play(stab ? 'knifeStab' : 'knifeSlash');
+        // Predict hitting a wall (the server's crack/damage events confirm the rest)
+        const eye = this.local.eye;
+        const block = this.arena.raycast(eye, dir, KNIFE.reach);
+        if (block && !this.avatarHit(eye, dir, block.distance)) this.sound.play('knifeWall', { at: block.point });
+    }
+
+    // Predicted bullet path for our own shot, through penetrable blocks: marks every block hit
+    // (hole, chips, sound) and returns how far the tracer should go.
+    traceLocal(origin, dir, spec) {
+        const playerDist = this.avatarHit(origin, dir, GUN.maxRange);
+        let penetration = spec.penetration;
+        let travelled = 0;
+        let remaining = GUN.maxRange;
+        const o = { x: origin.x, y: origin.y, z: origin.z };
+        for (;;) {
+            const block = this.arena.raycast(o, dir, remaining);
+            const blockAt = block ? travelled + block.distance : Infinity;
+            if (playerDist !== null && playerDist <= blockAt) return playerDist;
+            if (!block) return travelled + remaining;
+            this.impact(block, dir);
+            if (penetration-- <= 0) return blockAt;
+            const exit = this.arena.cellExit(block.ix, block.iy, block.iz, o, dir) + 0.01;
+            o.x += dir.x * exit;
+            o.y += dir.y * exit;
+            o.z += dir.z * exit;
+            travelled += exit;
+            remaining -= exit;
+            if (remaining <= 0) return travelled;
+        }
+    }
+
+    // Distance to the nearest other player's hitbox as we see them, or null
+    avatarHit(origin, dir, maxDist) {
+        let best = null;
+        for (const info of this.players.values()) {
+            if (info.id === this.selfId || !info.alive) continue;
+            const p = info.avatar.group.position;
+            const hit = hitTest(origin, dir, maxDist, { x: p.x, y: p.y, z: p.z, crouching: info.avatar.crouching });
+            if (hit && (best === null || hit.distance < best)) best = hit.distance;
+        }
+        return best;
+    }
+
+    // Bullet hits a block: hole, chips and the sound of the material
+    impact(block, dir) {
+        const { ix, iy, iz, point } = block;
+        const kind = this.arena.kindAt(ix, iy, iz);
+        const c = this.arena.blockCenter(ix, iy, iz);
+        const dx = point.x - c.x;
+        const dy = point.y - c.y;
+        const dz = point.z - c.z;
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        const az = Math.abs(dz);
+        const normal = ax >= ay && ax >= az ? { x: Math.sign(dx), y: 0, z: 0 }
+            : ay >= az ? { x: 0, y: Math.sign(dy), z: 0 } : { x: 0, y: 0, z: Math.sign(dz) };
+        this.effects.decal(point, normal, this.arena.index(ix, iy, iz));
+        const colors = DEBRIS_COLORS[kind] || DEBRIS_COLORS[1];
+        this.particles.burst(point, { count: 5, colors, speed: 2.5, up: 2.5, size: 0.06, spread: 0.05, life: 0.5, dir: normal, dirSpeed: 3 });
+        this.particles.burst(point, { count: 2, colors: ['#d9d2c0', '#bdb5a3'], speed: 1, up: 1.2, gravity: 1, size: 0.12, spread: 0.05, life: 0.6, glow: true, dir: normal, dirSpeed: 1 });
+        this.sound.play(IMPACT_SOUND[kind] || 'impactStone', { at: point, range: 40, volume: 0.8 });
     }
 
     // ---- network ----------------------------------------------------------------------------
@@ -344,19 +430,23 @@ export class Game {
             info.avatar.setCharacter(characterId);
         });
         on(S2C.INVENTORY, this.onInventory);
-        on(S2C.ACTION, ({ id, action }) => {
+        on(S2C.ACTION, ({ id, action, item }) => {
             if (id === this.selfId) return; // already played locally
             const info = this.players.get(id);
             if (!info) return;
             info.avatar.playAction(action);
             const at = info.avatar.group.position;
-            if (action === 'swing') this.sound.play('swing', { at });
+            if (action === 'swing') this.sound.play('knifeSlash', { at });
+            if (action === 'stab') this.sound.play('knifeStab', { at });
             if (action === 'drink') this.sound.play('drink', { at });
+            if (action === 'reload') this.sound.play(weaponSpec(item)?.reloadStyle === 'shell' ? 'pump' : 'clipout', { at, range: 25 });
         });
+        on(S2C.SHOT, this.onShot);
         on(S2C.BLOCK_CRACKING, this.onBlockCracking);
         on(S2C.BLOCK_BROKEN, ({ ix, iy, iz }) => {
             this.arena.setState(ix, iy, iz, BLOCK_STATE.BROKEN);
             this.world.break(ix, iy, iz);
+            this.effects.clearBlock(this.arena.index(ix, iy, iz));
             const c = this.arena.blockCenter(ix, iy, iz);
             const colors = DEBRIS_COLORS[this.arena.kindAt(ix, iy, iz)] || DEBRIS_COLORS[1];
             this.particles.burst(c, { count: 22, colors, speed: 4, up: 3, size: 0.14, spread: 0.8 });
@@ -369,12 +459,10 @@ export class Game {
         });
         on(S2C.PROJECTILE, data => {
             this.projectiles.set(data.id, new ProjectileView(this.scene, data));
-            if (data.ownerId !== this.selfId) this.sound.play('bowShoot', { at: data });
         });
         on(S2C.PROJECTILE_END, data => {
             const view = this.projectiles.get(data.id);
             if (view) view.end(data);
-            if (data.stuck) this.sound.play('arrowStick', { at: data });
         });
         on(S2C.DAMAGE, this.onDamage);
         on(S2C.HEAL, ({ id, health }) => {
@@ -406,8 +494,8 @@ export class Game {
                 this.pickups.delete(id);
             }
             if (by && by === this.selfId) {
-                this.sound.play('pickup');
-                this.hud.toast(`+${amount} ${PICKUP_NAMES[type] || type}`);
+                this.sound.play(type === 'ammo' ? 'ammoPickup' : 'pickup');
+                this.hud.toast(type === 'ammo' ? `+${amount} magazine${amount === 1 ? '' : 's'}` : `+${amount} ${PICKUP_NAMES[type] || type}`);
             }
         });
     }
@@ -419,10 +507,12 @@ export class Game {
         if (this.room) this.pauseMenu.setTitle(this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name);
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
+        this.serverOffset = data.time - performance.now() / 1000;
         for (const p of data.players) this.addPlayer(p);
         const me = this.self;
         this.local.teleport(me.x, me.y, me.z, me.yaw);
         this.local.alive = me.alive;
+        this.weapons.resetLife();
         this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
         for (const pickup of data.pickups) this.pickups.set(pickup.id, new PickupView(this.scene, pickup));
         for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
@@ -456,32 +546,88 @@ export class Game {
         this.players.set(p.id, {
             id: p.id, name: p.name, characterId: p.characterId, isBot: p.isBot,
             alive: p.alive, health: p.health, kills: p.kills, deaths: p.deaths,
-            x: p.x, y: p.y, z: p.z, yaw: p.yaw, avatar
+            x: p.x, y: p.y, z: p.z, yaw: p.yaw, avatar, stepTimer: Math.random()
         });
         if (!p.alive) avatar.die();
         this.updateModeBadge();
     }
 
-    onSnapshot({ players }) {
+    onSnapshot({ time, players }) {
+        // Track the server clock (smoothed) for lag compensation
+        const offset = time - performance.now() / 1000;
+        this.serverOffset = this.serverOffset === null ? offset : this.serverOffset + (offset - this.serverOffset) * 0.1;
         for (const p of players) {
             const info = this.players.get(p.id);
             if (!info) continue;
             info.kills = p.kills;
             info.deaths = p.deaths;
             info.health = p.health;
-            if (p.id === this.selfId) this.hud.setHealth(p.health);
-            else info.avatar.pushSnapshot(p);
+            if (p.id === this.selfId) {
+                this.hud.setHealth(p.health);
+                this.armor = p.armor;
+                this.hud.setArmor(p.armor, this.helmet);
+            } else {
+                info.avatar.pushSnapshot(p);
+            }
         }
     }
 
     onInventory(data) {
-        // The local hotbar selection wins; it's sent to the server whenever it changes
-        const selected = this.inventory ? Math.min(this.inventory.selected, data.hotbar.length - 1) : data.selected;
-        this.inventory = { ...data, selected };
-        this.hud.setInventory(this.inventory);
-        const itemId = this.inventory.hotbar[selected];
-        this.viewModel.setItem(itemId);
-        this.self?.avatar.setHeldItem(itemId);
+        this.helmet = !!data.helmet;
+        this.armor = data.armor ?? this.armor;
+        this.hud.setArmor(this.armor, this.helmet);
+        this.weapons.setInventory(data);
+    }
+
+    // Someone else fired: flash, sound, tracers, impacts, and a whizz if it flew past our head
+    onShot({ id, w, o, p }) {
+        if (id === this.selfId || !this.arena) return;
+        const info = this.players.get(id);
+        const spec = weaponSpec(w);
+        const muzzle = info ? info.avatar.muzzlePosition(this.tmpVec) : new THREE.Vector3(o[0], o[1], o[2]);
+        const at = { x: muzzle.x, y: muzzle.y, z: muzzle.z };
+        this.effects.flash(at, spec?.kind === WEAPON_KIND.SHOTGUN || w === 'awp' ? 0.9 : 0.6);
+        this.sound.playShot(w, at);
+        info?.avatar.playAction('shoot');
+
+        const origin = { x: o[0], y: o[1], z: o[2] };
+        const head = this.local.alive ? this.local.eye : null;
+        let whizzed = false;
+        for (let i = 0; i < p.length; i += 5) {
+            const dir = { x: p[i], y: p[i + 1], z: p[i + 2] };
+            const dist = p[i + 3];
+            const end = { x: origin.x + dir.x * dist, y: origin.y + dir.y * dist, z: origin.z + dir.z * dist };
+            if (i % 15 === 0) this.effects.tracer(at, end);
+            if (p[i + 4] === 1) this.impactsAlong(origin, dir, dist + 0.05);
+            if (head && !whizzed) whizzed = this.whiz(origin, dir, dist, head);
+        }
+    }
+
+    // Marks for a remote bullet, including any blocks it punched through
+    impactsAlong(origin, dir, maxDist) {
+        const o = { x: origin.x, y: origin.y, z: origin.z };
+        let remaining = maxDist;
+        for (let n = 0; n < 4 && remaining > 0; n++) {
+            const block = this.arena.raycast(o, dir, remaining);
+            if (!block) return;
+            this.impact(block, dir);
+            const exit = this.arena.cellExit(block.ix, block.iy, block.iz, o, dir) + 0.01;
+            o.x += dir.x * exit;
+            o.y += dir.y * exit;
+            o.z += dir.z * exit;
+            remaining -= exit;
+        }
+    }
+
+    whiz(origin, dir, dist, head) {
+        const t = (head.x - origin.x) * dir.x + (head.y - origin.y) * dir.y + (head.z - origin.z) * dir.z;
+        if (t < 2 || t > dist) return false;
+        const px = origin.x + dir.x * t;
+        const py = origin.y + dir.y * t;
+        const pz = origin.z + dir.z * t;
+        if (Math.hypot(px - head.x, py - head.y, pz - head.z) > WHIZ_DISTANCE) return false;
+        this.sound.play('whiz', { at: { x: px, y: py, z: pz }, range: 12, volume: 1.2 });
+        return true;
     }
 
     onBlockCracking({ ix, iy, iz }) {
@@ -494,41 +640,53 @@ export class Game {
         if (this.local.alive && onGround && under && under.ix === ix && under.iy === iy && under.iz === iz) this.hud.flash('danger');
     }
 
-    onDamage({ victimId, attackerId, health, knockback, weapon, zone, headshot }) {
+    onDamage({ victimId, attackerId, amount, health, armor, knockback, weapon, zone, headshot, armorHit, from }) {
         const victim = this.players.get(victimId);
         if (!victim) return;
         victim.health = health;
         victim.avatar.setHealth(health);
         victim.avatar.hurt();
-        const pos = victimId === this.selfId ? this.local.body : victim.avatar.group.position;
-        // Our own hit particles would spawn inside the camera; the red vignette shows it instead
-        if (victimId !== this.selfId) {
-            this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 10, colors: ['#ff2a2a', '#a30000'], speed: 3, up: 2.5, size: 0.08 });
-        }
-        this.sound.play(weapon === 'bow' ? 'arrowHit' : 'hit', { at: { x: pos.x, y: pos.y + 1, z: pos.z } });
+        const self = victimId === this.selfId;
+        const pos = self ? this.local.body : victim.avatar.group.position;
+        const hitPoint = { x: pos.x, y: pos.y + (ZONE_HEIGHT[zone] ?? 1.1) * (victim.avatar.crouching ? 0.72 : 1), z: pos.z };
 
-        if (victimId === this.selfId) {
-            this.hud.setHealth(health);
-            this.hud.flash('damage');
-            this.sound.play('hurt');
-            if (knockback) this.local.applyKnockback(knockback);
-            this.shake = 0.25;
+        // Blood sprays away from the shooter (our own would spawn inside the camera)
+        if (!self) {
+            const away = from ? normalize({ x: pos.x - from.x, y: 0.15, z: pos.z - from.z }) : null;
+            this.particles.burst(hitPoint, { count: 6 + Math.min(14, Math.round(amount / 6)), colors: BLOOD, speed: 1.5, up: 1.5, size: 0.06, spread: 0.15, life: 0.6, dir: away, dirSpeed: 4 });
         }
-        if (attackerId === this.selfId && victimId !== this.selfId) {
-            this.hud.hit(zone === 'head');
-            this.sound.play(zone === 'head' ? 'headshot' : 'hitmarker');
-            if (headshot) {
-                this.hud.toast('🎯 HEADSHOT!');
+
+        // The hit sound everyone nearby hears: dink for helmets, thud for kevlar, flesh otherwise
+        const knife = weapon === 'knife';
+        const hitSound = knife ? 'knifeHit' : headshot ? (armorHit ? 'headshotHelmet' : 'headshotFlesh') : armorHit ? 'hitKevlar' : 'hitFlesh';
+        this.sound.play(hitSound, { at: self ? null : hitPoint, range: 30, volume: self ? 0.8 : 1 });
+
+        if (self) {
+            this.hud.setHealth(health);
+            this.armor = armor ?? this.armor;
+            this.hud.setArmor(this.armor, this.helmet);
+            this.hud.flash('damage');
+            this.sound.play('hurt', { volume: 0.7 });
+            if (knockback) this.local.applyKnockback(knockback);
+            this.local.tag();
+            this.weapons.flinch(amount);
+            if (from) {
+                // 0 = straight ahead, clockwise positive
+                const angle = Math.atan2(from.x - pos.x, from.z - pos.z) - (this.local.yaw + Math.PI);
+                this.hud.damageFrom(-angle);
+            }
+            if (headshot && health > 0) {
+                this.hud.toast('◎ Headshot!');
                 this.sound.play('tinnitus');
             }
         }
-        if (victimId === this.selfId && headshot) {
-            this.hud.toast('🎯 Headshot!');
-            this.sound.play('tinnitus');
+        if (attackerId === this.selfId && !self) {
+            this.hud.hit(zone === 'head', health <= 0);
+            this.sound.play('hitmarker');
         }
     }
 
-    onDeath({ victimId, killerId, cause }) {
+    onDeath({ victimId, killerId, cause, headshot }) {
         const victim = this.players.get(victimId);
         const killer = this.players.get(killerId);
         if (!victim) return;
@@ -538,6 +696,7 @@ export class Game {
             killer: killer?.name,
             victim: victim.name,
             weapon: cause,
+            headshot,
             mine: victimId === this.selfId || killerId === this.selfId
         });
         const pos = victimId === this.selfId ? this.local.body : victim.avatar.group.position;
@@ -545,21 +704,24 @@ export class Game {
 
         if (victimId === this.selfId) {
             this.local.alive = false;
-            this.cancelDraw();
+            this.weapons.setTrigger(false);
+            this.weapons.setScope(0);
             this.deathCam = { x: this.local.body.x, y: Math.max(this.local.body.y, -2), z: this.local.body.z, yaw: this.local.yaw, t: 0 };
+            const gun = weaponSpec(cause)?.name;
             const reason = killer
                 ? (cause === 'fall' ? `${killer.name} made you fall`
-                    : cause === 'headshot' ? `${killer.name} got you with a headshot` : `Killed by ${killer.name}`)
+                    : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
                 : (cause === 'fall' ? 'You fell into the void' : 'You died');
             this.respawnOverlay.show(reason, PLAYER.respawnDelay);
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play('kill');
-            this.hud.toast(`You got ${victim.name}! +1 Health Potion`);
+            this.hud.hit(!!headshot, true);
+            this.hud.toast(`You killed ${victim.name}${headshot ? ' ◎' : ''} · +1 Health Potion`);
         }
     }
 
-    onRespawn({ id, x, y, z, yaw, health }) {
+    onRespawn({ id, x, y, z, yaw, health, armor }) {
         const info = this.players.get(id);
         if (!info) return;
         info.alive = true;
@@ -568,9 +730,12 @@ export class Game {
         if (id === this.selfId) {
             this.local.teleport(x, y, z, yaw);
             this.local.alive = true;
+            this.weapons.resetLife();
             this.deathCam = null;
             this.respawnOverlay.hide();
             this.hud.setHealth(health);
+            this.armor = armor ?? 0;
+            this.hud.setArmor(this.armor, this.helmet);
             this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
             this.sound.play('respawn');
         }
@@ -579,7 +744,10 @@ export class Game {
     // ---- frame ------------------------------------------------------------------------------
 
     update(dt, now) {
-        if (this.selfId && this.arena) this.updateLocalPlayer(dt, now);
+        if (this.selfId && this.arena) {
+            this.updateLocalPlayer(dt, now);
+            this.updateRemoteFootsteps(dt);
+        }
 
         for (const info of this.players.values()) info.avatar.update(dt, now);
         for (const [id, view] of this.projectiles) {
@@ -587,34 +755,42 @@ export class Game {
         }
         for (const view of this.pickups.values()) view.update(dt);
         this.particles.update(dt);
+        this.effects.update(dt);
         this.world.update(dt);
 
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
-        if (this.cameraController.view.showsViewModel && this.local.alive) this.viewModel.render(this.renderer);
+        if (this.cameraController.view.showsViewModel && this.local.alive && this.zoom === 1) this.viewModel.render(this.renderer);
     }
 
     updateLocalPlayer(dt, now) {
         const active = this.input.locked && !this.pauseMenu.visible;
         const { dx, dy } = this.input.consumeMouse();
-        if (active) this.local.look(dx, dy, this.profile.sensitivity);
+        // Scoped: slower mouse so aiming stays precise
+        if (active) this.local.look(dx, dy, this.profile.sensitivity / this.zoom);
         const move = active ? this.input.movement : { forward: 0, strafe: 0 };
-        this.local.update(dt, { ...move, jump: active && this.input.jump }, this.arena);
+        this.local.update(dt, {
+            ...move,
+            jump: active && this.input.jump,
+            crouch: active && this.input.crouch,
+            walk: active && this.input.walk
+        }, this.arena, this.weapons.speedMul);
+        this.weapons.update(dt);
 
         const body = this.local.body;
         const speed = this.local.horizontalSpeed;
-        this.sound.setListener(body.x, body.y + PLAYER.eyeHeight, body.z, this.local.yaw);
+        this.sound.setListener(body.x, body.y + this.local.eyeHeight, body.z, this.local.yaw);
 
-        // Footsteps, jump and landing sounds
-        if (this.local.alive && body.onGround && speed > 1) {
+        // Footsteps (silent when walking or crouching, like CS), jump and landing sounds
+        if (this.local.alive && body.onGround && speed > STEP_SPEED) {
             this.stepTimer -= dt * speed;
             if (this.stepTimer <= 0) {
-                this.stepTimer = 1.7;
-                this.sound.play('step', { pitch: 0.85 + Math.random() * 0.3 });
+                this.stepTimer = 2.1;
+                this.sound.play(this.stepSound(body), { pitch: 0.85 + Math.random() * 0.3, volume: 0.7 });
             }
         }
         if (this.local.events.jumped) this.sound.play('jump');
-        if (this.local.events.landed) this.sound.play('land');
+        if (this.local.events.landed) this.sound.play('land', { volume: Math.min(1, 0.3 + this.local.events.fallSpeed / 14) });
 
         // Send our state ~20 times a second
         this.sendTimer -= dt;
@@ -623,32 +799,63 @@ export class Game {
             this.connection.send(C2S.STATE, this.local.networkState);
         }
 
-        // Hold the mouse to keep chopping
-        const item = this.selectedItem;
-        if (active && this.input.primaryDown && item && !item.chargeable && item.id !== 'health_potion') this.useHeldItem();
-
-        // Bow draw UI
-        const drawing = this.drawStartedAt !== null;
-        const draw = drawing ? Bow.drawProgress((now - this.drawStartedAt) / 1000) : 0;
-        this.hud.setCharge(drawing ? draw : null);
-        this.viewModel.setDraw(draw);
+        // Low health: heartbeat
+        if (this.local.alive && this.self && this.self.health <= 25) {
+            this.heartbeatTimer -= dt;
+            if (this.heartbeatTimer <= 0) {
+                this.heartbeatTimer = 0.55 + this.self.health / 40;
+                this.sound.play('heartbeat', { volume: 0.8 });
+            }
+        }
 
         const self = this.self;
         if (self) {
-            self.avatar.setPose(body.x, body.y, body.z, this.local.yaw, this.local.pitch, body.onGround);
+            self.avatar.setPose(body.x, body.y, body.z, this.local.yaw, this.local.pitch, body.onGround, body.crouching);
             const view = this.cameraController.view;
             self.avatar.setVisible((view.showsOwnBody && !view.closeToEye) || !this.local.alive);
         }
-        this.viewModel.update(dt, { speed, onGround: body.onGround });
+        this.look.dx = active ? dx : 0;
+        this.look.dy = active ? dy : 0;
+        this.viewModel.setReload(this.weapons.reloadProgress());
+        this.viewModel.setBolt(this.weapons.boltProgress());
+        this.viewModel.update(dt, { speed, onGround: body.onGround, crouching: body.crouching, lookX: this.look.dx, lookY: this.look.dy });
         this.hud.setProtected(this.local.alive && now < this.protectedUntil);
+        if (this.weapons.inventory) {
+            const w = this.weapons;
+            this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : ''), w.reloading);
+        }
 
-        // Outline the block the axe would chop
-        const aimBlock = this.local.alive && item?.id === 'axe'
-            ? this.arena.raycast(this.local.eye, this.aimDirection(), AXE.reach)
+        // Crosshair opens up with the current inaccuracy
+        const halfFov = (this.camera.fov * Math.PI) / 360;
+        const gap = 4 + (Math.tan(this.weapons.currentCone()) / Math.tan(halfFov)) * (window.innerHeight / 2);
+        this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1);
+
+        // Outline the block the knife would chop
+        const aimBlock = this.local.alive && this.weapons.id === KNIFE.id
+            ? this.arena.raycast(this.local.eye, this.aimDirection(), KNIFE.blockReach)
             : null;
         this.world.setHighlight(aimBlock);
 
         this.updateCamera(dt);
+    }
+
+    stepSound(body) {
+        const under = this.arena.supportBlock(body.x, body.y, body.z, 0);
+        return STEP_SOUND[under ? this.arena.kindAt(under.ix, under.iy, under.iz) : BLOCK_KIND.GRASS] || 'step';
+    }
+
+    // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch
+    updateRemoteFootsteps(dt) {
+        for (const info of this.players.values()) {
+            if (info.id === this.selfId || !info.alive) continue;
+            const avatar = info.avatar;
+            if (!avatar.onGround || avatar.speed < STEP_SPEED || avatar.crouching) continue;
+            info.stepTimer -= dt * avatar.speed;
+            if (info.stepTimer > 0) continue;
+            info.stepTimer = 2.1;
+            const p = avatar.group.position;
+            this.sound.play(this.stepSound(p), { at: { x: p.x, y: p.y, z: p.z }, range: 28, pitch: 0.85 + Math.random() * 0.3 });
+        }
     }
 
     updateCamera(dt) {
@@ -661,11 +868,12 @@ export class Game {
             this.camera.lookAt(c.x, c.y, c.z);
             return;
         }
-        this.cameraController.update({ eye: this.local.eye, yaw: this.local.yaw, pitch: this.local.pitch, arena: this.arena });
-        if (this.shake > 0) {
-            this.shake = Math.max(0, this.shake - dt);
-            this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.3;
-            this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.3;
-        }
+        const punch = this.weapons.punch;
+        this.cameraController.update({
+            eye: this.local.eye,
+            yaw: this.local.yaw + punch.yaw,
+            pitch: this.local.pitch + punch.pitch,
+            arena: this.arena
+        });
     }
 }

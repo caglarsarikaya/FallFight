@@ -1,7 +1,8 @@
 import { ARENA, PLAYER, PROJECTILE } from '../constants.js';
 import { rayBox } from '../math.js';
 
-// A flying arrow. Simulated by the room; clients replay it from the spawn velocity.
+// A flying projectile (kept for future grenades). Simulated by the room; clients replay it from
+// the spawn velocity.
 export class Projectile {
     constructor({ id, ownerId, itemId, x, y, z, vx, vy, vz, born, power = 1 }) {
         Object.assign(this, { id, ownerId, itemId, x, y, z, vx, vy, vz, born, power });

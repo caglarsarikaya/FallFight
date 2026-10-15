@@ -1,10 +1,11 @@
-import { Axe } from './Axe.js';
-import { Bow } from './Bow.js';
+import { WEAPONS } from '../config/weapons.js';
+import { Gun } from './Gun.js';
+import { Knife } from './Knife.js';
 import { HealthPotion } from './HealthPotion.js';
 
-// Items are stateless singletons; per-player state (ammo, cooldowns) lives on the player.
-// To add a weapon: create a class extending MeleeWeapon/RangedWeapon, register it here,
-// add it to DEFAULT_HOTBAR if everyone should carry it, and add a client ItemView.
+// Items are stateless singletons; per-player state (ammo, timers) lives on the player.
+// To add a gun: add its spec to shared/config/weapons.js and a model spec in
+// client/src/items/guns/specs.js; it's registered here automatically.
 const items = new Map();
 
 export function registerItem(item) {
@@ -21,9 +22,6 @@ export function allItems() {
     return [...items.values()];
 }
 
-registerItem(new Bow());
-registerItem(new Axe());
+for (const spec of Object.values(WEAPONS)) registerItem(new Gun(spec));
+registerItem(new Knife());
 registerItem(new HealthPotion());
-
-// Hotbar layout every player starts with: key 1, 2, 3
-export const DEFAULT_HOTBAR = ['bow', 'axe', 'health_potion'];

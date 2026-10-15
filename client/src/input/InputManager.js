@@ -1,6 +1,7 @@
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
-// ('primary', down) ('pause') ('cycle', +1/-1).
+// ('primary', down) ('secondary') ('reload') ('last') ('pause') ('cycle', +1/-1).
+// Crouch is C (Ctrl would make Ctrl+W close the browser tab), walk is Shift, like CS.
 export class InputManager {
     constructor(element) {
         this.element = element;
@@ -27,8 +28,11 @@ export class InputManager {
             if (e.button === 0) {
                 this.primaryDown = true;
                 this.onAction('primary', true);
+            } else if (e.button === 2) {
+                this.onAction('secondary');
             }
         });
+        element.addEventListener('contextmenu', e => e.preventDefault());
         document.addEventListener('mouseup', e => {
             if (e.button === 0 && this.primaryDown) {
                 this.primaryDown = false;
@@ -72,6 +76,8 @@ export class InputManager {
             this.keys.add(code);
             if (code.startsWith('Digit')) this.onAction('slot', Number(code.slice(5)) - 1);
             if (code === 'KeyV' || code === 'F5') this.onAction('camera');
+            if (code === 'KeyR') this.onAction('reload');
+            if (code === 'KeyQ') this.onAction('last');
             if (code === 'Tab') this.onAction('scoreboard', true);
             if (code === 'Escape') this.onAction('pause');
         } else {
@@ -90,6 +96,14 @@ export class InputManager {
 
     get jump() {
         return this.keys.has('Space');
+    }
+
+    get crouch() {
+        return this.keys.has('KeyC');
+    }
+
+    get walk() {
+        return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     }
 
     consumeMouse() {

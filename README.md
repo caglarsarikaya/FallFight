@@ -1,7 +1,9 @@
 # FallFight
 
-A Minecraft-style arena fighter that runs in the browser. Pick a fighter, then shoot, chop and
-**break the floor under your opponents** so they fall into the lava.
+A blocky arena shooter that runs in the browser, built to feel like Counter-Strike 1.6: rifles,
+pistols, SMGs, a shotgun, snipers and the knife, with real recoil, spread and hit feedback. The
+world is still made of blocks, so you can also **break the floor under your opponents** and drop
+them into the lava.
 
 **▶ Play: https://caglarsarikaya.github.io/FallFight/**
 
@@ -17,32 +19,56 @@ A Minecraft-style arena fighter that runs in the browser. Pick a fighter, then s
 | Key | Action |
 |---|---|
 | WASD | Move |
-| Space | Jump |
+| Shift | Walk: quiet footsteps and better accuracy |
+| C | Crouch: the most accurate stance, and a smaller target |
+| Space | Jump (shooting in the air is wildly inaccurate) |
 | Mouse | Look |
-| Left click | Use the selected item. Hold to draw the bow, hold to keep chopping |
-| 1 / 2 / 3, mouse wheel | Bow / Axe / Health potion |
+| Left click | Fire (hold for automatic guns) · knife slash |
+| Right click | Scope (Scout, AWP: two zoom levels) · knife stab |
+| R | Reload |
+| 1 / 2 / 3 / 4, Q, mouse wheel | Rifle / Pistol / Knife / Health potion · Q = last weapon |
 | V (or F5) | Switch between first and third person |
 | Tab | Scoreboard |
 | Esc | Menu: change character or nickname, camera, sound, mouse sensitivity |
 
-**Characters:** Robot, Squirrel, Mario, Dr Octopus. They all have the same stats; only the looks differ.
-Your nickname, character and settings are remembered in the browser.
+**Characters:** Robot, Squirrel, Mario, Dr Octopus, Dr Helix and Byte. They all have the same stats;
+only the looks differ. Your nickname, character and settings are remembered in the browser.
+
+### Weapons
+
+Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
+
+| Weapon | Type | Damage | Rate | Magazine | Notes |
+|---|---|---|---|---|---|
+| Glock-18 | Pistol | 25 | 400/min | 20 | Light, accurate first shot |
+| USP .45 | Pistol | 34 | 352/min | 12 | |
+| Desert Eagle | Pistol | 54 | 267/min | 7 | Heavy kick; punches through a block |
+| MP5 Navy | SMG | 26 | 750/min | 30 | Easy spray |
+| ES P90 | SMG | 21 | 857/min | 50 | |
+| M3 Super 90 | Shotgun | 20 × 9 | 68/min | 8 | Loads shell by shell; deadly up close |
+| AK-47 | Rifle | 36 | 600/min | 30 | One-tap headshot even through a helmet |
+| M4A1 | Rifle | 33 | 666/min | 30 | Steadier spray than the AK |
+| Scout | Sniper | 75 | 48/min | 10 | Light: run at full speed |
+| AWP | Sniper | 115 | 41/min | 10 | One shot to the body kills |
+| Knife | Melee | 25 / 65 | | | Slash / stab; a stab in the back kills. Chops blocks |
 
 ### Rules
 
 | | |
 |---|---|
-| Health | 100 HP. Respawn after 3 s with 2 s of spawn protection. Attacking ends the protection |
-| 🏹 Bow | Hold to draw: a longer draw flies faster and hits harder. Arrows fly straight (no drop). Start with 20 arrows |
-| 🎯 Hit zones | Legs 8–24, body 12–35, head 50–80 (scaled by draw). A **full-draw arrow to the head kills in one shot**; two slow head shots kill |
-| 🪓 Axe | 10 damage at close range. Hit any block to crack it: it breaks after 0.4 s and regrows after 20 s |
-| 🧱 Arena | 60 × 60 blocks over lava: a central stone plaza with cover walls, four plank lookouts (2 high), crates and low walls to hide behind. Walls stop arrows and axes, and they can be chopped too |
-| 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs (one jump per step) to a top with a parapet: hide in the middle, step to the edge to shoot down. Chop the stairs to cut a sniper off |
+| Health and armor | 100 HP, 100 kevlar + helmet on spawn. Respawn after 3 s with 2 s of spawn protection; attacking ends the protection |
+| Loadout | Every life: a random rifle, SMG, shotgun or sniper, a random pistol, the knife and an empty potion slot |
+| 🎯 Hit zones | Head ×4, body ×1, legs ×0.75. Kevlar soaks up part of every body hit (how much depends on the gun's armor penetration); only a helmet protects the head |
+| Accuracy | Standing still is accurate, crouching more so. Moving, jumping and long sprays open up the spread. Snipers are only accurate scoped and standing still. The crosshair shows your current spread |
+| Recoil | Every gun kicks in a fixed pattern (up first, then sideways): pull the mouse down to control a spray, or fire in bursts |
+| Range | Damage drops with distance, much faster for SMGs and shotgun pellets than for rifles |
+| Walls | Rifles, snipers and the Deagle punch through a block (for less damage). Bullets wear blocks down until they crack; the knife breaks any block outright. Broken blocks regrow after 20 s |
+| Getting hit | Your view flinches, you slow down for a moment, and a red arc shows where the shot came from |
+| Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
+| 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
 | 🧪 Health potion | Heals 20 HP, one use. Every kill rewards **one** potion |
-| Pickups | Every 15 s: +3 arrows. Every 60 s: a health potion. They can appear on platforms too. The first player to walk through one gets it, and the bots race you for them |
+| Pickups | Every 15 s: an ammo box (a magazine for every gun you carry). Every 60 s: a health potion |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
-
-On respawn you get 100 HP, 20 arrows and no potions.
 
 ## Architecture
 
@@ -64,26 +90,51 @@ test/     node:test unit tests and bot simulations
 - **Items (OOP):**
 
   ```
-  Item ─┬─ Weapon ─┬─ MeleeWeapon ── Axe
-        │          └─ RangedWeapon ── Bow
+  Item ─┬─ Weapon ─┬─ Gun (one per entry in shared/config/weapons.js)
+        │          ├─ MeleeWeapon ── Knife
+        │          └─ RangedWeapon (projectiles, for future grenades)
         └─ Consumable ── HealthPotion
   ```
 
   Each item has a matching `ItemView` on the client (`client/src/items/`): its 3D model,
-  first-person animation and hotbar icon. Players carry an `Inventory`: a hotbar with one selected
-  item, plus counters for ammo and stacks.
+  first-person animation and slot icon. Players carry an `Inventory` with CS-style slots (primary,
+  pistol, knife, potion) and per-gun ammo (magazine + reserve).
+- **Shooting:** guns are hitscan.
+  - Shared maths in `shared/spread.js` gives the client and the server the same pellet directions,
+    because they're seeded per shot. That makes the shooter's tracers, bullet holes and sounds instant
+    (`client/src/weapons/WeaponController.js`).
+  - The server resolves the real hits (`GameRoom.resolveShot`). It checks head/body/legs hitboxes
+    (`shared/game/Hitbox.js`) against where the shooter saw its targets: `shared/game/LagComp.js`
+    rewinds them by up to 250 ms.
+  - Rate of fire, magazines, reloads and deploy times are enforced on the server too.
+- **Feel:** most of the gun feel comes from the client, all of it pooled so a spray allocates
+  nothing:
+  - recoil view punch, a dynamic crosshair and weapon sway;
+  - muzzle flashes, tracers, instanced bullet holes and impact chips (`client/src/effects/`);
+  - layered gunshot sounds with a distant variant, distance low-pass and a shared reverb, plus
+    near-miss whizzes, helmet dinks and footsteps by surface (`client/src/audio/`).
 - **Characters (OOP):** `client/src/characters/CharacterModel.js` builds and animates a blocky rig
-  (walk, chop, bow draw, drink, hurt, death). `RobotModel`, `SquirrelModel`, `MarioModel`,
+  (walk, crouch, aim, knife, recoil, reload, drink, hurt, death). `RobotModel`, `SquirrelModel`, `MarioModel`,
   `DrOctopusModel`, `BiologistModel` and `ProgrammerModel` override the build hooks. Dr Octopus also
   animates four mechanical tentacles; the biologist's ponytail sways and her sample glows; the
   programmer's glasses glint and the laptop on his back scrolls code.
 
-### Adding a weapon
+### Adding a gun
 
-1. `shared/items/MyWeapon.js`: extend `MeleeWeapon` or `RangedWeapon` (or `Item`) and implement `use(ctx)`.
-2. Register it in `shared/items/ItemRegistry.js`. Add it to `DEFAULT_HOTBAR` if everyone should carry it.
-3. `client/src/items/MyWeaponView.js`: extend `ItemView` (model, poses, animation, icon) and add it
-   to `client/src/items/registry.js`.
+1. Add its numbers to `WEAPONS` in `shared/config/weapons.js`: damage, rate, spread, recoil, ammo
+   and price. It's registered as a `Gun` automatically.
+2. Add its blocky model to `client/src/items/guns/specs.js`: the parts, the muzzle and the
+   ejection port.
+3. Optionally add `shot_<id>` and `shot_<id>_far` sounds in `client/src/audio/GunSounds.js`, or
+   recorded samples (see below).
+
+### Sounds
+
+Every sound is synthesised by default. To use real recordings, put audio files in
+`client/assets/sfx/` and map them in `client/assets/sfx/manifest.json`. Each name can have several
+variations, and any name without a file keeps its synthesised version.
+[`client/assets/sfx/SOURCES.md`](client/assets/sfx/SOURCES.md) lists every sound name and where to
+find free (CC0 / royalty-free) gun recordings.
 
 ### Adding a character
 
@@ -105,9 +156,10 @@ npm run build:pages
 To point any copy of the page at a different server, add `?server=<url>`, e.g.
 `?server=http://localhost:3000`.
 
-Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`). Bots navigate with A*
-(`shared/ai/Pathfinder.js`). Rules and balance are in `shared/constants.js`, and the arena layout
-(platforms and walls) is in `shared/world/layout.js`.
+Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`): reaction time, aim error,
+burst length, headshot chance. Bots navigate with A* (`shared/ai/Pathfinder.js`). Rules are in
+`shared/constants.js`, gun balance in `shared/config/weapons.js`, and the arena layout in
+`shared/world/layout.js`.
 
 ## Deploy
 

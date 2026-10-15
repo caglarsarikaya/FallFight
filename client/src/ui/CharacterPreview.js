@@ -46,9 +46,9 @@ export class CharacterPreview {
             this.model.dispose();
         }
         this.model = createCharacterModel(characterId);
-        this.model.handAnchor.add(getItemView('axe').createThirdPerson());
+        this.model.handAnchor.add(getItemView('ak47').createThirdPerson());
         this.turntable.add(this.model.root);
-        this.model.playAction('swing');
+        this.model.playAction('reload');
     }
 
     resize() {
@@ -70,8 +70,8 @@ export class CharacterPreview {
             this.time += dt;
             this.turntable.rotation.y = Math.PI + Math.sin(this.time * 0.6) * 0.9;
             if (this.model) {
-                if (Math.floor(this.time / 3.5) !== Math.floor((this.time - dt) / 3.5)) this.model.playAction('swing');
-                this.model.animate(dt, { speed: 0, onGround: true });
+                if (Math.floor(this.time / 3.5) !== Math.floor((this.time - dt) / 3.5)) this.model.playAction('reload');
+                this.model.animate(dt, { speed: 0, onGround: true, aiming: true });
             }
             this.renderer.render(this.scene, this.camera);
             requestAnimationFrame(loop);

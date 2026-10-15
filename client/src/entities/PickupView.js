@@ -1,8 +1,7 @@
 import * as THREE from 'three';
-import { createArrowModel } from '../items/BowView.js';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { arrow: '#ffd23f', health_potion: '#ff4f8b' };
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b' };
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
 export class PickupView {
@@ -13,8 +12,8 @@ export class PickupView {
         this.group = new THREE.Group();
         this.group.position.set(data.x, data.baseY ?? 0, data.z);
 
-        this.item = data.type === 'arrow' ? this.createArrowBundle(data.amount) : getItemView('health_potion').createModel();
-        if (data.type !== 'arrow') this.item.scale.setScalar(1.8);
+        this.item = data.type === 'ammo' ? this.createAmmoBox() : getItemView('health_potion').createModel();
+        if (data.type !== 'ammo') this.item.scale.setScalar(1.8);
         this.group.add(this.item);
 
         const color = COLORS[data.type] || '#ffffff';
@@ -38,15 +37,31 @@ export class PickupView {
         scene.add(this.group);
     }
 
-    createArrowBundle(amount = 3) {
-        const bundle = new THREE.Group();
-        for (let i = 0; i < amount; i++) {
-            const arrow = createArrowModel(0.6);
-            arrow.rotation.set(Math.PI / 2, 0, (i - (amount - 1) / 2) * 0.35);
-            arrow.position.set((i - (amount - 1) / 2) * 0.06, -0.3, 0);
-            bundle.add(arrow);
+    // Olive ammo can with a yellow stripe and a couple of rounds on top
+    createAmmoBox() {
+        const box = new THREE.Group();
+        const olive = new THREE.MeshLambertMaterial({ color: '#4b5a32' });
+        const can = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.24), olive);
+        box.add(can);
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.425, 0.05, 0.245), new THREE.MeshLambertMaterial({ color: '#d8b43a' }));
+        stripe.position.y = 0.04;
+        box.add(stripe);
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.06), new THREE.MeshLambertMaterial({ color: '#2f3820' }));
+        lid.position.y = 0.15;
+        box.add(lid);
+        const brass = new THREE.MeshStandardMaterial({ color: '#c8a040', metalness: 0.8, roughness: 0.3 });
+        for (let i = 0; i < 3; i++) {
+            const round = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.035), brass);
+            round.position.set(-0.1 + i * 0.07, 0.19, 0.05);
+            box.add(round);
         }
-        return bundle;
+        box.position.y = -0.2;
+        box.traverse(o => {
+            if (o.isMesh) o.castShadow = true;
+        });
+        const holder = new THREE.Group();
+        holder.add(box);
+        return holder;
     }
 
     update(dt) {

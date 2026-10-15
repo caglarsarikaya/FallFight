@@ -1,53 +1,40 @@
-import { BOW, PLAYER } from '../../shared/constants.js';
+import { PLAYER } from '../../shared/constants.js';
+import { weaponSpec } from '../../shared/config/weapons.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
-import { drawPixelArt } from '../world/textures.js';
 import { el, flash } from './dom.js';
 
-const HEART = [
-    '.bb.bb.',
-    'brrbrrb',
-    'brwrrrb',
-    'brrrrrb',
-    '.brrrb.',
-    '..brb..',
-    '...b...'
-];
-const HEART_PALETTES = {
-    full: { b: '#1a0000', r: '#e01e1e', w: '#ffb3b3' },
-    empty: { b: '#1a0000', r: '#3a1414', w: '#3a1414' }
-};
+const SLOT_SHOW_MS = 2500;
+const MAX_DAMAGE_ARCS = 4;
 
-function heartCanvas(kind) {
-    const canvas = el('canvas', { width: 14, height: 14 });
-    const ctx = canvas.getContext('2d');
-    if (kind === 'half') {
-        drawPixelArt(ctx, HEART, HEART_PALETTES.empty, 14);
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, 7, 14);
-        ctx.clip();
-        drawPixelArt(ctx, HEART, HEART_PALETTES.full, 14);
-        ctx.restore();
-    } else {
-        drawPixelArt(ctx, HEART, HEART_PALETTES[kind], 14);
-    }
-    return canvas;
-}
-
-const KILL_ICONS = { axe: '🪓', bow: '🏹', headshot: '🎯', fall: '⬇', default: '⚔' };
-
-// Heads-up display: hearts, hotbar, crosshair, bow charge, kill feed, toasts and screen flashes
+// Heads-up display, laid out like CS 1.6: health and armor bottom left, ammo bottom right,
+// a crosshair that opens up with inaccuracy, weapon slots on switching, kill feed top right.
 export class Hud {
     constructor(root) {
-        this.crosshair = el('div.crosshair');
+        this.crosshair = el('div.crosshair', {}, ['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)));
         this.hitmarker = el('div.hitmarker');
-        this.chargeFill = el('div.charge-fill');
-        this.charge = el('div.charge.hidden', {}, this.chargeFill);
-        this.itemName = el('div.item-name');
-        this.hearts = el('div.hearts');
-        this.hpNumber = el('div.hp-number');
-        this.hotbar = el('div.hotbar');
+        this.scope = el('div.scope.hidden', {}, [el('div.scope-h'), el('div.scope-v')]);
+        this.damageArcs = [];
+        this.damageLayer = el('div.damage-layer');
+        for (let i = 0; i < MAX_DAMAGE_ARCS; i++) {
+            const arc = el('div.damage-arc');
+            this.damageLayer.append(arc);
+            this.damageArcs.push(arc);
+        }
+        this.nextArc = 0;
+
+        this.healthValue = el('span.value');
+        this.health = el('div.cs-stat.health', {}, [el('span.icon', { text: '✚' }), this.healthValue]);
+        this.armorValue = el('span.value');
+        this.armorIcon = el('span.icon', { text: '⛉' });
+        this.armor = el('div.cs-stat.armor', {}, [this.armorIcon, this.armorValue]);
+        this.ammoMag = el('span.value');
+        this.ammoReserve = el('span.reserve');
+        this.weaponName = el('div.weapon-name');
+        this.ammo = el('div.cs-stat.ammo', {}, [this.ammoMag, el('span.sep', { text: '|' }), this.ammoReserve]);
+        this.ammoBox = el('div.ammo-box', {}, [this.weaponName, this.ammo]);
+
+        this.slotList = el('div.slots');
         this.killfeed = el('div.killfeed');
         this.toasts = el('div.toasts');
         this.modeBadge = el('div.mode-badge');
@@ -62,26 +49,25 @@ export class Hud {
             heal: el('div.vignette.heal')
         };
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Space jump · Click use · 1 Bow · 2 Axe · 3 Potion · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C crouch · Space jump · Click fire · Right click scope/stab · R reload · 1-4 / Q / wheel weapons · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
-        }, 12000);
+        }, 14000);
 
         this.root = el('div.hud', {}, [
-            this.crosshair, this.hitmarker, this.charge, this.protection,
+            this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             ...Object.values(this.vignettes),
-            el('div.hud-bottom', {}, [
-                this.itemName,
-                el('div.status-row', {}, [this.hearts, this.hpNumber]),
-                this.hotbar
-            ]),
+            el('div.hud-left', {}, [this.health, this.armor]),
+            this.ammoBox, this.slotList,
             this.netStats, this.killfeed, this.toasts, this.modeBadge, this.helpHint
         ]);
         root.append(this.root);
         this.slots = [];
         this.inventory = null;
+        this.crosshairGap = -1;
         this.setHealth(PLAYER.maxHealth);
+        this.setArmor(0, false);
     }
 
     setMode(text) {
@@ -107,93 +93,134 @@ export class Hud {
 
     setHealth(health) {
         const hp = Math.max(0, Math.ceil(health));
-        if (hp === this.health) return;
-        this.health = hp;
-        this.hearts.replaceChildren();
-        for (let i = 0; i < 10; i++) {
-            const value = hp - i * 10;
-            this.hearts.append(heartCanvas(value >= 10 ? 'full' : value >= 5 ? 'half' : 'empty'));
-        }
-        this.hearts.classList.toggle('low', hp > 0 && hp <= 25);
-        this.hpNumber.textContent = `${hp} HP`;
+        if (hp === this.hp) return;
+        this.hp = hp;
+        this.healthValue.textContent = String(hp);
+        this.health.classList.toggle('low', hp > 0 && hp <= 25);
     }
 
-    // inventory: { hotbar: [itemId], counts: { key: n }, selected }
+    setArmor(armor, helmet) {
+        const value = Math.max(0, Math.round(armor));
+        if (value === this.armorShown && helmet === this.helmetShown) return;
+        this.armorShown = value;
+        this.helmetShown = helmet;
+        this.armorValue.textContent = String(value);
+        this.armorIcon.textContent = helmet ? '⛑' : '⛉';
+        this.armor.classList.toggle('none', value <= 0);
+    }
+
+    // ammo: { mag, reserve } or null (knife / potion); name of the weapon in hand
+    setAmmo(ammo, name, reloading = false) {
+        const key = `${name}|${ammo ? `${ammo.mag}/${ammo.reserve}` : '-'}|${reloading}`;
+        if (key === this.ammoKey) return;
+        this.ammoKey = key;
+        this.weaponName.textContent = name || '';
+        this.ammo.classList.toggle('hidden', !ammo);
+        if (ammo) {
+            this.ammoMag.textContent = String(ammo.mag);
+            this.ammoReserve.textContent = String(ammo.reserve);
+            const spec = weaponSpec(name ? this.inventoryId : null);
+            this.ammo.classList.toggle('low', ammo.mag <= Math.max(1, Math.floor((spec?.mag ?? 30) * 0.2)));
+        }
+        this.ammoBox.classList.toggle('reloading', reloading);
+    }
+
+    // inventory: { hotbar: [itemId|null], ammo, counts, selected }
     setInventory(inventory) {
         const layoutChanged = !this.inventory || this.inventory.hotbar.join() !== inventory.hotbar.join();
         this.inventory = inventory;
-        if (layoutChanged) this.buildHotbar();
-        this.inventory.hotbar.forEach((itemId, i) => {
-            const slot = this.slots[i];
-            const item = getItem(itemId);
-            if (item?.countKey) {
-                const n = inventory.counts[item.countKey] || 0;
-                slot.count.textContent = n;
-                slot.count.classList.toggle('zero', n === 0);
+        this.inventoryId = inventory.hotbar[inventory.selected];
+        if (layoutChanged) this.buildSlots();
+        this.slots.forEach((slot, i) => {
+            const id = inventory.hotbar[i];
+            if (id === 'health_potion') {
+                const n = inventory.counts.health_potion || 0;
+                slot.count.textContent = String(n);
+                slot.node.classList.toggle('empty', n === 0);
             }
         });
-        this.setSelected(inventory.selected, false);
+        this.setSelected(inventory.selected);
     }
 
-    buildHotbar() {
-        this.hotbar.replaceChildren();
+    buildSlots() {
+        this.slotList.replaceChildren();
         this.slots = this.inventory.hotbar.map((itemId, i) => {
-            const icon = el('canvas', { width: 32, height: 32 });
-            getItemView(itemId)?.drawIcon(icon.getContext('2d'), 32);
+            const icon = el('canvas', { width: 64, height: 32 });
+            const ctx = icon.getContext('2d');
+            if (!weaponSpec(itemId)?.mag) ctx.translate(16, 0); // square pixel icons, centred
+            if (itemId) getItemView(itemId)?.drawIcon(ctx, 32);
             const count = el('div.count');
-            const node = el('div.slot', {}, [el('div.key', { text: String(i + 1) }), icon, count]);
-            this.hotbar.append(node);
+            const name = el('div.name', { text: itemId ? (weaponSpec(itemId)?.short || getItem(itemId)?.name || '') : '' });
+            const node = el(`div.slot${itemId ? '' : '.empty'}`, {}, [el('div.key', { text: String(i + 1) }), icon, name, count]);
+            this.slotList.append(node);
             return { node, count, itemId };
         });
     }
 
-    setSelected(index, announce = true) {
+    setSelected(index) {
         this.slots.forEach((slot, i) => slot.node.classList.toggle('selected', i === index));
-        if (announce && this.selected !== index) {
-            const item = getItem(this.slots[index]?.itemId);
-            if (item) {
-                this.itemName.textContent = `${item.name} — ${item.description}`;
-                flash(this.itemName, 'show', 1500);
-            }
+        if (this.selected !== index) {
+            this.selected = index;
+            this.inventoryId = this.inventory?.hotbar[index];
+            this.showSlots();
         }
-        this.selected = index;
     }
 
-    // progress 0..1, or null to hide
-    setCharge(progress) {
-        this.charge.classList.toggle('hidden', progress === null);
-        if (progress !== null) {
-            this.chargeFill.style.width = `${Math.round(progress * 100)}%`;
-            // Gold once a head hit would be a one-shot headshot
-            this.chargeFill.classList.toggle('full', progress >= BOW.headshotPower);
-        }
+    showSlots() {
+        this.slotList.classList.add('show');
+        clearTimeout(this.slotTimer);
+        this.slotTimer = setTimeout(() => this.slotList.classList.remove('show'), SLOT_SHOW_MS);
+    }
+
+    // gap in pixels from the centre to each crosshair line
+    setCrosshair(gap, visible = true) {
+        this.crosshair.classList.toggle('hidden', !visible);
+        const g = Math.round(Math.min(120, gap));
+        if (g === this.crosshairGap) return;
+        this.crosshairGap = g;
+        this.crosshair.style.setProperty('--gap', `${g}px`);
+    }
+
+    setScope(on) {
+        this.scope.classList.toggle('hidden', !on);
     }
 
     setProtected(on) {
         this.protection.classList.toggle('hidden', !on);
     }
 
-    hit(head = false) {
+    hit(head = false, kill = false) {
         this.hitmarker.classList.toggle('head', head);
-        flash(this.hitmarker, 'show', head ? 300 : 150);
+        this.hitmarker.classList.toggle('kill', kill);
+        flash(this.hitmarker, 'show', kill ? 350 : head ? 250 : 120);
     }
 
     flash(kind) {
         flash(this.vignettes[kind], 'show', kind === 'danger' ? 250 : 150);
     }
 
+    // A red arc around the crosshair pointing at where the damage came from (radians, 0 = ahead)
+    damageFrom(angle) {
+        const arc = this.damageArcs[this.nextArc];
+        this.nextArc = (this.nextArc + 1) % MAX_DAMAGE_ARCS;
+        arc.style.transform = `translate(-50%, -50%) rotate(${angle}rad)`;
+        flash(arc, 'show', 900);
+    }
+
     toast(text) {
         const node = el('div.toast', { text });
         this.toasts.append(node);
+        while (this.toasts.children.length > 4) this.toasts.firstChild.remove();
         setTimeout(() => node.remove(), 2300);
     }
 
-    // entry: { killer, victim, weapon, mine }
-    kill({ killer, victim, weapon, mine }) {
-        const icon = KILL_ICONS[weapon] || KILL_ICONS.default;
+    // entry: { killer, victim, weapon, headshot, mine }
+    kill({ killer, victim, weapon, headshot, mine }) {
+        const label = weapon === 'fall' ? 'FELL' : weaponSpec(weapon)?.short || weapon?.toUpperCase() || '';
+        const tag = el('span.weapon', {}, [label, headshot ? el('span.hs', { text: ' ◎' }) : null]);
         const node = el(`div.kill${mine ? '.mine' : ''}`, {}, killer
-            ? [el('span', { text: killer }), el('span.weapon', { text: icon }), el('span', { text: victim })]
-            : [el('span', { text: victim }), el('span.weapon', { text: icon }), el('span', { text: weapon === 'fall' ? 'fell' : 'died' })]);
+            ? [el('span.killer', { text: killer }), tag, el('span.victim', { text: victim })]
+            : [el('span.victim', { text: victim }), tag]);
         this.killfeed.append(node);
         while (this.killfeed.children.length > 5) this.killfeed.firstChild.remove();
         setTimeout(() => node.remove(), 6000);

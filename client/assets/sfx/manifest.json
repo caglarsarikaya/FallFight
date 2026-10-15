@@ -1,0 +1,3 @@
+{
+    "_readme": "Map a sound name to one file or a list of variations in this folder, e.g. \"shot_ak47\": [\"ak47_1.ogg\", \"ak47_2.ogg\"]. Names without a file use the built-in synthesised sound. See SOURCES.md for every name and where to find free recordings."
+}

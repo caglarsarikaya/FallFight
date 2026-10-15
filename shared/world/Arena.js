@@ -1,5 +1,5 @@
 import { ARENA, BLOCK } from '../constants.js';
-import { ARENA_LAYOUT, BLOCK_KIND } from './layout.js';
+import { ARENA_LAYOUT, BLOCK_HP, BLOCK_KIND, FLOOR_HP_SCALE } from './layout.js';
 
 export { BLOCK_KIND };
 export const BLOCK_STATE = Object.freeze({ SOLID: 0, CRACKING: 1, BROKEN: 2 });
@@ -19,6 +19,7 @@ export class Arena {
         this.states = new Uint8Array(size * size * height);
         this.timers = new Map();     // voxel index -> { at, next }
         this.lastBreak = new Map();  // voxel index -> { by, time } for fall kill credit
+        this.wear = new Map();       // voxel index -> bullet damage taken so far
 
         for (const box of layout) {
             for (let iy = box.y0; iy <= box.y1; iy++) {
@@ -171,6 +172,20 @@ export class Arena {
         return true;
     }
 
+    // Bullets wear blocks down. Returns true when this hit used up the block's HP (it should break).
+    damageBlock(ix, iy, iz, amount) {
+        if (!this.isStable(ix, iy, iz)) return false;
+        const i = this.index(ix, iy, iz);
+        const hp = (BLOCK_HP[this.kinds[i]] ?? 150) * (iy === 0 ? FLOOR_HP_SCALE : 1);
+        const wear = (this.wear.get(i) || 0) + amount;
+        if (wear >= hp) {
+            this.wear.delete(i);
+            return true;
+        }
+        this.wear.set(i, wear);
+        return false;
+    }
+
     // Advance timers. isOccupied(ix, iy, iz) postpones regrowing a block someone is standing in.
     // Returns [{ type: 'broken' | 'restored', ix, iy, iz }]
     update(now, isOccupied = () => false) {
@@ -187,6 +202,7 @@ export class Arena {
             } else {
                 this.states[i] = BLOCK_STATE.SOLID;
                 this.timers.delete(i);
+                this.wear.delete(i);
                 events.push({ type: 'restored', ix, iy, iz });
             }
         }
@@ -233,6 +249,19 @@ export class Arena {
             else iz += step[2];
         }
         return null;
+    }
+
+    // Distance along a ray (origin inside or entering the cell) at which it leaves the cell
+    cellExit(ix, iy, iz, origin, dir) {
+        const lo = [ix + this.min, iy - 1, iz + this.min];
+        const o = [origin.x, origin.y, origin.z];
+        const d = [dir.x, dir.y, dir.z];
+        let exit = Infinity;
+        for (let a = 0; a < 3; a++) {
+            if (d[a] > 1e-9) exit = Math.min(exit, (lo[a] + 1 - o[a]) / d[a]);
+            else if (d[a] < -1e-9) exit = Math.min(exit, (lo[a] - o[a]) / d[a]);
+        }
+        return Math.max(0, exit);
     }
 
     // ---- spawning -------------------------------------------------------------------------

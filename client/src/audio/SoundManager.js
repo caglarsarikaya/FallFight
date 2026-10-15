@@ -1,13 +1,31 @@
-// Synthesised sound effects (WebAudio, no asset files). Sounds with a position are attenuated by
-// distance from the listener and panned left/right.
+import { GUN_PATCHES } from './GunSounds.js';
+import { SampleBank } from './SampleBank.js';
 
-const HEARING_DISTANCE = 35;
+// Sound effects: recorded samples when installed (see SampleBank), synthesised WebAudio patches
+// otherwise. Positional sounds fade with distance, get duller far away (low-pass), pan
+// left/right, and send some signal to a shared reverb so shots echo around the arena.
+
+const HEARING_DISTANCE = 35;       // default audible range in blocks
+const MAX_VOICES = 48;             // hard cap on overlapping sounds
+const RETRIGGER_MS = 12;           // the same sound can't restart faster than this
+const PITCH_JITTER = 0.04;         // +-4% so repeated shots don't sound robotic
 
 // Each patch receives (sound manager, output node, pitch multiplier)
 const PATCHES = {
     step: (s, out, p) => s.noise({ out, duration: 0.07, type: 'lowpass', freq: 380 * p, gain: 0.22 }),
+    stepStone: (s, out, p) => {
+        s.noise({ out, duration: 0.05, type: 'bandpass', freq: 1500 * p, q: 1.5, gain: 0.25 });
+        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 400, gain: 0.2 });
+    },
+    stepWood: (s, out, p) => {
+        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 900 * p, gain: 0.28 });
+        s.tone({ out, type: 'triangle', freq: 210 * p, freqEnd: 120, duration: 0.05, gain: 0.12 });
+    },
     jump: (s, out) => s.noise({ out, duration: 0.09, type: 'bandpass', freq: 650, gain: 0.15 }),
-    land: (s, out) => s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.3 }),
+    land: (s, out) => {
+        s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.35 });
+        s.tone({ out, type: 'sine', freq: 90, freqEnd: 45, duration: 0.08, gain: 0.25 });
+    },
     swing: (s, out, p) => s.noise({ out, duration: 0.18, type: 'bandpass', freq: 700 * p, freqEnd: 2600 * p, q: 1.5, gain: 0.3 }),
     hit: (s, out) => {
         s.tone({ out, type: 'square', freq: 150, freqEnd: 55, duration: 0.12, gain: 0.3 });
@@ -21,23 +39,17 @@ const PATCHES = {
         s.tone({ out, type: 'triangle', freq: 110, freqEnd: 40, duration: 0.22, gain: 0.3 });
     },
     restore: (s, out) => s.tone({ out, type: 'sine', freq: 300, freqEnd: 520, duration: 0.15, gain: 0.08 }),
-    bowDraw: (s, out) => s.tone({ out, type: 'sawtooth', freq: 70, freqEnd: 120, duration: 0.6, gain: 0.04 }),
-    bowShoot: (s, out) => {
-        s.tone({ out, type: 'triangle', freq: 240, freqEnd: 110, duration: 0.25, gain: 0.35 });
-        s.noise({ out, duration: 0.1, type: 'highpass', freq: 2500, gain: 0.18 });
-    },
-    arrowStick: (s, out) => s.tone({ out, type: 'triangle', freq: 520, freqEnd: 180, duration: 0.07, gain: 0.25 }),
-    arrowHit: (s, out) => {
-        s.tone({ out, type: 'square', freq: 320, freqEnd: 90, duration: 0.08, gain: 0.25 });
-        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 2000, gain: 0.25 });
-    },
     hurt: (s, out) => {
-        s.tone({ out, type: 'square', freq: 440, freqEnd: 190, duration: 0.16, gain: 0.22 });
-        s.tone({ out, type: 'square', freq: 330, freqEnd: 140, duration: 0.16, delay: 0.03, gain: 0.15 });
+        s.noise({ out, duration: 0.12, type: 'lowpass', freq: 700, freqEnd: 200, gain: 0.45 });
+        s.tone({ out, type: 'sine', freq: 140, freqEnd: 60, duration: 0.12, gain: 0.35 });
     },
-    death: (s, out) => s.tone({ out, type: 'sawtooth', freq: 320, freqEnd: 50, duration: 0.8, gain: 0.25 }),
+    death: (s, out) => {
+        s.noise({ out, duration: 0.35, type: 'lowpass', freq: 600, freqEnd: 100, gain: 0.5 });
+        s.tone({ out, type: 'sine', freq: 110, freqEnd: 35, duration: 0.4, gain: 0.4 });
+    },
     kill: (s, out) => {
-        [660, 880, 1320].forEach((f, i) => s.tone({ out, type: 'square', freq: f, duration: i === 2 ? 0.3 : 0.1, delay: i * 0.09, gain: 0.12 }));
+        s.tone({ out, type: 'square', freq: 880, duration: 0.06, gain: 0.07 });
+        s.tone({ out, type: 'square', freq: 1320, duration: 0.12, delay: 0.06, gain: 0.07 });
     },
     pickup: (s, out) => {
         s.tone({ out, type: 'square', freq: 784, duration: 0.07, gain: 0.12 });
@@ -54,18 +66,15 @@ const PATCHES = {
     respawn: (s, out) => s.tone({ out, type: 'sine', freq: 220, freqEnd: 880, duration: 0.5, gain: 0.18 }),
     select: (s, out) => s.tone({ out, type: 'square', freq: 1200, duration: 0.03, gain: 0.05 }),
     empty: (s, out) => s.tone({ out, type: 'square', freq: 180, duration: 0.06, gain: 0.1 }),
-    hitmarker: (s, out) => s.tone({ out, type: 'square', freq: 1900, duration: 0.035, gain: 0.08 }),
-    headshot: (s, out) => {
-        s.tone({ out, type: 'square', freq: 1568, duration: 0.06, gain: 0.12 });
-        s.tone({ out, type: 'square', freq: 2093, duration: 0.18, delay: 0.06, gain: 0.12 });
-    },
+    hitmarker: (s, out) => s.tone({ out, type: 'square', freq: 1900, duration: 0.03, gain: 0.05 }),
     // One-shot headshot: a dull thump, then a fading ear ring (two close sines beat against each other)
     tinnitus: (s, out) => {
         s.noise({ out, duration: 0.25, type: 'lowpass', freq: 400, freqEnd: 80, gain: 0.5 });
         s.tone({ out, type: 'sine', freq: 6800, duration: 2.2, gain: 0.05 });
         s.tone({ out, type: 'sine', freq: 6860, duration: 2.2, gain: 0.05 });
     },
-    click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 })
+    click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 }),
+    ...GUN_PATCHES
 };
 
 export class SoundManager {
@@ -73,6 +82,8 @@ export class SoundManager {
         this.volume = volume;
         this.ctx = null;
         this.listener = { x: 0, y: 0, z: 0, yaw: 0 };
+        this.voices = 0;
+        this.lastPlayed = new Map();
     }
 
     // Browsers only allow audio after a user gesture; call from click/key handlers
@@ -83,10 +94,19 @@ export class SoundManager {
             this.ctx = new AudioContext();
             this.master = this.ctx.createGain();
             this.master.gain.value = this.volume;
+            // Gunfire is loud: a fast compressor keeps sprays punchy without clipping
             const compressor = this.ctx.createDynamicsCompressor();
+            compressor.threshold.value = -14;
+            compressor.knee.value = 8;
+            compressor.ratio.value = 6;
+            compressor.attack.value = 0.002;
+            compressor.release.value = 0.12;
             this.master.connect(compressor);
             compressor.connect(this.ctx.destination);
             this.noiseBuffer = this.createNoiseBuffer();
+            this.reverb = this.createReverb();
+            this.samples = new SampleBank(this.ctx);
+            this.samples.load();
         }
         if (this.ctx.state === 'suspended') this.ctx.resume();
     }
@@ -100,38 +120,96 @@ export class SoundManager {
         Object.assign(this.listener, { x, y, z, yaw });
     }
 
-    play(name, { at = null, volume = 1, pitch = 1 } = {}) {
-        if (!this.ctx || this.ctx.state !== 'running' || !PATCHES[name]) return;
-        const out = this.createOutput(at, volume);
-        if (!out) return;
-        PATCHES[name](this, out, pitch);
+    has(name) {
+        return !!PATCHES[name] || !!this.samples?.has(name);
     }
 
-    createOutput(at, volume) {
-        const gain = this.ctx.createGain();
+    // options: { at: {x,y,z} for positional sounds, volume, pitch, range (blocks), reverb (0..1) }
+    play(name, { at = null, volume = 1, pitch = 1, range = HEARING_DISTANCE, reverb = 0.15 } = {}) {
+        if (!this.ctx || this.ctx.state !== 'running' || this.voices >= MAX_VOICES) return;
+        const sample = this.samples.has(name);
+        if (!sample && !PATCHES[name]) return;
+        const now = performance.now();
+        const key = at ? `${name}@${Math.round(at.x)},${Math.round(at.z)}` : name;
+        if (now - (this.lastPlayed.get(key) || 0) < RETRIGGER_MS) return;
+        this.lastPlayed.set(key, now);
+
+        const out = this.createOutput(at, volume, range, reverb);
+        if (!out) return;
+        const p = pitch * (1 + (Math.random() * 2 - 1) * PITCH_JITTER);
+        if (sample) this.playBuffer(this.samples.pick(name), out, p);
+        else PATCHES[name](this, out, p);
+        this.voices++;
+        setTimeout(() => this.voices--, 1200);
+    }
+
+    // Gunshot with a distant variant past 35% of its range (as heard from far away)
+    playShot(weaponId, at, { self = false } = {}) {
+        const range = 160;
+        const d = at ? this.distanceTo(at) : 0;
+        const far = !self && d > range * 0.3;
+        const name = `shot_${weaponId}${far ? '_far' : ''}`;
+        this.play(name, { at: self ? null : at, range, volume: self ? 0.9 : 1, reverb: self ? 0.18 : 0.3 + Math.min(0.5, d / range) });
+    }
+
+    distanceTo(at) {
+        const l = this.listener;
+        return Math.hypot(at.x - l.x, at.y - l.y, at.z - l.z);
+    }
+
+    createOutput(at, volume, range, reverb) {
+        const ctx = this.ctx;
+        const gain = ctx.createGain();
         let level = volume;
         let pan = 0;
+        let muffle = 1;
         if (at) {
             const dx = at.x - this.listener.x;
             const dz = at.z - this.listener.z;
             const dist = Math.hypot(dx, at.y - this.listener.y, dz);
-            level *= Math.pow(Math.max(0, 1 - dist / HEARING_DISTANCE), 1.5);
+            const near = Math.max(0, 1 - dist / range);
+            level *= Math.pow(near, 1.6);
             if (level < 0.01) return null;
+            muffle = near;
             // Right vector for the listener's yaw is (cos yaw, -sin yaw)
             const len = Math.hypot(dx, dz) || 1;
-            pan = ((dx / len) * Math.cos(this.listener.yaw) - (dz / len) * Math.sin(this.listener.yaw)) * 0.8;
+            pan = ((dx / len) * Math.cos(this.listener.yaw) - (dz / len) * Math.sin(this.listener.yaw)) * 0.8 * Math.min(1, dist / 3);
         }
         gain.gain.value = level;
-        if (pan && this.ctx.createStereoPanner) {
-            const panner = this.ctx.createStereoPanner();
-            panner.pan.value = pan;
-            gain.connect(panner);
-            panner.connect(this.master);
-        } else {
-            gain.connect(this.master);
+
+        let tail = gain;
+        if (muffle < 0.9) {
+            // Air soaks up the highs over distance
+            const lowpass = ctx.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.value = 500 + 17000 * muffle * muffle;
+            tail.connect(lowpass);
+            tail = lowpass;
         }
-        setTimeout(() => gain.disconnect(), 2500);
+        if (pan && ctx.createStereoPanner) {
+            const panner = ctx.createStereoPanner();
+            panner.pan.value = pan;
+            tail.connect(panner);
+            tail = panner;
+        }
+        tail.connect(this.master);
+        if (reverb > 0 && this.reverb) {
+            const send = ctx.createGain();
+            send.gain.value = reverb;
+            tail.connect(send);
+            send.connect(this.reverb);
+            setTimeout(() => send.disconnect(), 3000);
+        }
+        setTimeout(() => gain.disconnect(), 3000);
         return gain;
+    }
+
+    playBuffer(buffer, out, pitch) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buffer;
+        src.playbackRate.value = pitch;
+        src.connect(out);
+        src.start();
     }
 
     createNoiseBuffer() {
@@ -139,6 +217,31 @@ export class SoundManager {
         const data = buffer.getChannelData(0);
         for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
         return buffer;
+    }
+
+    // One shared convolution reverb: a short, dark outdoor slap with a decaying tail
+    createReverb() {
+        const ctx = this.ctx;
+        const seconds = 1.3;
+        const length = Math.floor(ctx.sampleRate * seconds);
+        const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+        for (let c = 0; c < 2; c++) {
+            const data = impulse.getChannelData(c);
+            let smooth = 0;
+            for (let i = 0; i < length; i++) {
+                const t = i / ctx.sampleRate;
+                smooth += (Math.random() * 2 - 1 - smooth) * 0.35; // darken the noise
+                const early = t > 0.03 && t < 0.09 ? 1.6 : 1;     // early reflections off walls
+                data[i] = smooth * early * Math.pow(1 - t / seconds, 3);
+            }
+        }
+        const convolver = ctx.createConvolver();
+        convolver.buffer = impulse;
+        const wet = ctx.createGain();
+        wet.gain.value = 0.55;
+        convolver.connect(wet);
+        wet.connect(this.master);
+        return convolver;
     }
 
     tone({ out, type = 'sine', freq, freqEnd = freq, duration, delay = 0, gain = 0.2 }) {
@@ -149,7 +252,7 @@ export class SoundManager {
         osc.frequency.setValueAtTime(freq, t);
         osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t + duration);
         env.gain.setValueAtTime(0.0001, t);
-        env.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.01, duration / 4));
+        env.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.004, duration / 4));
         env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
         osc.connect(env);
         env.connect(out);
