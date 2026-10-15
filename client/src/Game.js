@@ -281,7 +281,7 @@ export class Game {
                 case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.toggleCamera();
                 case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
-                case 'primary': return w.setTrigger(value && !!this.canAct);
+                case 'primary': return w.setTrigger(value && !!this.canShoot);
                 case 'secondary': return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
                 case 'pause': return this.escape();
@@ -306,6 +306,11 @@ export class Game {
 
     get canAct() {
         return this.selfId && this.local.alive && this.input.locked && this.weapons.inventory && !this.pauseMenu.visible;
+    }
+
+    // Shooting and knifing: not during freeze time (the server refuses those shots anyway)
+    get canShoot() {
+        return this.canAct && !this.frozen;
     }
 
     // Team Buy: in buy time. Zombies: any time you're alive.

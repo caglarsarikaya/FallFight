@@ -178,7 +178,7 @@ export class WeaponController {
 
     tryFire() {
         const id = this.id;
-        if (!id || !this.game.canAct) return;
+        if (!id || !this.game.canShoot) return;
         if (id === KNIFE.id) return this.knife(false);
         if (id === 'health_potion') {
             if (!this.triggerUsed) {
@@ -264,7 +264,7 @@ export class WeaponController {
 
     knife(stab) {
         const now = this.now;
-        if (!this.game.canAct || now < this.readyAt || now < this.nextFireAt) return;
+        if (!this.game.canShoot || now < this.readyAt || now < this.nextFireAt) return;
         if (!stab && this.triggerUsed && !this.trigger) return;
         const mode = stab ? KNIFE.stab : KNIFE.slash;
         this.nextFireAt = now + mode.interval;
@@ -292,7 +292,7 @@ export class WeaponController {
     update(dt) {
         const now = this.now;
         const spec = this.spec;
-        if (this.trigger && this.game.canAct) this.tryFire();
+        if (this.trigger && this.game.canShoot) this.tryFire();
 
         // Reload progress (predicted; the server's inventory confirms it)
         const r = this.reload;

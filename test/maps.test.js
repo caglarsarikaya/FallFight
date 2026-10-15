@@ -91,6 +91,24 @@ test('fy_pool_day: water is not solid; you can swim up and climb out by the step
     assert.equal(out.at(-1).y, 2);
 });
 
+test('fy_pool_day: swimming into the edge with Space held climbs out onto the deck', () => {
+    const arena = new Arena(MAPS.fy_pool_day);
+    const climb = (tile, moveX, moveZ) => {
+        const c = arena.tileCenter(tile.ix, tile.iz);
+        const body = { x: c.x, y: arena.surfaceHeight(tile.ix, tile.iz), z: c.z, vx: 0, vy: 0, vz: 0, onGround: true };
+        for (let t = 0; t < 3; t += 1 / 60) stepMovement(body, { moveX, moveZ, jump: true }, arena, 1 / 60);
+        for (let t = 0; t < 0.5; t += 1 / 60) stepMovement(body, { moveX, moveZ, jump: false }, arena, 1 / 60);
+        return body;
+    };
+    // From the pool floor against the north wall
+    const wall = climb({ ix: 20, iz: 17 }, 0, -1);
+    assert.ok(wall.y >= 2 && wall.onGround, `out of the pool at y ${wall.y.toFixed(2)}`);
+    // From the west steps
+    const { poolSteps } = MAPS.fy_pool_day.landmarks;
+    const steps = climb({ ix: poolSteps.ix + 1, iz: poolSteps.iz }, -1, 0);
+    assert.ok(steps.y >= 2 && steps.onGround, `up the steps to y ${steps.y.toFixed(2)}`);
+});
+
 test('fy_iceworld: the rink is slippery', () => {
     const arena = new Arena(MAPS.fy_iceworld);
     const slide = tile => {

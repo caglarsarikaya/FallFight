@@ -4,7 +4,9 @@ import { bodyHeight } from './game/BodyZones.js';
 const SKIN = 1e-4;
 
 // Movement in water, relative to normal
-const WATER = { speed: 0.6, accel: 5, gravity: 0.25, swimUp: 4.2, sink: 2.5 };
+// climbOut: the kick out of the water onto a ledge (swimUp alone can't clear one block)
+const WATER = { speed: 0.6, accel: 5, gravity: 0.25, swimUp: 4.2, sink: 2.5, climbOut: 6 };
+const LEDGE_REACH = 0.15;
 
 function collides(arena, x, y, z, height) {
     const r = PLAYER.radius;
@@ -26,7 +28,8 @@ export function moveSpeed({ speedMul = 1, crouching = false, walk = false, slow 
 // In the air you keep your momentum and steer GoldSrc-style, so strafing while turning gains a
 // little speed; jumping on the tick you land skips ground friction (bunny hop, capped).
 // Collision is box-vs-voxel, one axis at a time; there is no auto step-up, so 1-high blocks
-// need a jump and 2-high blocks are walls. Standing up needs headroom.
+// need a jump and 2-high blocks are walls. Standing up needs headroom. In water, swimming into a
+// ledge at the surface with Space held pops you out onto it.
 export function stepMovement(body, input, arena, dt) {
     if (input.crouch) body.crouching = true;
     else if (body.crouching && !collides(arena, body.x, body.y, body.z, PLAYER.height)) body.crouching = false;
@@ -72,7 +75,7 @@ export function stepMovement(body, input, arena, dt) {
     }
     if (inWater) {
         body.vy -= PLAYER.gravity * WATER.gravity * dt;
-        if (input.jump) body.vy = Math.max(body.vy, WATER.swimUp);
+        if (input.jump) body.vy = Math.max(body.vy, canClimbOut(body, input, arena) ? WATER.climbOut : WATER.swimUp);
         body.vy = Math.max(body.vy, -WATER.sink);
     } else {
         body.vy -= PLAYER.gravity * dt;
@@ -82,6 +85,16 @@ export function stepMovement(body, input, arena, dt) {
     moveHorizontal(body, arena, 'z', body.vz * dt);
     moveVertical(body, arena, body.vy * dt);
     return body;
+}
+
+// Water jump (GoldSrc-style): head at the surface, swimming into a ledge with room on top
+function canClimbOut(body, input, arena) {
+    const wish = Math.hypot(input.moveX, input.moveZ);
+    if (wish < 1e-6 || arena.isWaterAt(body.x, body.y + 1, body.z)) return false;
+    const h = bodyHeight(body.crouching);
+    const x = body.x + (input.moveX / wish) * LEDGE_REACH;
+    const z = body.z + (input.moveZ / wish) * LEDGE_REACH;
+    return collides(arena, x, body.y, z, h) && !collides(arena, x, body.y + 1, z, h);
 }
 
 function moveHorizontal(body, arena, axis, delta) {
