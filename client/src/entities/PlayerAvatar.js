@@ -6,6 +6,21 @@ import { isGun } from '../../shared/config/weapons.js';
 
 export const INTERPOLATION_DELAY = 100; // ms behind the newest snapshot, for smooth remote movement
 
+// Name tags are drawn on a canvas, so they read the UI font (--font in main.css) themselves.
+// Canvas text ignores font-size-adjust, so pick the size that gives the same letter height
+// (x-height NAME_TAG_X px) in whatever font it is; measured once the font has loaded.
+const NAME_TAG_X = 18;
+let nameTagFont = null;
+function getNameTagFont(ctx) {
+    if (nameTagFont) return nameTagFont;
+    const family = getComputedStyle(document.documentElement).getPropertyValue('--font').trim() || 'monospace';
+    ctx.font = `100px ${family}`;
+    const xHeight = ctx.measureText('x').actualBoundingBoxAscent / 100 || 0.5;
+    const font = `${Math.round(NAME_TAG_X / xHeight)}px ${family}`;
+    if (document.fonts.check(font)) nameTagFont = font; // until the web font arrives, measure again next time
+    return font;
+}
+
 // A player in the world: character model, held item and name tag. Remote players are driven by
 // interpolated snapshots; the local player's avatar (third-person view) is posed directly.
 export class PlayerAvatar {
@@ -106,7 +121,7 @@ export class PlayerAvatar {
         const { canvas, texture } = this.nameTagSprite.userData;
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.font = '28px "Press Start 2P", monospace';
+        ctx.font = getNameTagFont(ctx);
         const width = Math.min(250, ctx.measureText(this.name).width + 20);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
         ctx.fillRect((256 - width) / 2, 0, width, 40);

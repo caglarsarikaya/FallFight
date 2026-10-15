@@ -17,6 +17,8 @@ const CONTROLS = [
 ];
 
 const TABS = [['player', 'Player'], ['game', 'Game'], ['options', 'Options']];
+const ONLINE_ACTIONS = [['quick', 'Quick Play'], ['join', 'Join room'], ['create', 'Create room']];
+const PLAY_LABELS = { quick: 'Quick Play', offline: 'Play Offline', create: 'Create & Join', join: 'Pick a room' };
 
 // A row of buttons where exactly one is on: [[value, label]]
 function choice(options, onPick) {
@@ -31,8 +33,8 @@ function choice(options, onPick) {
     };
 }
 
-// The start screen, in the style of a CS 1.6 dialog: Player (name, character), Game (mode, map,
-// online/offline, rooms) and Options tabs, with Play always at the bottom.
+// The start screen, laid out like a CS 1.6 dialog: Player (name, character), Game (online or
+// offline, quick play / rooms, mode and map) and Options tabs, with Play always at the bottom.
 // 'start' mode at launch; 'edit' mode from the pause menu shows only the Player tab with Save / Back.
 export class MainMenu {
     constructor(root, { profile, sound, online = null, onPlay = () => {}, onJoinRoom, onCreateRoom, onSave = () => {}, onBack = () => {} }) {
@@ -50,7 +52,8 @@ export class MainMenu {
             onCreate: options => {
                 this.applyToProfile();
                 return onCreateRoom(options);
-            }
+            },
+            onEmptyCreate: () => this.setAction('create')
         });
         this.mode = 'start';
         this.selected = profile.characterId;
@@ -86,6 +89,7 @@ export class MainMenu {
         this.select(this.selected, false);
         this.selectMode(isPlayableMode(profile.mode) ? profile.mode : MODES[0].id, false);
         this.setWhere(profile.playWhere, false);
+        this.setAction(profile.onlineAction, false);
         this.showTab(TABS.some(([id]) => id === profile.menuTab) ? profile.menuTab : 'player', false);
         this.watchServer();
         this.show('start');
@@ -118,6 +122,8 @@ export class MainMenu {
         ]);
     }
 
+    // Step by step: Online or Offline; online: Quick Play, Join or Create; then only the settings
+    // that choice uses (Quick Play: mode; Offline: mode + map; Create: mode, map + room; Join: rooms)
     buildGameTab() {
         this.modeButtons = MODES.map(mode => {
             const playable = isPlayableMode(mode.id);
@@ -132,26 +138,58 @@ export class MainMenu {
         this.mapSelect.addEventListener('change', () => {
             this.profile.roomMap = this.mapSelect.value;
             this.profile.save();
-            this.rooms.setMode(this.profile.mode);
         });
-        this.mapNote = el('div.menu-note');
-        this.where = choice([['online', 'Quick Play (online)'], ['offline', 'Offline vs bots']], value => this.setWhere(value));
-        return el('div.menu-panel.game-tab', {}, [
+        this.where = choice([['online', 'Online'], ['offline', 'Offline']], value => this.setWhere(value));
+        this.action = choice(ONLINE_ACTIONS, value => this.setAction(value));
+        this.actionStep = el('div.menu-step', {}, [el('div.menu-label', { text: 'Online game' }), this.action.node]);
+        this.whereStep = el('div.menu-step', {}, [el('div.menu-label', { text: 'Play' }), this.where.node]);
+
+        this.modeSection = el('div.menu-column', {}, [
+            el('div.menu-label', { text: 'Game mode' }),
+            el('div.menu-list', {}, this.modeButtons),
+            this.modeDescription
+        ]);
+        this.quickInfo = el('div.menu-info');
+        this.offlineInfo = el('div.menu-info', { text: 'You against bots. The whole game runs on your computer, so there\'s no ping, and it doesn\'t need the game server or other players.' });
+        this.mapField = el('div.menu-step', {}, [el('div.menu-label', { text: 'Map' }), this.mapSelect]);
+        this.roomsLabel = el('div.menu-label', { text: 'Rooms' });
+        this.gameGrid = el('div.menu-panel', {}, [
+            this.modeSection,
             el('div.menu-column', {}, [
-                el('div.menu-label', { text: 'Game mode' }),
-                el('div.menu-inset.menu-list', {}, this.modeButtons),
-                this.modeDescription,
-                el('div.menu-label', { text: 'Play' }),
-                this.where.node,
-                el('div.menu-label', { text: 'Map' }),
-                this.mapSelect,
-                this.mapNote
-            ]),
-            el('div.menu-column', {}, [
-                el('div.menu-label', { text: 'Servers' }),
-                this.rooms.root
+                this.quickInfo, this.offlineInfo, this.mapField,
+                this.rooms.formRoot, this.roomsLabel, this.rooms.listRoot
             ])
         ]);
+        return el('div.game-tab', {}, [el('div.menu-steps', {}, [this.whereStep, this.actionStep]), this.gameGrid]);
+    }
+
+    // What the Game tab is set to: 'offline', or an online action ('quick', 'join', 'create')
+    get gameAction() {
+        return this.playWhere === 'offline' ? 'offline' : this.onlineAction;
+    }
+
+    // Show only what the current choice needs, and make Play say what it will do
+    updateGameView() {
+        if (!this.playButton) return; // still building
+        const action = this.gameAction;
+        const show = (node, on) => node.classList.toggle('hidden', !on);
+        this.where.set(this.playWhere);
+        this.action.set(this.onlineAction);
+        this.actionStep.classList.toggle('off', action === 'offline'); // keeps its space so nothing jumps
+        show(this.modeSection, action !== 'join');
+        this.gameGrid.classList.toggle('single', action === 'join');
+        show(this.quickInfo, action === 'quick');
+        show(this.offlineInfo, action === 'offline');
+        show(this.mapField, action === 'offline' || action === 'create');
+        show(this.rooms.formRoot, action === 'create');
+        show(this.roomsLabel, action === 'join');
+        show(this.rooms.listRoot, action === 'join');
+        const mode = getModeInfo(this.profile.mode)?.name || 'game';
+        this.quickInfo.textContent = `Jumps into the busiest public ${mode} game, or starts a new one. The server picks the map and bots fill the empty seats.`;
+
+        if (this.waiting) return;
+        this.playButton.textContent = this.creating ? 'Creating...' : PLAY_LABELS[action];
+        this.playButton.disabled = this.creating || action === 'join' || (action === 'create' && !this.serverReady);
     }
 
     buildOptionsTab() {
@@ -221,7 +259,7 @@ export class MainMenu {
             this.status.textContent = 'No game server configured: you\'ll play against bots.';
             this.rooms.setEnabled(false);
             this.setWhere('offline', false);
-            this.where.node.classList.add('hidden');
+            this.whereStep.classList.add('hidden');
             return;
         }
         this.serverStats = null;
@@ -233,6 +271,8 @@ export class MainMenu {
                 : 'Waking up the game server... (free servers can take up to a minute)';
             this.rooms.setEnabled(ready, 'Rooms need the online server (waking up...)');
             if (ready && this.serverStats) this.rooms.render(this.serverStats.rooms);
+            this.serverReady = ready;
+            this.updateGameView();
         };
         this.online.onStatus(render);
         this.online.on(S2C.SERVER_STATS, stats => {
@@ -259,8 +299,10 @@ export class MainMenu {
 
     // While Play waits for the server to wake up
     setWaiting(waiting) {
-        this.playButton.disabled = waiting;
-        this.playButton.textContent = waiting ? 'Connecting...' : 'Play';
+        this.waiting = waiting;
+        if (!waiting) return this.updateGameView();
+        this.playButton.disabled = true;
+        this.playButton.textContent = 'Connecting...';
     }
 
     select(characterId, withSound = true) {
@@ -282,22 +324,30 @@ export class MainMenu {
         const maps = (getModeInfo(modeId)?.maps || []).map(getMap).filter(Boolean);
         this.mapSelect.replaceChildren(...maps.map(map => el('option', { value: map.id, text: map.name })));
         if (maps.some(m => m.id === this.profile.roomMap)) this.mapSelect.value = this.profile.roomMap;
-        this.rooms.setMode(modeId);
+        this.updateGameView();
         if (withSound) {
             this.sound.unlock();
             this.sound.play('click');
         }
     }
 
-    // 'online' (Quick Play) or 'offline' (bots in the browser)
+    // 'online' or 'offline' (bots in the browser)
     setWhere(where, withSound = true) {
         this.playWhere = where === 'offline' || !this.online ? 'offline' : 'online';
-        this.where.set(this.playWhere);
-        this.mapNote.textContent = this.playWhere === 'online'
-            ? 'Quick Play: the server picks the map. The map is used for offline games and new rooms.'
-            : '';
+        this.updateGameView();
         if (!withSound) return;
         this.profile.playWhere = this.playWhere;
+        this.profile.save();
+        this.sound.unlock();
+        this.sound.play('click');
+    }
+
+    // Online: 'quick', 'join' or 'create'
+    setAction(action, withSound = true) {
+        this.onlineAction = ONLINE_ACTIONS.some(([id]) => id === action) ? action : 'quick';
+        this.updateGameView();
+        if (!withSound) return;
+        this.profile.onlineAction = this.onlineAction;
         this.profile.save();
         this.sound.unlock();
         this.sound.play('click');
@@ -312,12 +362,18 @@ export class MainMenu {
         this.profile.save();
     }
 
-    play() {
-        if (this.playButton.disabled) return;
+    async play() {
+        const action = this.gameAction;
+        if (this.playButton.disabled || action === 'join') return;
         this.sound.unlock();
         this.sound.play('click');
         this.applyToProfile();
-        this.callbacks.onPlay({ offline: this.playWhere === 'offline' });
+        if (action !== 'create') return this.callbacks.onPlay({ offline: action === 'offline' });
+        this.creating = true;
+        this.updateGameView();
+        await this.rooms.create({ mode: this.profile.mode, map: this.mapSelect.value });
+        this.creating = false;
+        this.updateGameView();
     }
 
     save() {

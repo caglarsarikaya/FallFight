@@ -1,7 +1,6 @@
 import { ROOMS } from '../../shared/constants.js';
-import { MODES, getModeInfo } from '../../shared/config/modes.js';
+import { getModeInfo } from '../../shared/config/modes.js';
 import { getMap } from '../../shared/world/maps/index.js';
-import { isPlayableMode } from '../../shared/game/modes/index.js';
 import { el } from './dom.js';
 
 export const ROOM_ERROR_TEXT = {
@@ -20,10 +19,13 @@ export const ROOM_ERROR_TEXT = {
 
 export const roomErrorText = error => ROOM_ERROR_TEXT[error] || 'Something went wrong';
 
-// Live list of rooms to join, plus a form to create one (name, password, size, bots on/off).
+// Online rooms, in two parts the menu places itself:
+//   listRoot  live list of rooms to join (each row has its own Join button)
+//   formRoot  the fields for a new room (name, password, size, bots); the menu supplies mode and map
 // onJoin(roomId, password) and onCreate(options) return promises resolving to { error } or {}.
+// onEmptyCreate: the "Create one" button shown when there are no rooms.
 export class RoomBrowser {
-    constructor({ profile, sound, onJoin, onCreate }) {
+    constructor({ profile, sound, onJoin, onCreate, onEmptyCreate = () => {} }) {
         this.profile = profile;
         this.sound = sound;
         this.onJoin = onJoin;
@@ -33,12 +35,9 @@ export class RoomBrowser {
 
         this.list = el('div.room-list');
         this.listMessage = el('div.room-empty');
-        this.createError = el('div.room-error');
-        this.root = el('div.rooms', {}, [
-            this.list,
-            this.listMessage,
-            this.buildCreateForm()
-        ]);
+        this.emptyCreate = el('button.btn.room-empty-create', { type: 'button', text: 'Create one', onclick: () => onEmptyCreate() });
+        this.listRoot = el('div.rooms', {}, [this.list, this.listMessage, this.emptyCreate]);
+        this.formRoot = this.buildCreateForm();
         this.render([]);
     }
 
@@ -55,59 +54,38 @@ export class RoomBrowser {
         const savedSize = Math.min(this.profile.roomMaxPlayers || ROOMS.maxPlayersPerRoom, ROOMS.maxPlayersPerRoom);
         this.sizeSelect.value = String(savedSize);
 
-        this.modeSelect = el('select.room-select');
-        for (const mode of MODES.filter(m => isPlayableMode(m.id))) this.modeSelect.append(el('option', { value: mode.id, text: mode.name }));
-        this.mapSelect = el('select.room-select');
-        this.modeSelect.addEventListener('change', () => this.fillMaps());
-
         const withBots = this.profile.roomBots !== false;
         this.botsYes = el('input', { type: 'radio', name: 'room-bots', value: 'yes', checked: withBots });
         this.botsNo = el('input', { type: 'radio', name: 'room-bots', value: 'no', checked: !withBots });
 
-        this.createButton = el('button.btn.primary', { type: 'button', text: 'Create & Join', onclick: () => this.create() });
+        this.createError = el('div.room-error');
+        this.formMessage = el('div.room-empty');
         const field = (text, control) => el('label.room-field', {}, [el('span.label', { text }), control]);
-        this.createForm = el('div.room-create', {}, [
+        return el('div.room-create', {}, [
+            this.formMessage,
             field('Room name', this.nameInput),
             field('Password (optional)', this.passwordInput),
-            el('div.room-create-row', {}, [field('Mode', this.modeSelect), field('Map', this.mapSelect)]),
             field('Players', this.sizeSelect),
             el('div.room-bots', {}, [
                 el('label', {}, [this.botsYes, ' Fill empty seats with bots']),
                 el('label', {}, [this.botsNo, ' No bots: friends only'])
             ]),
-            this.createButton,
             this.createError
         ]);
-        this.createToggle = el('button.btn.room-toggle', {
-            type: 'button',
-            text: '+ Create a room',
-            onclick: () => this.createForm.classList.toggle('hidden')
-        });
-        this.createForm.classList.add('hidden');
-        return el('div', {}, [this.createToggle, this.createForm]);
-    }
-
-    // The menu's chosen mode is the default for new rooms
-    setMode(modeId) {
-        if (![...this.modeSelect.options].some(o => o.value === modeId)) return;
-        this.modeSelect.value = modeId;
-        this.fillMaps();
-    }
-
-    fillMaps() {
-        const maps = (getModeInfo(this.modeSelect.value)?.maps || []).map(getMap).filter(Boolean);
-        this.mapSelect.replaceChildren(...maps.map(map => el('option', { value: map.id, text: map.name })));
-        if (maps.some(m => m.id === this.profile.roomMap)) this.mapSelect.value = this.profile.roomMap;
     }
 
     setEnabled(enabled, message = '') {
         this.enabled = enabled;
-        this.root.classList.toggle('disabled', !enabled);
-        this.createButton.disabled = !enabled;
-        this.createToggle.disabled = !enabled;
+        this.listRoot.classList.toggle('disabled', !enabled);
+        this.formRoot.classList.toggle('disabled', !enabled);
         for (const row of this.rows.values()) row.joinButton.disabled = !enabled;
-        if (!enabled) this.listMessage.textContent = message || roomErrorText('offline');
-        else this.render(this.lastRooms || []);
+        this.formMessage.textContent = enabled ? '' : message || roomErrorText('offline');
+        if (!enabled) {
+            this.listMessage.textContent = message || roomErrorText('offline');
+            this.emptyCreate.classList.add('hidden');
+        } else {
+            this.render(this.lastRooms || []);
+        }
     }
 
     // rooms: [{ id, name, kind, players, maxPlayers, bots, locked }]
@@ -126,7 +104,9 @@ export class RoomBrowser {
                 this.rows.delete(id);
             }
         }
-        if (this.enabled) this.listMessage.textContent = rooms.length ? '' : 'No rooms yet: create one!';
+        if (!this.enabled) return;
+        this.listMessage.textContent = rooms.length ? '' : 'No rooms yet.';
+        this.emptyCreate.classList.toggle('hidden', rooms.length > 0);
     }
 
     createRow(room) {
@@ -179,26 +159,24 @@ export class RoomBrowser {
         if (result?.error) row.error.textContent = roomErrorText(result.error);
     }
 
-    async create() {
-        if (!this.enabled) return;
-        this.sound.unlock();
-        this.sound.play('click');
+    // Create a room from the form, with the mode and map the menu picked
+    async create({ mode, map }) {
+        if (!this.enabled) return { error: 'offline' };
         const options = {
             roomName: this.nameInput.value.trim(),
             password: this.passwordInput.value,
             maxPlayers: Number(this.sizeSelect.value),
             bots: this.botsYes.checked,
-            mode: this.modeSelect.value,
-            map: this.mapSelect.value
+            mode,
+            map
         };
         // Remember the choices (not the password) for next time
         Object.assign(this.profile, { roomName: options.roomName, roomMaxPlayers: options.maxPlayers, roomBots: options.bots, roomMap: options.map });
         this.profile.save();
 
         this.createError.textContent = '';
-        this.createButton.disabled = true;
         const result = await this.onCreate(options);
-        this.createButton.disabled = !this.enabled;
         if (result?.error) this.createError.textContent = roomErrorText(result.error);
+        return result;
     }
 }

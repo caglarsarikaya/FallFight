@@ -14,7 +14,8 @@ const DEFAULTS = {
     roomBots: true,
     roomMap: '',
     mode: DEFAULT_MODE,     // game mode for Quick Play and new rooms
-    playWhere: 'online',    // what the menu's Play does: 'online' (Quick Play) or 'offline' (bots)
+    playWhere: 'online',    // menu Game tab: 'online' or 'offline' (bots in the browser)
+    onlineAction: 'quick',  // and online: 'quick', 'join' or 'create'
     menuTab: 'player',      // last open main menu tab
     sensitivity: 1,
     showStats: true,    // FPS / ping / latency readout in the corner
@@ -61,6 +62,7 @@ export class Profile {
                 roomMap: this.roomMap,
                 mode: this.mode,
                 playWhere: this.playWhere,
+                onlineAction: this.onlineAction,
                 menuTab: this.menuTab
             }));
         } catch {
