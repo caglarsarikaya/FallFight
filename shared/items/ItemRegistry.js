@@ -1,5 +1,6 @@
-import { WEAPONS } from '../config/weapons.js';
+import { WEAPONS, WEAPON_KIND } from '../config/weapons.js';
 import { Gun } from './Gun.js';
+import { RocketLauncher } from './RocketLauncher.js';
 import { Knife } from './Knife.js';
 import { HealthPotion } from './HealthPotion.js';
 
@@ -22,6 +23,8 @@ export function allItems() {
     return [...items.values()];
 }
 
-for (const spec of Object.values(WEAPONS)) registerItem(new Gun(spec));
+for (const spec of Object.values(WEAPONS)) {
+    registerItem(spec.kind === WEAPON_KIND.LAUNCHER ? new RocketLauncher(spec) : new Gun(spec));
+}
 registerItem(new Knife());
 registerItem(new HealthPotion());

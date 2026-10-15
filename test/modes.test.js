@@ -68,7 +68,7 @@ test('gun game: start with the first gun, a new gun every few kills, no potions'
     const room = modeRoom('gungame');
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const b = room.addPlayer({ id: 'b', name: 'B' });
-    assert.deepEqual(a.inventory.hotbar, [null, GUN_GAME.ladder[0], 'knife', 'health_potion']);
+    assert.deepEqual(a.inventory.hotbar, [null, GUN_GAME.ladder[0], 'knife', 'health_potion', null]);
     assert.equal(a.inventory.selectedId, GUN_GAME.ladder[0]);
 
     for (let i = 0; i < GUN_GAME.killsPerLevel; i++) {

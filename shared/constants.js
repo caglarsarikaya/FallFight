@@ -105,6 +105,13 @@ export const PICKUPS = {
     radius: 0.9
 };
 
+// The map's power weapon (Lava Arena's RPG on a tower top): one at a time. The first appears
+// firstDelay seconds into a match, the next one cooldown seconds after the last is fired or lost.
+export const RPG = {
+    firstDelay: 30,
+    cooldown: 45
+};
+
 // Who gets credit when someone falls: whoever hurt them or broke their floor this recently
 export const KILL_CREDIT_WINDOW = 10;
 

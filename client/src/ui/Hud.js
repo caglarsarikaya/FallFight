@@ -1,5 +1,5 @@
 import { PLAYER } from '../../shared/constants.js';
-import { weaponSpec } from '../../shared/config/weapons.js';
+import { WEAPON_SLOT, weaponSpec } from '../../shared/config/weapons.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
 import { el, flash } from './dom.js';
@@ -53,7 +53,7 @@ export class Hud {
         };
         this.underwater = el('div.underwater.hidden');
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-4 / Q weapons · B buy · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · B buy · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
@@ -160,6 +160,7 @@ export class Hud {
             const count = el('div.count');
             const name = el('div.name', { text: itemId ? (weaponSpec(itemId)?.short || getItem(itemId)?.name || '') : '' });
             const node = el(`div.slot${itemId ? '' : '.empty'}`, {}, [el('div.key', { text: String(i + 1) }), icon, name, count]);
+            if (i === WEAPON_SLOT.SPECIAL && !itemId) node.classList.add('hidden'); // only while carrying the RPG
             this.slotList.append(node);
             return { node, count, itemId };
         });

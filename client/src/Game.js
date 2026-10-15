@@ -39,6 +39,8 @@ const BLOOD = ['#9c0a0a', '#6e0606', '#c21a1a'];
 const IMPACT_SOUND = { grass: 'impactDirt', sand: 'impactDirt', snow: 'impactDirt', stone: 'impactStone', ice: 'impactStone', wood: 'impactWood' };
 const STEP_SOUND = { grass: 'step', sand: 'stepSand', snow: 'stepSnow', stone: 'stepStone', ice: 'stepIce', wood: 'stepWood' };
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
+const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
+const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
 const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth'];
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
@@ -409,6 +411,7 @@ export class Game {
     // Our own shot: everything we can show without waiting for the server
     onLocalShot(spec, dirs) {
         this.protectedUntil = 0;
+        if (spec.kind === WEAPON_KIND.LAUNCHER) return this.onLocalRocket(spec);
         this.sound.playShot(spec.id, null, { self: true });
         this.viewModel.fire({ shell: spec.kind !== WEAPON_KIND.SHOTGUN });
         this.self?.avatar.playAction('shoot');
@@ -433,6 +436,33 @@ export class Game {
             setTimeout(() => this.sound.play('shell', { volume: 0.5 }), 380 + Math.random() * 200);
         }
         this.onWeaponChanged();
+    }
+
+    // Our own RPG shot: the server spawns the rocket, we show the launch and the backblast
+    onLocalRocket(spec) {
+        this.sound.playShot(spec.id, null, { self: true });
+        this.viewModel.fire({ shell: false });
+        this.self?.avatar.playAction('shoot');
+        const eye = this.local.eye;
+        const forward = directionFromAngles(this.local.yaw, this.local.pitch);
+        const muzzle = { x: eye.x + forward.x * 1.1, y: eye.y + forward.y * 1.1 - 0.1, z: eye.z + forward.z * 1.1 };
+        const back = { x: -forward.x, y: -forward.y, z: -forward.z };
+        this.effects.lightAt(muzzle);
+        this.particles.burst({ x: eye.x - forward.x * 0.8, y: eye.y - 0.1, z: eye.z - forward.z * 0.8 },
+            { count: 26, colors: SMOKE, speed: 2, up: 1.2, gravity: -0.6, life: 1.4, size: 0.3, spread: 0.4, dir: back, dirSpeed: 6 });
+        this.onWeaponChanged();
+    }
+
+    // A rocket landed: fireball, smoke, debris, the blast sound, and a shake when it's close
+    explosion(at, radius) {
+        this.effects.flash(at, radius * 1.2);
+        this.particles.burst(at, { count: 60, colors: FIRE, speed: 9, up: 6, gravity: 4, life: 0.6, size: 0.3, spread: 1, glow: true });
+        this.particles.burst(at, { count: 40, colors: SMOKE, speed: 4, up: 3, gravity: -1.2, life: 2.2, size: 0.55, spread: 1.6 });
+        this.particles.burst(at, { count: 30, colors: ['#5b4632', '#7a7a7a', '#3e6b2a'], speed: 10, up: 9, gravity: 22, life: 1.2, size: 0.12, spread: 0.6 });
+        this.sound.play('explosion', { at, range: 140, reverb: 0.4 });
+        if (!this.local?.alive) return;
+        const d = this.sound.distanceTo(at);
+        if (d < radius * 3) this.weapons.flinch(60 * (1 - d / (radius * 3)));
     }
 
     onKnife(stab, dir) {
@@ -571,10 +601,19 @@ export class Game {
         });
         on(S2C.PROJECTILE, data => {
             this.projectiles.set(data.id, new ProjectileView(this.scene, data));
+            if (data.itemId === 'rpg' && data.ownerId !== this.selfId) {
+                const at = { x: data.x, y: data.y, z: data.z };
+                this.sound.playShot('rpg', at);
+                this.effects.flash(at, 0.9);
+            }
         });
         on(S2C.PROJECTILE_END, data => {
             const view = this.projectiles.get(data.id);
             if (view) view.end(data);
+            if (data.explode) this.explosion({ x: data.x, y: data.y, z: data.z }, data.explode);
+        });
+        on(S2C.KNOCKBACK, ({ id, knockback }) => {
+            if (id === this.selfId && this.local.alive) this.local.applyKnockback(knockback);
         });
         on(S2C.DAMAGE, this.onDamage);
         on(S2C.HEAL, ({ id, health }) => {
@@ -644,6 +683,11 @@ export class Game {
         });
         on(S2C.PICKUP_SPAWNED, data => {
             this.pickups.set(data.id, new PickupView(this.scene, data));
+            if (data.type === 'rpg') {
+                this.sound.play('rpgSpawn');
+                this.hud.toast(`An RPG appeared on the ${data.spot || ''} tower!`);
+                return;
+            }
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
@@ -654,6 +698,12 @@ export class Game {
                 this.particles.burst({ x: p.x, y: p.y + 0.8, z: p.z }, { count: 12, colors: ['#ffd23f', '#ffffff'], up: 2, speed: 2, gravity: 2, glow: true, size: 0.07 });
                 view.dispose();
                 this.pickups.delete(id);
+            }
+            if (type === 'rpg') {
+                if (by === this.selfId) this.sound.play('deploy');
+                this.hud.toast(by === this.selfId ? 'You have the RPG! One shot, make it count'
+                    : `${this.players.get(by)?.name || 'Someone'} has the RPG!`);
+                return;
             }
             if (by && by === this.selfId) {
                 this.sound.play(type === 'ammo' ? 'ammoPickup' : type === 'armor' ? 'armorUp' : type === 'weapon' ? 'deploy' : 'pickup');
@@ -954,6 +1004,11 @@ export class Game {
         for (const info of this.players.values()) info.avatar.update(dt, now);
         for (const [id, view] of this.projectiles) {
             if (!view.update(dt)) this.projectiles.delete(id);
+            else if (view.itemId === 'rpg' && (view.trail += dt) >= 0.02) {
+                view.trail = 0;
+                this.particles.burst(view.position, { count: 2, colors: SMOKE, speed: 0.4, up: 0.5, gravity: -0.8, life: 1.1, size: 0.22, spread: 0.1 });
+                this.particles.burst(view.position, { count: 1, colors: FIRE, speed: 0.3, up: 0.2, gravity: 0, life: 0.12, size: 0.14, spread: 0.05, glow: true });
+            }
         }
         for (const view of this.pickups.values()) view.update(dt);
         this.particles.update(dt);

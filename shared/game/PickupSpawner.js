@@ -32,16 +32,34 @@ export class PickupSpawner {
     spawn(type, arena, now = 0) {
         const spot = arena.findSpawn(this.rng, [...this.pickups.values()]);
         if (!spot) return null;
+        return this.place(type, arena, spot, now, { amount: PICKUPS[type].amount });
+    }
+
+    // A pickup on a given standing spot { ix, iz, y }. extra: more fields (amount, spot name...)
+    place(type, arena, spot, now = 0, extra = {}) {
         const { x, z } = arena.tileCenter(spot.ix, spot.iz);
         // baseY is the surface it rests on (floor or a platform top); iy is the supporting block
         const pickup = {
-            id: this.nextId++, type, amount: PICKUPS[type].amount,
+            id: this.nextId++, type, amount: 1,
             x, y: spot.y + 0.6, z, baseY: spot.y,
             ix: spot.ix, iy: spot.y, iz: spot.iz,
-            spawnedAt: now
+            spawnedAt: now,
+            ...extra
         };
         this.pickups.set(pickup.id, pickup);
         return pickup;
+    }
+
+    has(type) {
+        for (const pickup of this.pickups.values()) if (pickup.type === type) return true;
+        return false;
+    }
+
+    // Takes every pickup of a type off the map. Returns them.
+    removeType(type) {
+        const removed = [...this.pickups.values()].filter(p => p.type === type);
+        for (const pickup of removed) this.pickups.delete(pickup.id);
+        return removed;
     }
 
     // Loot dropped where something died (Zombies). extra: e.g. { weapon } for gun drops.

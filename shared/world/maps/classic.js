@@ -1,4 +1,4 @@
-import { ARENA_LAYOUT, LANDMARKS } from '../layout.js';
+import { ARENA_LAYOUT, LANDMARKS, RPG_SPOTS } from '../layout.js';
 
 // The original lava arena: open grass, a stone plaza, plank lookouts and four sniper towers
 export default {
@@ -9,6 +9,8 @@ export default {
     height: 10,
     layout: ARENA_LAYOUT,
     landmarks: LANDMARKS,
+    // A one-shot RPG appears on one of these tower tops (see RPG in shared/constants.js)
+    rpgSpots: RPG_SPOTS,
     // Tile rectangles (inclusive): team bases on the west and east edges, zombies from north and south
     spawns: {
         t: [{ x0: 1, x1: 4, z0: 24, z1: 35 }],

@@ -37,6 +37,10 @@ function sniperTower(x, z) {
 const SNIPER_ORIGINS = [[5, 7], [50, 7], [5, 48], [50, 48]];
 const LOOKOUT_ORIGINS = [[17, 17], [40, 17], [17, 40], [40, 40]];
 
+// Where the RPG power weapon appears: the middle of each sniper tower top
+const TOWER_NAMES = ['north-west', 'north-east', 'south-west', 'south-east'];
+export const RPG_SPOTS = SNIPER_ORIGINS.map(([x, z], i) => ({ ix: x + 2, iz: z + 2, y: SNIPER_HEIGHT, name: TOWER_NAMES[i] }));
+
 export const ARENA_LAYOUT = [
     // Grass floor
     box(BLOCK_KIND.GRASS, 0, SIZE - 1, 0, SIZE - 1, 0, 0),

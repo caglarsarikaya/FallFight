@@ -14,10 +14,14 @@
 //   recoil         view kick in degrees: up per shot (capped), side sway after sideFrom shots
 //   scope          sniper zoom levels (fov divisor); unscoped spread is huge, like a no-scope
 export const WEAPON_KIND = Object.freeze({
-    KNIFE: 'knife', PISTOL: 'pistol', SMG: 'smg', SHOTGUN: 'shotgun', RIFLE: 'rifle', SNIPER: 'sniper'
+    KNIFE: 'knife', PISTOL: 'pistol', SMG: 'smg', SHOTGUN: 'shotgun', RIFLE: 'rifle', SNIPER: 'sniper',
+    LAUNCHER: 'launcher'
 });
 
-export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3 });
+// SPECIAL: map power weapons (the Lava Arena RPG), never bought or given in a loadout
+export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3, SPECIAL: 4 });
+
+const SLOT_OF_KIND = { [WEAPON_KIND.PISTOL]: WEAPON_SLOT.SECONDARY, [WEAPON_KIND.LAUNCHER]: WEAPON_SLOT.SPECIAL };
 
 const gun = spec => Object.freeze({
     pellets: 1,
@@ -27,7 +31,7 @@ const gun = spec => Object.freeze({
     deploy: 0.75,
     knockback: 0,
     ...spec,
-    slot: spec.kind === WEAPON_KIND.PISTOL ? WEAPON_SLOT.SECONDARY : WEAPON_SLOT.PRIMARY,
+    slot: SLOT_OF_KIND[spec.kind] ?? WEAPON_SLOT.PRIMARY,
     interval: 60 / spec.rpm
 });
 
@@ -118,6 +122,18 @@ export const WEAPONS = Object.freeze({
         recoil: { up: 4, upMax: 8, side: 0.4, sideFrom: 1, recover: 9 },
         scope: { zooms: [2.5, 6], spread: 0.0005, moveSpread: 0.06 },
         price: 4750, killReward: 100, knockback: 3
+    }),
+    // ---- specials (spawned by the map, one shot, then gone) -------------------------------
+    // rocket: flight speed, life (s), blast radius, damage at the centre (falls off to 0 at the
+    // edge, ignores armor), blockRadius (every block inside breaks), knockback at the centre
+    rpg: gun({
+        id: 'rpg', name: 'RPG-7', short: 'RPG', kind: WEAPON_KIND.LAUNCHER, special: true,
+        rpm: 30, damage: 180, range: 120, armorPen: 1, penetration: 0,
+        mag: 1, reserve: 0, reloadTime: 2, deploy: 0.8, moveSpeed: 0.85,
+        spread: { stand: 0.004, crouch: 0.003, move: 0.03, air: 0.08, perShot: 0, maxShot: 0, recover: 4 },
+        recoil: { up: 8, upMax: 10, side: 0.8, sideFrom: 1, recover: 7 },
+        rocket: { speed: 38, life: 3, radius: 4, damage: 180, blockRadius: 2.6, knockback: 9 },
+        killReward: 300
     })
 });
 
@@ -133,6 +149,8 @@ export const KNIFE = Object.freeze({
 });
 
 export const GUN_IDS = Object.freeze(Object.keys(WEAPONS));
+// Guns that can be bought or handed out (specials only come from the map)
+export const BUYABLE_GUN_IDS = Object.freeze(GUN_IDS.filter(id => !WEAPONS[id].special));
 
 export function weaponSpec(id) {
     return id === KNIFE.id ? KNIFE : WEAPONS[id] || null;

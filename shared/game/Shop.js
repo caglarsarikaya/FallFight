@@ -23,6 +23,7 @@ export function buyItem(room, player, item, { free = false } = {}) {
     let apply;
     if (isGun(item)) {
         const spec = WEAPONS[item];
+        if (spec.special) return { ok: false, error: 'unknown' };
         if (inv.has(item) && !free) return { ok: false, error: 'owned' };
         price = spec.price;
         apply = () => {
@@ -50,7 +51,7 @@ export function buyItem(room, player, item, { free = false } = {}) {
         apply = () => inv.add('health_potion', 1);
     } else if (AMMO_FILTERS[item]) {
         const wanted = AMMO_FILTERS[item];
-        const needs = Object.entries(inv.ammo).filter(([id, a]) => wanted(WEAPONS[id]) && a.reserve < WEAPONS[id].reserve);
+        const needs = Object.entries(inv.ammo).filter(([id, a]) => !WEAPONS[id].special && wanted(WEAPONS[id]) && a.reserve < WEAPONS[id].reserve);
         if (!needs.length) return { ok: false, error: 'owned' };
         price = needs.reduce((sum, [id]) => sum + ammoPrice(WEAPONS[id]), 0);
         apply = () => {

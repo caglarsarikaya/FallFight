@@ -1,11 +1,11 @@
 import { ARENA, PLAYER, PROJECTILE } from '../constants.js';
 import { rayBox } from '../math.js';
 
-// A flying projectile (kept for future grenades). Simulated by the room; clients replay it from
-// the spawn velocity.
+// A flying projectile (rockets, future grenades). Simulated by the room; clients replay it from
+// the spawn velocity. life: seconds before it expires in the air.
 export class Projectile {
-    constructor({ id, ownerId, itemId, x, y, z, vx, vy, vz, born, power = 1 }) {
-        Object.assign(this, { id, ownerId, itemId, x, y, z, vx, vy, vz, born, power });
+    constructor({ id, ownerId, itemId, x, y, z, vx, vy, vz, born, power = 1, life = PROJECTILE.maxLife }) {
+        Object.assign(this, { id, ownerId, itemId, x, y, z, vx, vy, vz, born, power, life });
     }
 
     // Advance one step. Returns { type: 'player', player, zone } | { type: 'block' } | { type: 'expired' } | null
@@ -38,7 +38,7 @@ export class Projectile {
         this.x += move.x;
         this.y += move.y;
         this.z += move.z;
-        if (this.y < ARENA.voidY || now - this.born > PROJECTILE.maxLife) return { type: 'expired' };
+        if (this.y < ARENA.voidY || now - this.born > this.life) return { type: 'expired' };
         return null;
     }
 

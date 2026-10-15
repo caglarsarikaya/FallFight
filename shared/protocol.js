@@ -33,12 +33,13 @@ export const S2C = {
     BLOCK_BROKEN: 'blockBroken',       // { ix, iz }
     BLOCK_RESTORED: 'blockRestored',   // { ix, iz }
     PROJECTILE: 'projectile',          // { id, ownerId, x, y, z, vx, vy, vz }
-    PROJECTILE_END: 'projectileEnd',   // { id, x, y, z, hitId }
+    PROJECTILE_END: 'projectileEnd',   // { id, x, y, z, hitId, zone, stuck, explode } explode = blast radius (rockets)
+    KNOCKBACK: 'knockback',            // { id, knockback: {x,y,z} } a push with no damage (your own rocket)
     DAMAGE: 'damage',                  // { victimId, attackerId, amount, health, armor, weapon, zone, headshot, armorHit, from, knockback }
     HEAL: 'heal',                      // { id, amount, health }
     DEATH: 'death',                    // { victimId, killerId, cause: weaponId | 'fall', headshot }
     RESPAWN: 'respawn',                // { id, x, y, z, health }
-    PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z }
+    PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z, spot? } spot: the tower name of an RPG
     PICKUP_TAKEN: 'pickupTaken',       // { id, by }
     MODE_STATE: 'modeState',           // mode-specific: scores, round, timers, wave... (see GameMode.stateJSON)
     MATCH_END: 'matchEnd',             // { winnerId, winnerTeam, title, standings, restartIn }

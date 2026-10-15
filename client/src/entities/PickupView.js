@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff' };
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f' };
+const SPOTLIGHT_HEIGHT = 70;
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
 export class PickupView {
@@ -25,19 +26,63 @@ export class PickupView {
         this.ring = ring;
         this.group.add(ring);
 
-        const beam = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.12, 0.12, 6, 8, 1, true),
-            new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending })
-        );
-        beam.position.y = 3;
-        this.group.add(beam);
+        if (data.type === 'rpg') {
+            this.createSpotlight(color);
+        } else {
+            const beam = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.12, 0.12, 6, 8, 1, true),
+                new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending })
+            );
+            beam.position.y = 3;
+            this.group.add(beam);
+        }
 
         this.scale = 0;
         scene.add(this.group);
     }
 
+    // The RPG's marker: a searchlight beam into the sky, seen from anywhere on the map (no fog),
+    // with two crossed bright blades sweeping round inside it and a wide pulsing ring on the floor.
+    // Plain additive meshes, no real light (that would recompile every shader).
+    createSpotlight(color) {
+        const glow = opacity => new THREE.MeshBasicMaterial({
+            color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        });
+        this.beam = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 0.4, SPOTLIGHT_HEIGHT, 16, 1, true), glow(0.3));
+        this.beam.position.y = SPOTLIGHT_HEIGHT / 2;
+        this.group.add(this.beam);
+        this.core = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.12, SPOTLIGHT_HEIGHT, 8, 1, true), glow(0.5));
+        this.core.position.y = SPOTLIGHT_HEIGHT / 2;
+        this.group.add(this.core);
+
+        this.sweep = new THREE.Group();
+        const blade = new THREE.PlaneGeometry(1.2, SPOTLIGHT_HEIGHT);
+        for (let i = 0; i < 2; i++) {
+            const plane = new THREE.Mesh(blade, glow(0.22));
+            plane.rotation.y = i * Math.PI / 2;
+            this.sweep.add(plane);
+        }
+        this.sweep.position.y = SPOTLIGHT_HEIGHT / 2;
+        this.group.add(this.sweep);
+
+        this.halo = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.6, 32), glow(0.6));
+        this.halo.rotation.x = -Math.PI / 2;
+        this.halo.position.y = 0.03;
+        this.group.add(this.halo);
+    }
+
     createItem(data) {
         if (data.type === 'ammo') return this.createAmmoBox();
+        if (data.type === 'rpg') {
+            const holder = new THREE.Group();
+            const gun = getItemView('rpg')?.createModel();
+            if (gun) {
+                gun.scale.setScalar(1.4);
+                gun.rotation.y = Math.PI / 2;
+                holder.add(gun);
+            }
+            return holder;
+        }
         if (data.type === 'armor') return this.createVest();
         if (data.type === 'weapon') {
             const holder = new THREE.Group();
@@ -108,9 +153,22 @@ export class PickupView {
         this.item.rotation.y += dt * 1.8;
         this.ring.material.opacity = 0.45 + Math.sin(this.time * 4) * 0.25;
         this.group.scale.setScalar(this.scale);
+        if (this.beam) {
+            const pulse = Math.sin(this.time * 3);
+            this.beam.material.opacity = 0.24 + pulse * 0.08;
+            this.core.material.opacity = 0.45 + pulse * 0.12;
+            this.sweep.rotation.y += dt * 1.4;
+            this.halo.material.opacity = 0.4 + pulse * 0.25;
+            this.halo.scale.setScalar(1 + (this.time * 0.8 % 1) * 0.6);
+        }
     }
 
     dispose() {
         this.scene.remove(this.group);
+        if (!this.beam) return;
+        for (const mesh of [this.beam, this.core, this.halo, ...this.sweep.children]) {
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+        }
     }
 }

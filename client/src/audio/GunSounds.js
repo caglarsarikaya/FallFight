@@ -145,6 +145,31 @@ export const GUN_PATCHES = {
         click(s, out, { freq: 1800, gain: 0.35 });
         click(s, out, { delay: 0.07, freq: 2300, gain: 0.3 });
         s.noise({ out, delay: 0.1, duration: 0.07, type: 'lowpass', freq: 800, gain: 0.3 });
+    },
+
+    // RPG: a launch thump and the rocket motor's whoosh, then the blast where it lands
+    shot_rpg: (s, out, p) => {
+        s.tone({ out, type: 'sine', freq: 140 * p, freqEnd: 40, duration: 0.25, gain: 0.9 });
+        s.noise({ out, duration: 0.12, type: 'lowpass', freq: 2400 * p, freqEnd: 400, gain: 0.9 });
+        s.noise({ out, delay: 0.04, duration: 0.7, type: 'bandpass', freq: 500 * p, freqEnd: 2600 * p, q: 1.2, gain: 0.45 });
+        s.noise({ out, delay: 0.1, duration: 1.0, type: 'lowpass', freq: 700, freqEnd: 120, gain: 0.25 });
+    },
+    shot_rpg_far: (s, out) => {
+        s.tone({ out, type: 'sine', freq: 90, freqEnd: 35, duration: 0.3, gain: 0.6 });
+        s.noise({ out, delay: 0.05, duration: 0.9, type: 'bandpass', freq: 400, freqEnd: 1200, q: 1, gain: 0.3 });
+    },
+    explosion: (s, out, p) => {
+        s.noise({ out, duration: 0.08, type: 'highpass', freq: 2500, gain: 0.8 });
+        s.noise({ out, duration: 0.6, type: 'lowpass', freq: 3200 * p, freqEnd: 180, gain: 1.3 });
+        s.tone({ out, type: 'sine', freq: 85 * p, freqEnd: 28, duration: 0.9, gain: 1.1 });
+        s.tone({ out, type: 'triangle', freq: 48 * p, freqEnd: 22, duration: 1.3, gain: 0.7 });
+        s.noise({ out, delay: 0.08, duration: 2.2, type: 'lowpass', freq: 650, freqEnd: 70, gain: 0.5 });
+    },
+    // The RPG appeared somewhere: a rising two-tone alarm everyone hears
+    rpgSpawn: (s, out) => {
+        for (let i = 0; i < 3; i++) {
+            s.tone({ out, type: 'sawtooth', freq: 520, freqEnd: 880, delay: i * 0.32, duration: 0.28, gain: 0.07 });
+        }
     }
 };
 

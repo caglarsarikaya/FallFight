@@ -73,6 +73,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Scout | Sniper | 75 | 48/min | 10 | Light: run at full speed |
 | AWP | Sniper | 115 | 41/min | 10 | One shot to the body kills |
 | Knife | Melee | 25 / 65 | | | Slash / stab; a stab in the back kills. Chops blocks |
+| RPG-7 | Launcher | up to 180 | | 1 | Lava Arena only, found on a tower top (slot 5). One rocket: the blast hurts everyone near it (armor doesn't help, you can't hurt yourself but it throws you) and blows a hole in the floor |
 
 ### Rules
 
@@ -88,6 +89,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Getting hit | Your view flinches, you slow down for a moment, and a red arc shows where the shot came from |
 | Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
+| 🚀 RPG | Lava Arena: 30 s into a match an RPG appears on top of a random sniper tower, marked by a searchlight beam the whole map can see. One at a time; 45 s after it's fired or lost (its carrier dies) the next one appears |
 | 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy and Zombies: $200 in the buy menu. Zombies also drop them |
 | Pickups | Deathmatch: every 15 s an ammo box (a magazine for every gun you carry), every 60 s a health potion. Gun Game: ammo boxes |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |

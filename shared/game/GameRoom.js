@@ -1,4 +1,4 @@
-import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER } from '../constants.js';
+import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER, RPG } from '../constants.js';
 import { C2S, S2C } from '../protocol.js';
 import { normalize } from '../math.js';
 import { Arena } from '../world/Arena.js';
@@ -53,6 +53,8 @@ export class GameRoom {
         this.modeStateTimer = 0;
         this.humans = 0;
         this.matchOver = null;          // { restartAt, ... } between a win and the next match
+        this.rpgTimer = RPG.firstDelay;  // seconds until the map's RPG appears (maps with rpgSpots)
+        this.rpgOut = false;             // an RPG is on the map or in someone's hands
         this.mode.reset();
     }
 
@@ -112,7 +114,7 @@ export class GameRoom {
     // A computer-controlled creature that isn't a seat bot (zombies). setup(player) customises it.
     addNpc({ id, name, characterId, setup = () => {} }) {
         const player = new PlayerState({ id, name, characterId, isBot: true });
-        player.inventory.hotbar = [null, null, null, null];
+        player.inventory.hotbar = [null, null, null, null, null];
         player.inventory.selected = 0;
         setup(player);
         this.players.set(id, player);
@@ -476,6 +478,63 @@ export class GameRoom {
         }
     }
 
+    // A push with no damage (your own rocket): bots move here, humans on their own client
+    push(player, kb) {
+        if (!player.alive) return;
+        if (player.isBot) {
+            player.vx += kb.x;
+            player.vz += kb.z;
+            player.vy = kb.y;
+            player.onGround = false;
+        } else {
+            this.emit(player.id, S2C.KNOCKBACK, { id: player.id, knockback: kb });
+        }
+    }
+
+    // A rocket blew up at `at`: hurts everyone in the radius (less towards the edge, armor doesn't
+    // help), throws them away from the centre and breaks every block close by. The shooter is only
+    // thrown, never hurt (rocket jumps).
+    explode(at, weapon, owner) {
+        const { radius, damage, blockRadius, knockback } = weapon.blast;
+        for (const victim of this.players.values()) {
+            if (!victim.alive) continue;
+            const dx = victim.x - at.x;
+            const dy = victim.y + 0.9 - at.y;
+            const dz = victim.z - at.z;
+            const dist = Math.hypot(dx, dy, dz);
+            if (dist >= radius) continue;
+            const share = 1 - dist / radius;
+            const flat = Math.hypot(dx, dz) || 1;
+            const kb = {
+                x: round2((dx / flat) * knockback * share),
+                y: round2(Math.max(3, knockback * share * 0.9)),
+                z: round2((dz / flat) * knockback * share)
+            };
+            if (victim === owner) {
+                this.push(victim, kb);
+                continue;
+            }
+            const amount = Math.max(1, Math.round(damage * share));
+            this.damage(victim, amount, owner, weapon.id, null, { zone: 'body' });
+            if (victim.alive && (!owner || this.mode.canDamage(owner, victim))) this.push(victim, kb);
+        }
+
+        const c = this.arena.cellAt(at.x, at.y, at.z);
+        const r = Math.ceil(blockRadius);
+        const by = owner?.id ?? null;
+        for (let iy = c.iy - r; iy <= c.iy + r; iy++) {
+            for (let iz = c.iz - r; iz <= c.iz + r; iz++) {
+                for (let ix = c.ix - r; ix <= c.ix + r; ix++) {
+                    const b = this.arena.blockCenter(ix, iy, iz);
+                    if (Math.hypot(b.x - at.x, b.y - at.y, b.z - at.z) > blockRadius) continue;
+                    if (this.arena.startBreak(ix, iy, iz, by, this.time)) {
+                        this.emit(null, S2C.BLOCK_CRACKING, { ix, iy, iz, by });
+                    }
+                }
+            }
+        }
+    }
+
     spawnProjectile(owner, item, origin, velocity, extra = {}) {
         const speed = Math.hypot(velocity.x, velocity.y, velocity.z) || 1;
         const projectile = new Projectile({
@@ -549,6 +608,9 @@ export class GameRoom {
 
     restartMatch() {
         this.matchOver = null;
+        this.rpgTimer = RPG.firstDelay;
+        this.rpgOut = false;
+        for (const pickup of this.pickups.removeType('rpg')) this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         this.mode.reset();
         for (const player of this.players.values()) this.mode.resetPlayer(player);
         this.emit(null, S2C.MATCH_START, {});
@@ -600,6 +662,39 @@ export class GameRoom {
         return input;
     }
 
+    // ---- the map's RPG -------------------------------------------------------------------
+
+    // One RPG at a time, on a random tower top of maps that have rpgSpots. Once it's gone (fired,
+    // its carrier died or left, its tower top was shot away) the next one comes after a cooldown.
+    updateRpg(dt) {
+        const spots = this.map.rpgSpots;
+        if (!spots?.length || this.matchOver) return;
+        if (this.rpgExists()) {
+            this.rpgOut = true;
+            return;
+        }
+        if (this.rpgOut) {
+            this.rpgOut = false;
+            this.rpgTimer = RPG.cooldown;
+        }
+        this.rpgTimer -= dt;
+        if (this.rpgTimer > 0) return;
+        const free = spots.filter(s => this.arena.isStandable(s.ix, s.y, s.iz));
+        if (!free.length) {
+            this.rpgTimer = 1; // every tower top is broken right now: try again soon
+            return;
+        }
+        const spot = free[Math.floor(this.rng() * free.length)];
+        this.rpgOut = true;
+        this.emit(null, S2C.PICKUP_SPAWNED, this.pickups.place('rpg', this.arena, spot, this.time, { spot: spot.name }));
+    }
+
+    rpgExists() {
+        if (this.pickups.has('rpg')) return true;
+        for (const p of this.players.values()) if (p.alive && p.inventory.has('rpg')) return true;
+        return false;
+    }
+
     // ---- simulation -------------------------------------------------------------------
 
     tick(dt) {
@@ -637,7 +732,10 @@ export class GameRoom {
             if (!hit) continue;
             this.projectiles.delete(projectile.id);
             const weapon = getItem(projectile.itemId);
-            if (hit.type === 'player' && weapon?.damageFor) {
+            const explode = weapon?.blast && projectile.y > ARENA.voidY;
+            if (explode) {
+                this.explode(projectile, weapon, this.players.get(projectile.ownerId) || null);
+            } else if (hit.type === 'player' && weapon?.damageFor) {
                 const owner = this.players.get(projectile.ownerId) || null;
                 const { amount, headshot } = weapon.damageFor({ zone: hit.zone, power: projectile.power });
                 this.damage(hit.player, amount, owner, weapon.id,
@@ -649,13 +747,15 @@ export class GameRoom {
                 x: projectile.x, y: projectile.y, z: projectile.z,
                 hitId: hit.type === 'player' ? hit.player.id : null,
                 zone: hit.zone ?? null,
-                stuck: hit.type === 'block'
+                stuck: hit.type === 'block' && !explode,
+                explode: explode ? weapon.blast.radius : 0
             });
         }
 
         for (const pickup of this.pickups.update(dt, this.arena, this.time)) {
             this.emit(null, S2C.PICKUP_SPAWNED, pickup);
         }
+        this.updateRpg(dt);
         for (const pickup of this.pickups.expire(this.time)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         }
@@ -664,6 +764,8 @@ export class GameRoom {
             else if (pickup.type === 'armor') {
                 player.armor = 100;
                 player.helmet = true;
+            } else if (pickup.type === 'rpg') {
+                this.select(player, player.inventory.give('rpg'));
             } else if (pickup.type === 'weapon') {
                 const hadPrimary = !!player.inventory.hotbar[0];
                 const slot = player.inventory.give(pickup.weapon);

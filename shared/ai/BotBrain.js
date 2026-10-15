@@ -15,7 +15,9 @@ export const BOT_SETTINGS = {
     burst: [3, 7],               // rounds per burst with automatic guns
     burstPause: [0.25, 0.6],
     tapDelay: [0.08, 0.3],       // extra delay between semi-auto shots
-    effectiveRange: { pistol: 45, smg: 20, shotgun: 11, rifle: 48, sniper: 70, knife: 2 },
+    effectiveRange: { pistol: 45, smg: 20, shotgun: 11, rifle: 48, sniper: 70, launcher: 30, knife: 2 },
+    rpgMinRange: 5,              // never fire the RPG at anyone closer (the blast would get us too)
+    rpgValue: 120,               // how much the RPG on a tower top is worth the trip
     trapChance: 0.3,             // knife the block under a close target instead of stabbing it
     potionBelowHealth: 50,
     retargetInterval: 2.5,
@@ -117,7 +119,7 @@ export class BotBrain {
         if (!knifeOnly && visible && dist <= range) {
             this.shoot(target, dist);
             // Snipers, and rifles at range, stand still to shoot accurately; the rest strafe
-            const still = spec.kind === WEAPON_KIND.SNIPER || (spec.kind === WEAPON_KIND.RIFLE && dist > 15);
+            const still = spec.kind === WEAPON_KIND.SNIPER || spec.kind === WEAPON_KIND.LAUNCHER || (spec.kind === WEAPON_KIND.RIFLE && dist > 15);
             return still ? idle() : this.strafe(target, dist, 0.45);
         }
         if (!visible) this.seenTargetId = null;
@@ -140,6 +142,15 @@ export class BotBrain {
         const bot = this.player;
         const inv = bot.inventory;
         if (bot.gun.reload) return;
+        // The map's RPG: out for a target in sight at a safe distance, put away otherwise
+        if (inv.has('rpg')) {
+            const target = this.room.players.get(this.targetId);
+            const d = target?.alive ? Math.hypot(target.x - bot.x, target.z - bot.z) : Infinity;
+            if (d >= BOT_SETTINGS.rpgMinRange && d <= BOT_SETTINGS.effectiveRange.launcher && this.hasLineOfSight(target)) {
+                if (inv.selected !== WEAPON_SLOT.SPECIAL) this.room.select(bot, WEAPON_SLOT.SPECIAL);
+                return;
+            }
+        }
         for (const slot of [WEAPON_SLOT.PRIMARY, WEAPON_SLOT.SECONDARY]) {
             const ammo = this.ammoOf(slot);
             if (!ammo || ammo.mag + ammo.reserve <= 0) continue;
@@ -158,7 +169,9 @@ export class BotBrain {
         const bot = this.player;
         const eye = bot.eye;
         const scale = target.crouching ? PLAYER.crouchHeight / PLAYER.height : 1;
-        const y = target.y + (this.aimOffset.head ? 1.62 : 1.15) * scale;
+        // Rockets go at the feet: a near miss still blows up the floor under them
+        const launcher = this.weapon?.kind === WEAPON_KIND.LAUNCHER;
+        const y = target.y + (launcher ? 0.3 : (this.aimOffset.head ? 1.62 : 1.15) * scale);
         const lead = Math.min(0.12, dist / 300);
         const dir = normalize({ x: target.x + target.vx * lead - eye.x, y: y - eye.y, z: target.z + target.vz * lead - eye.z });
         const j = BOT_SETTINGS.shotJitter;
@@ -263,6 +276,7 @@ export class BotBrain {
 
     pickupValue(pickup) {
         const inv = this.player.inventory;
+        if (pickup.type === 'rpg') return BOT_SETTINGS.rpgValue;
         if (pickup.type === 'health_potion') {
             return 45 + (this.player.health < 70 ? 25 : 0) + (inv.count('health_potion') === 0 ? 15 : 0);
         }
