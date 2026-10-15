@@ -21,7 +21,7 @@ them into the lava.
 |---|---|
 | **Deathmatch** | Everyone for themselves, forever. A random rifle and pistol every life, kevlar and helmet, a health potion for every kill |
 | **Gun Game** | Everyone starts with a Glock. Every 5 kills hands you the next gun at once: Glock → USP → Deagle → MP5 → P90 → M3 → Scout → M4A1 → AK-47 → AWP. The first to finish the ladder (50 kills) wins. A knife kill takes a kill away from the victim |
-| **Team Buy** | Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day (here: Pool Arena). Each round opens with a few seconds of freeze time to buy (press **B**); then wipe out the other team. Dead players wait for the next round, and survivors keep their guns. Kills, round wins and even losses pay money ($800 to start, $16000 max). First to 8 rounds wins |
+| **Team Buy** | Red Brick vs Blue Brick in rounds, like CS on fy_pool_day (here: Pool Arena). Each round opens with a few seconds of freeze time to buy (press **B**); then wipe out the other team. Dead players wait for the next round, and survivors keep their guns. Kills, round wins and even losses pay money ($800 to start, $16000 max). First to 8 rounds wins |
 | **Zombies** | 1–4 players hold out against endless waves together. Every wave brings more, tougher and faster zombies, with runners every 5th wave. Killed zombies drop ammo, potions, kevlar and better guns, and pay $150 each (plus $500 per cleared wave): press **B** any time to buy guns, armor and ammo. Players who fall come back when the wave is cleared; when everyone is down, the run is over. Zombies claw through walls if you hide behind them |
 
 ## Maps

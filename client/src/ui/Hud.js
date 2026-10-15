@@ -208,7 +208,7 @@ export class Hud {
         this.money.textContent = `$ ${money}`;
     }
 
-    // Big centre message: "Counter-Terrorists Win!"
+    // Big centre message: "Blue Brick Win!"
     showBanner(text, kind = '', ms = 3000) {
         this.banner.textContent = text;
         this.banner.className = `round-banner ${kind}`;

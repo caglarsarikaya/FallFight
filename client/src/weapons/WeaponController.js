@@ -65,8 +65,10 @@ export class WeaponController {
     // ---- server state -------------------------------------------------------------------
 
     setInventory(data) {
-        const keepSelection = this.inventory && data.hotbar[this.inventory.selected];
         const previous = this.inventory;
+        // A gun just given to us (bought, picked up, levelled up) and selected by the server: take it
+        const gained = previous && previous.hotbar[data.selected] !== data.hotbar[data.selected];
+        const keepSelection = !gained && previous && data.hotbar[previous.selected];
         const selected = keepSelection ? this.inventory.selected : data.selected;
         // Shots still in flight: keep our own (lower) magazine count for the gun we're firing
         if (previous && this.now - this.lastShotAt < 0.35 && data.ammo[this.id] && previous.ammo[this.id]) {

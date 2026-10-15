@@ -82,10 +82,13 @@ test('wiping out the other team wins the round: money for both sides, the dead w
 
     // Next round: everyone back, the winner keeps their gear
     a.inventory.give('ak47');
+    a.inventory.ammo.ak47.mag = 3;
+    a.inventory.ammo.ak47.reserve = 0;
     run(room, TEAM_BUY.roundEndDelay + 0.1);
     assert.equal(room.mode.round, 2);
     assert.ok(a.alive && b.alive);
     assert.equal(a.inventory.hotbar[0], 'ak47', 'survivor keeps the rifle');
+    assert.deepEqual(a.inventory.ammo.ak47, { mag: WEAPONS.ak47.mag, reserve: WEAPONS.ak47.reserve }, 'with full ammo');
     assert.equal(b.inventory.hotbar[0], null, 'the dead start over with a pistol');
 });
 

@@ -7,7 +7,7 @@ import { GameMode } from './GameMode.js';
 const TEAMS = TEAM_BUY.teams;   // ['t', 'ct']
 const other = team => (team === 't' ? 'ct' : 't');
 
-// Team Buy: Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day.
+// Team Buy: Red Brick vs Blue Brick in rounds, like CS on fy_pool_day.
 // Freeze time at the start of a round to buy (nobody moves), then fight until one team is wiped
 // out or the clock runs out. Dead players watch until the next round. Kills, wins and even losses
 // pay money; guns you still hold at the end of a round carry over. First to roundsToWin wins.
@@ -74,7 +74,13 @@ export class TeamBuy extends GameMode {
     // Start of a life with nothing: knife and the team's pistol
     equip(player) {
         if (player.carry) {
+            // Survivors keep their guns, with full ammo for the new round
             player.carry = false;
+            for (const [id, a] of Object.entries(player.inventory.ammo)) {
+                const spec = weaponSpec(id);
+                a.mag = spec.mag;
+                a.reserve = spec.reserve;
+            }
             return;
         }
         player.inventory.reset({ weapons: [TEAM_BUY.defaultPistol[player.team] || 'glock'] });

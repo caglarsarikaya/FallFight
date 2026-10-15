@@ -9,7 +9,8 @@ export const GUN_GAME = Object.freeze({
 
 export const TEAM_BUY = Object.freeze({
     teams: ['t', 'ct'],
-    teamNames: { t: 'Terrorists', ct: 'Counter-Terrorists' },
+    teamNames: { t: 'Red Brick', ct: 'Blue Brick' },
+    teamTags: { t: 'RED', ct: 'BLU' },
     startMoney: 800,
     maxMoney: 16000,
     freezeTime: 6,          // seconds at the start of a round to buy, before anyone can move
@@ -67,7 +68,7 @@ export const MODES = Object.freeze([
     },
     {
         id: 'teambuy', name: 'Team Buy', short: 'TEAMS',
-        description: 'Terrorists vs Counter-Terrorists in rounds. Kills earn money: buy guns, armor and potions.',
+        description: 'Red Brick vs Blue Brick in rounds. Kills earn money: buy guns, armor and potions.',
         maps: ['fy_pool_day', 'de_dust_mini', 'fy_iceworld', 'fallfight_classic']
     },
     {

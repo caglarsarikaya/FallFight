@@ -1,4 +1,4 @@
-import { getModeInfo } from '../../shared/config/modes.js';
+import { TEAM_BUY, getModeInfo } from '../../shared/config/modes.js';
 import { weaponSpec } from '../../shared/config/weapons.js';
 import { el } from './dom.js';
 
@@ -75,12 +75,12 @@ export class ModePanel {
         return {
             title: `ROUND ${state.round} · FIRST TO ${state.roundsToWin}`,
             mainNodes: [
-                el('span.team-t', { text: `T ${state.score.t}` }),
+                el('span.team-t', { text: `${TEAM_BUY.teamTags.t} ${state.score.t}` }),
                 el('span.clock', { text: state.phase === 'freeze' ? formatTime(time) : phase }),
-                el('span.team-ct', { text: `${state.score.ct} CT` })
+                el('span.team-ct', { text: `${state.score.ct} ${TEAM_BUY.teamTags.ct}` })
             ],
             main: `${state.score.t}-${state.score.ct} ${phase} ${time | 0}`,
-            sub: `${state.alive.t} T alive · ${state.alive.ct} CT alive${team ? ` · You: ${team === 't' ? 'Terrorist' : 'Counter-Terrorist'}` : ''}${state.phase === 'freeze' ? ' · Press B to buy' : ''}`,
+            sub: `${state.alive.t} ${TEAM_BUY.teamTags.t} alive · ${state.alive.ct} ${TEAM_BUY.teamTags.ct} alive${team ? ` · You: ${TEAM_BUY.teamNames[team]}` : ''}${state.phase === 'freeze' ? ' · Press B to buy' : ''}`,
             className: team ? `team-${team}` : ''
         };
     }

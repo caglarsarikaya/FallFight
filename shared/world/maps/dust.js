@@ -5,7 +5,7 @@ const SIZE = 48;
 
 // After de_dust: three lanes between two big sandstone blocks. Long on the west with its double
 // doors, mid with the famous doors, short on the east up a raised catwalk. Tunnels cut through
-// both blocks. Terrorists spawn south, Counter-Terrorists north, with a crate-strewn site on
+// both blocks. Red Brick spawns south, Blue Brick north, with a crate-strewn site on
 // each side of the CT spawn.
 export default {
     id: 'de_dust_mini',
