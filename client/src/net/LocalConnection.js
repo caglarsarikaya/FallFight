@@ -4,11 +4,13 @@ import { Connection } from './Connection.js';
 
 // Offline play: runs the authoritative GameRoom (with bots) right here in the browser.
 export class LocalConnection extends Connection {
-    constructor({ botCount = 3 } = {}) {
+    constructor({ botCount = 3, mode, map } = {}) {
         super();
         this.botCount = botCount;
         this.selfId = 'you';
         this.room = new GameRoom({
+            mode,
+            map,
             emit: (target, type, data) => {
                 if (target === null || target === this.selfId) {
                     // Copy so client code can never mutate server state, and deliver async like a socket
@@ -22,7 +24,7 @@ export class LocalConnection extends Connection {
 
     join(profile) {
         this.room.addPlayer({ id: this.selfId, name: profile.name, characterId: profile.characterId });
-        this.room.setBotCount(this.botCount);
+        if (this.room.mode.seatBots) this.room.setBotCount(this.botCount);
 
         const step = 1 / NET.tickRate;
         let last = performance.now();

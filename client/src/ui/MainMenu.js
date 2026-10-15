@@ -1,4 +1,6 @@
 import { CHARACTERS } from '../../shared/characters/definitions.js';
+import { MODES, getModeInfo } from '../../shared/config/modes.js';
+import { isPlayableMode } from '../../shared/game/modes/index.js';
 import { S2C } from '../../shared/protocol.js';
 import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
@@ -51,10 +53,27 @@ export class MainMenu {
         const previewBox = el('div.panel.preview', {}, this.previewName);
 
         this.playButton = el('button.btn.primary', { type: 'button', text: 'Quick Play', onclick: () => this.play() });
+        this.offlineButton = el('button.btn', { type: 'button', text: 'Play Offline', onclick: () => this.play({ offline: true }) });
+        this.modeButtons = MODES.map(mode => {
+            const playable = isPlayableMode(mode.id);
+            const button = el('button.mode-option', { type: 'button', disabled: !playable, onclick: () => this.selectMode(mode.id) }, [
+                mode.name, playable ? null : el('small', { text: 'coming soon' })
+            ]);
+            button.dataset.id = mode.id;
+            return button;
+        });
+        this.modeDescription = el('div.mode-description');
         this.status = el('div.server-status');
         this.saveButton = el('button.btn.primary', { type: 'button', text: 'Save', onclick: () => this.save() });
         this.backButton = el('button.btn', { type: 'button', text: 'Back', onclick: () => this.callbacks.onBack() });
-        this.startButtons = el('div.play-buttons', {}, [el('div.row', {}, [this.playButton]), this.status, this.rooms.root]);
+        this.startButtons = el('div.play-buttons', {}, [
+            el('div.label', { text: 'GAME MODE' }),
+            el('div.mode-picker', {}, this.modeButtons),
+            this.modeDescription,
+            el('div.row', {}, [this.playButton, this.offlineButton]),
+            this.status,
+            this.rooms.root
+        ]);
         this.editButtons = el('div.play-buttons.hidden', {}, el('div.row', {}, [this.saveButton, this.backButton]));
 
         this.title = el('h1.logo', {}, ['FALL', el('span', { text: 'FIGHT' })]);
@@ -81,6 +100,7 @@ export class MainMenu {
 
         this.preview = new CharacterPreview(previewBox);
         this.select(this.selected, false);
+        this.selectMode(isPlayableMode(profile.mode) ? profile.mode : MODES[0].id, false);
         this.watchServer();
         this.show('start');
     }
@@ -127,6 +147,7 @@ export class MainMenu {
     // While Play waits for the server to wake up
     setWaiting(waiting) {
         this.playButton.disabled = waiting;
+        this.offlineButton.disabled = waiting;
         this.playButton.textContent = waiting ? 'Connecting...' : 'Quick Play';
     }
 
@@ -141,6 +162,18 @@ export class MainMenu {
         }
     }
 
+    selectMode(modeId, withSound = true) {
+        this.profile.mode = modeId;
+        this.profile.save();
+        this.modeButtons.forEach(b => b.classList.toggle('selected', b.dataset.id === modeId));
+        this.modeDescription.textContent = getModeInfo(modeId)?.description || '';
+        this.rooms.setMode(modeId);
+        if (withSound) {
+            this.sound.unlock();
+            this.sound.play('click');
+        }
+    }
+
     applyToProfile() {
         const typed = this.nameInput.value.trim();
         this.profile.setName(typed || this.profile.name || `Player${100 + Math.floor(Math.random() * 900)}`);
@@ -149,12 +182,12 @@ export class MainMenu {
         this.profile.save();
     }
 
-    play() {
+    play(options = {}) {
         if (this.playButton.disabled) return;
         this.sound.unlock();
         this.sound.play('click');
         this.applyToProfile();
-        this.callbacks.onPlay();
+        this.callbacks.onPlay(options);
     }
 
     save() {

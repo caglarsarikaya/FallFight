@@ -1,5 +1,6 @@
-import { ARENA, BLOCK } from '../constants.js';
-import { ARENA_LAYOUT, BLOCK_HP, BLOCK_KIND, FLOOR_HP_SCALE } from './layout.js';
+import { BLOCK } from '../constants.js';
+import { BLOCK_HP, BLOCK_KIND, FLOOR_HP_SCALE } from './blocks.js';
+import { DEFAULT_MAP, getMap } from './maps/index.js';
 
 export { BLOCK_KIND };
 export const BLOCK_STATE = Object.freeze({ SOLID: 0, CRACKING: 1, BROKEN: 2 });
@@ -10,8 +11,12 @@ const EPS = 1e-6;
 // y in [iy - 1, iy): layer 0 is the floor, so players standing on it have their feet at y = 0,
 // and standing on top of block layer iy puts the feet at y = iy.
 // Any block can crack, break and later regrow; the layout itself never changes.
+// Built from a map definition (shared/world/maps/).
 export class Arena {
-    constructor({ size = ARENA.size, height = ARENA.height, layout = ARENA_LAYOUT } = {}) {
+    constructor(map = getMap(DEFAULT_MAP)) {
+        const { id, size, height, layout } = map;
+        this.mapId = id;
+        this.map = map;
         this.size = size;
         this.height = height;
         this.min = -size / 2;
@@ -267,13 +272,22 @@ export class Arena {
     // ---- spawning -------------------------------------------------------------------------
 
     // Random stable, reachable surface far from the given points: { ix, iz, y } or null.
-    // maxY limits how high it may be (players spawn on the floor, pickups anywhere).
-    findSpawn(rng, avoid = [], { maxY = Infinity, attempts = 40 } = {}) {
+    // maxY limits how high it may be (players spawn on the floor, pickups anywhere);
+    // zones (tile rectangles { x0, x1, z0, z1 }) limit where, e.g. a team's base.
+    findSpawn(rng, avoid = [], { maxY = Infinity, attempts = 40, zones = null } = {}) {
         let best = null;
         let bestScore = -Infinity;
         for (let n = 0; n < attempts; n++) {
-            const ix = 1 + Math.floor(rng() * (this.size - 2));
-            const iz = 1 + Math.floor(rng() * (this.size - 2));
+            let ix;
+            let iz;
+            if (zones?.length) {
+                const zone = zones[Math.floor(rng() * zones.length)];
+                ix = zone.x0 + Math.floor(rng() * (zone.x1 - zone.x0 + 1));
+                iz = zone.z0 + Math.floor(rng() * (zone.z1 - zone.z0 + 1));
+            } else {
+                ix = 1 + Math.floor(rng() * (this.size - 2));
+                iz = 1 + Math.floor(rng() * (this.size - 2));
+            }
             const y = this.surfaceHeight(ix, iz);
             if (y === null || y > maxY || !this.isStable(ix, y, iz) || !this.reachable[iz * this.size + ix]) continue;
             const c = this.tileCenter(ix, iz);
@@ -300,11 +314,11 @@ export class Arena {
         for (let i = 0; i < this.states.length; i++) {
             if (this.states[i] !== BLOCK_STATE.SOLID) changed.push([i, this.states[i]]);
         }
-        return { size: this.size, height: this.height, changed };
+        return { map: this.mapId, changed };
     }
 
     static fromJSON(data) {
-        const arena = new Arena({ size: data.size, height: data.height });
+        const arena = new Arena(getMap(data.map) || getMap(DEFAULT_MAP));
         for (const [i, state] of data.changed) arena.states[i] = state;
         return arena;
     }

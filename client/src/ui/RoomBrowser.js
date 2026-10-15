@@ -1,4 +1,7 @@
 import { ROOMS } from '../../shared/constants.js';
+import { MODES, getModeInfo } from '../../shared/config/modes.js';
+import { getMap } from '../../shared/world/maps/index.js';
+import { isPlayableMode } from '../../shared/game/modes/index.js';
 import { el } from './dom.js';
 
 export const ROOM_ERROR_TEXT = {
@@ -9,6 +12,8 @@ export const ROOM_ERROR_TEXT = {
     'bad-name': 'Pick a room name',
     'name-taken': 'A room with that name already exists',
     'bad-size': `Rooms hold 2 to ${ROOMS.maxPlayersPerRoom} players`,
+    'bad-mode': 'That game mode is not available',
+    'bad-map': 'That map is not available',
     'timeout': 'The server did not answer, try again',
     'offline': 'Rooms need the online server'
 };
@@ -51,6 +56,11 @@ export class RoomBrowser {
         const savedSize = Math.min(this.profile.roomMaxPlayers || ROOMS.maxPlayersPerRoom, ROOMS.maxPlayersPerRoom);
         this.sizeSelect.value = String(savedSize);
 
+        this.modeSelect = el('select.room-select');
+        for (const mode of MODES.filter(m => isPlayableMode(m.id))) this.modeSelect.append(el('option', { value: mode.id, text: mode.name }));
+        this.mapSelect = el('select.room-select');
+        this.modeSelect.addEventListener('change', () => this.fillMaps());
+
         const withBots = this.profile.roomBots !== false;
         this.botsYes = el('input', { type: 'radio', name: 'room-bots', value: 'yes', checked: withBots });
         this.botsNo = el('input', { type: 'radio', name: 'room-bots', value: 'no', checked: !withBots });
@@ -58,6 +68,7 @@ export class RoomBrowser {
         this.createButton = el('button.btn.primary', { type: 'button', text: 'Create & Join', onclick: () => this.create() });
         this.createForm = el('div.room-create', {}, [
             el('div.room-create-row', {}, [this.nameInput, this.sizeSelect]),
+            el('div.room-create-row', {}, [this.modeSelect, this.mapSelect]),
             this.passwordInput,
             el('div.room-bots', {}, [
                 el('label', {}, [this.botsYes, ' Fill empty seats with bots']),
@@ -73,6 +84,19 @@ export class RoomBrowser {
         });
         this.createForm.classList.add('hidden');
         return el('div', {}, [this.createToggle, this.createForm]);
+    }
+
+    // The menu's chosen mode is the default for new rooms
+    setMode(modeId) {
+        if (![...this.modeSelect.options].some(o => o.value === modeId)) return;
+        this.modeSelect.value = modeId;
+        this.fillMaps();
+    }
+
+    fillMaps() {
+        const maps = (getModeInfo(this.modeSelect.value)?.maps || []).map(getMap).filter(Boolean);
+        this.mapSelect.replaceChildren(...maps.map(map => el('option', { value: map.id, text: map.name })));
+        if (maps.some(m => m.id === this.profile.roomMap)) this.mapSelect.value = this.profile.roomMap;
     }
 
     setEnabled(enabled, message = '') {
@@ -137,7 +161,9 @@ export class RoomBrowser {
         row.locked = room.locked;
         row.name.textContent = `${room.locked ? '🔒 ' : ''}${room.name}`;
         const full = room.players >= room.maxPlayers;
-        row.info.textContent = `${room.players}/${room.maxPlayers} · ${room.bots ? '🤖 bots' : 'no bots'}${full ? ' · full' : ''}`;
+        const mode = getModeInfo(room.mode)?.name || '';
+        const map = getMap(room.map)?.name || '';
+        row.info.textContent = `${mode}${map ? ` · ${map}` : ''} · ${room.players}/${room.maxPlayers} · ${room.bots ? '🤖 bots' : 'no bots'}${full ? ' · full' : ''}`;
         row.node?.classList.toggle('full', full);
     }
 
@@ -160,10 +186,12 @@ export class RoomBrowser {
             roomName: this.nameInput.value.trim(),
             password: this.passwordInput.value,
             maxPlayers: Number(this.sizeSelect.value),
-            bots: this.botsYes.checked
+            bots: this.botsYes.checked,
+            mode: this.modeSelect.value,
+            map: this.mapSelect.value
         };
         // Remember the choices (not the password) for next time
-        Object.assign(this.profile, { roomName: options.roomName, roomMaxPlayers: options.maxPlayers, roomBots: options.bots });
+        Object.assign(this.profile, { roomName: options.roomName, roomMaxPlayers: options.maxPlayers, roomBots: options.bots, roomMap: options.map });
         this.profile.save();
 
         this.createError.textContent = '';

@@ -38,20 +38,21 @@ function startGame(connection, request = {}, notice = null) {
 
 function playOffline(notice = online ? 'Server unavailable: playing offline with bots' : null) {
     online?.close();
-    startGame(new LocalConnection({ botCount: OFFLINE_BOTS }), {}, notice);
+    startGame(new LocalConnection({ botCount: OFFLINE_BOTS, mode: profile.mode }), {}, notice);
 }
 
-// Quick Play: join the fullest public room (bots fill the empty seats). If the server can't be
-// reached, or it's full, play the same game against bots in the browser.
+// Quick Play: join the fullest public room of the chosen mode (bots fill the empty seats). If the
+// server can't be reached, or it's full, play the same game against bots in the browser.
 async function quickPlay() {
-    const check = await online.request(C2S.CHECK_ROOM, {});
+    const mode = profile.mode;
+    const check = await online.request(C2S.CHECK_ROOM, { mode });
     if (game) return;
     if (check.error === 'server-full') playOffline('Server is full: playing offline with bots');
-    else startGame(online, {});
+    else startGame(online, { mode });
 }
 
-function play() {
-    if (!online) return playOffline();
+function play({ offline = false } = {}) {
+    if (!online || offline) return playOffline(null);
     if (online.status === 'online') return quickPlay();
     menu.setWaiting(true);
     const timeout = setTimeout(() => !game && playOffline(), CONNECT_TIMEOUT_MS);

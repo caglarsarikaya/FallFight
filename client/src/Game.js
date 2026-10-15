@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GUN, NET, PLAYER } from '../shared/constants.js';
 import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.js';
+import { getModeInfo } from '../shared/config/modes.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
 import { Arena, BLOCK_KIND, BLOCK_STATE } from '../shared/world/Arena.js';
@@ -20,6 +21,8 @@ import { Hud } from './ui/Hud.js';
 import { Scoreboard } from './ui/Scoreboard.js';
 import { RespawnOverlay } from './ui/RespawnOverlay.js';
 import { PauseMenu } from './ui/PauseMenu.js';
+import { ModePanel } from './ui/ModePanel.js';
+import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
@@ -32,6 +35,9 @@ const BLOOD = ['#9c0a0a', '#6e0606', '#c21a1a'];
 const IMPACT_SOUND = { [BLOCK_KIND.GRASS]: 'impactDirt', [BLOCK_KIND.STONE]: 'impactStone', [BLOCK_KIND.PLANKS]: 'impactWood' };
 const STEP_SOUND = { [BLOCK_KIND.GRASS]: 'step', [BLOCK_KIND.STONE]: 'stepStone', [BLOCK_KIND.PLANKS]: 'stepWood' };
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
+// Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
+const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie'];
+const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 
 // Client game: renders the arena, predicts the local player and its gunfire, sends inputs and
 // reacts to the authoritative room's events. Works the same with a LocalConnection or an
@@ -68,6 +74,8 @@ export class Game {
         this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · BOTS');
         this.hud.setStatsVisible(profile.showStats);
         this.scoreboard = new Scoreboard(ui);
+        this.modePanel = new ModePanel(this.hud.root);
+        this.matchEnd = new MatchEndOverlay(ui);
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
             profile,
@@ -110,6 +118,8 @@ export class Game {
         this.deathCam = null;
         this.editingProfile = false;
         this.serverOffset = null;       // server time - local time, smoothed
+        this.modeId = 'ffa';
+        this.modeState = null;
         this.zoom = 1;
         this.armor = 0;
         this.helmet = false;
@@ -226,7 +236,7 @@ export class Game {
                 case 'cycle': return this.local.alive && w.cycle(value);
                 case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.toggleCamera();
-                case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId) : this.scoreboard.hide();
+                case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
                 case 'primary': return w.setTrigger(value && !!this.canAct);
                 case 'secondary': return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
@@ -480,6 +490,24 @@ export class Game {
         });
         on(S2C.DEATH, this.onDeath);
         on(S2C.RESPAWN, this.onRespawn);
+        on(S2C.MODE_STATE, state => {
+            this.modeState = state;
+            this.modePanel.render(state, this.players, this.selfId);
+        });
+        on(S2C.MATCH_END, data => {
+            this.matchEnd.show(data, this.selfId, SCORE_LABEL[this.modeId]);
+            this.sound.play(data.winnerId === this.selfId || (data.winnerTeam && data.winnerTeam === this.self?.team) ? 'win' : 'lose');
+        });
+        on(S2C.MATCH_START, () => {
+            this.matchEnd.hide();
+            for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
+            this.hud.toast('New match!');
+        });
+        on(S2C.LEVEL_UP, ({ id, level, weapon }) => {
+            if (id !== this.selfId) return;
+            this.sound.play('levelUp');
+            this.hud.toast(`Level ${level + 1}: ${weaponSpec(weapon)?.name || weapon}`);
+        });
         on(S2C.PICKUP_SPAWNED, data => {
             this.pickups.set(data.id, new PickupView(this.scene, data));
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
@@ -504,11 +532,15 @@ export class Game {
         this.resetWorld(); // a second welcome means we rejoined after a disconnect
         this.selfId = data.selfId;
         this.room = data.room || null;
+        this.modeId = data.mode || 'ffa';
+        this.modeState = data.modeState || null;
+        this.matchEnd.hide();
         if (this.room) this.pauseMenu.setTitle(this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name);
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
         this.serverOffset = data.time - performance.now() / 1000;
         for (const p of data.players) this.addPlayer(p);
+        this.modePanel.render(this.modeState, this.players, this.selfId);
         const me = this.self;
         this.local.teleport(me.x, me.y, me.z, me.yaw);
         this.local.alive = me.alive;
@@ -518,15 +550,19 @@ export class Game {
         for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
     }
 
-    // "FRIENDS · 2 players + 2 bots"
+    // "GUN GAME · FRIENDS · 2 players + 2 bots"
     updateModeBadge() {
-        if (!this.connection.isOnline) return;
-        const all = [...this.players.values()];
+        const mode = getModeInfo(this.modeId)?.name.toUpperCase() || '';
+        if (!this.connection.isOnline) {
+            this.hud.setMode(`${mode} · OFFLINE · BOTS`);
+            return;
+        }
+        const all = [...this.players.values()].filter(p => !p.isZombie);
         const bots = all.filter(p => p.isBot).length;
         const people = all.length - bots;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
         const label = !this.room || this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name.toUpperCase();
-        this.hud.setMode(`${label} · ${plural(people, 'player')}${this.room?.bots === false ? '' : ` + ${plural(bots, 'bot')}`}`);
+        this.hud.setMode(`${mode} · ${label} · ${plural(people, 'player')}${bots ? ` + ${plural(bots, 'bot')}` : ''}`);
     }
 
     resetWorld() {
@@ -543,11 +579,13 @@ export class Game {
     addPlayer(p) {
         const isSelf = p.id === this.selfId;
         const avatar = new PlayerAvatar(this.scene, p, { isSelf });
-        this.players.set(p.id, {
+        const info = {
             id: p.id, name: p.name, characterId: p.characterId, isBot: p.isBot,
             alive: p.alive, health: p.health, kills: p.kills, deaths: p.deaths,
             x: p.x, y: p.y, z: p.z, yaw: p.yaw, avatar, stepTimer: Math.random()
-        });
+        };
+        for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
+        this.players.set(p.id, info);
         if (!p.alive) avatar.die();
         this.updateModeBadge();
     }
@@ -562,6 +600,7 @@ export class Game {
             info.kills = p.kills;
             info.deaths = p.deaths;
             info.health = p.health;
+            for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
             if (p.id === this.selfId) {
                 this.hud.setHealth(p.health);
                 this.armor = p.armor;
@@ -570,6 +609,7 @@ export class Game {
                 info.avatar.pushSnapshot(p);
             }
         }
+        this.modePanel.render(this.modeState, this.players, this.selfId);
     }
 
     onInventory(data) {
@@ -717,7 +757,7 @@ export class Game {
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play('kill');
             this.hud.hit(!!headshot, true);
-            this.hud.toast(`You killed ${victim.name}${headshot ? ' ◎' : ''} · +1 Health Potion`);
+            this.hud.toast(`You killed ${victim.name}${headshot ? ' ◎' : ''}${this.modeId === 'ffa' ? ' · +1 Health Potion' : ''}`);
         }
     }
 

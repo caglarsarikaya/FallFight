@@ -2,7 +2,6 @@ import { PLAYER } from '../constants.js';
 import { KNIFE, WEAPON_KIND, WEAPON_SLOT, weaponSpec } from '../config/weapons.js';
 import { normalize, yawTowards } from '../math.js';
 import { BLOCK_STATE } from '../world/Arena.js';
-import { LANDMARKS } from '../world/layout.js';
 import { Pathfinder } from './Pathfinder.js';
 
 // Bot tuning (distances in blocks, times in seconds)
@@ -247,7 +246,7 @@ export class BotBrain {
         let best = null;
         let bestScore = Infinity;
         for (const other of this.room.players.values()) {
-            if (other === bot || !other.alive) continue;
+            if (!other.alive || !this.room.mode.isEnemy(bot, other)) continue;
             let chasers = 0;
             for (const b of this.room.bots.values()) if (b !== this && b.targetId === other.id) chasers++;
             const score = Math.hypot(other.x - bot.x, other.z - bot.z) + chasers * BOT_SETTINGS.crowdPenalty;
@@ -394,7 +393,7 @@ export class BotBrain {
         }
         let best = null;
         let bestDist = Infinity;
-        for (const perch of LANDMARKS.sniperPerches) {
+        for (const perch of this.room.map.landmarks?.sniperPerches ?? []) {
             if (taken.has(`${perch.ix},${perch.iz}`)) continue;
             if (this.arena.surfaceHeight(perch.ix, perch.iz) !== perch.y) continue; // chopped up
             const c = this.arena.tileCenter(perch.ix, perch.iz);
@@ -412,7 +411,7 @@ export class BotBrain {
         let best = null;
         let bestDist = BOT_SETTINGS.sniperRange;
         for (const other of this.room.players.values()) {
-            if (other === bot || !other.alive) continue;
+            if (!other.alive || !this.room.mode.isEnemy(bot, other)) continue;
             const d = Math.hypot(other.x - bot.x, other.z - bot.z);
             if (d < bestDist && this.hasLineOfSight(other)) {
                 best = other;

@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROOMS, validateRoomLimits } from '../shared/constants.js';
-import { RoomManager, ROOM_ERRORS } from '../server/RoomManager.js';
+import { ROOM_MESSAGES, RoomManager, ROOM_ERRORS } from '../server/RoomManager.js';
+import { C2S } from '../shared/protocol.js';
 
 // Minimal stand-ins for socket.io
 const fakeIo = { to: () => ({ emit: () => {} }) };
 const socket = id => ({ id, join: () => {} });
 const manager = (options = {}) => new RoomManager(fakeIo, { autoTick: false, ...options });
-const summary = m => m.stats.map(r => `${r.name}:${r.players}+${r.botCount}`);
+const summary = m => m.stats.map(r => `${r.name.split(' · ')[0]}:${r.players}+${r.botCount}`);
 
 test('limits come from shared/config/rooms.json', () => {
     assert.deepEqual(ROOMS, { maxRooms: 5, maxPlayersPerRoom: 4 });
@@ -115,5 +116,36 @@ test('the welcome tells the player which room they are in', () => {
     const { roomId } = m.create({ roomName: 'Lobby', bots: false, password: 'x' });
     m.join(socket('a'), { name: 'A', roomId, password: 'x' });
     const welcome = sent.find(e => e.type === 'welcome');
-    assert.deepEqual(welcome.data.room, { id: roomId, name: 'Lobby', kind: 'custom', bots: false, maxPlayers: 4, locked: true });
+    assert.deepEqual(welcome.data.room, { id: roomId, name: 'Lobby', kind: 'custom', bots: false, maxPlayers: 4, mode: 'ffa', map: 'fallfight_classic', locked: true });
+});
+
+test('every gameplay message reaches the room: firing, reloading, scoping, buying', () => {
+    for (const type of [C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.PROFILE]) {
+        assert.ok(ROOM_MESSAGES.has(type), type);
+    }
+    assert.ok(!ROOM_MESSAGES.has(C2S.JOIN) && !ROOM_MESSAGES.has(C2S.CREATE_ROOM));
+});
+
+test('quick play matches players by game mode', () => {
+    const m = manager({ maxPlayers: 4 });
+    const dm = m.join(socket('a'), { name: 'A' }).roomId;
+    const gg = m.join(socket('b'), { name: 'B', mode: 'gungame' }).roomId;
+    assert.notEqual(dm, gg);
+    assert.equal(m.join(socket('c'), { name: 'C', mode: 'gungame' }).roomId, gg);
+    assert.equal(m.join(socket('d'), { name: 'D', mode: 'nonsense' }).roomId, dm, 'unknown modes fall back to deathmatch');
+    const listed = m.stats.find(r => r.id === gg);
+    assert.equal(listed.mode, 'gungame');
+    assert.ok(listed.map);
+    assert.equal(m.rooms.get(gg).room.mode.id, 'gungame');
+});
+
+test('custom rooms pick a mode and map; bad ones are refused', () => {
+    const m = manager();
+    assert.deepEqual(m.create({ roomName: 'X', mode: 'tag' }), { error: ROOM_ERRORS.BAD_MODE });
+    assert.deepEqual(m.create({ roomName: 'X', map: 'de_nowhere' }), { error: ROOM_ERRORS.BAD_MAP });
+    const { roomId } = m.create({ roomName: 'Arms race', mode: 'gungame', map: 'fallfight_classic' });
+    const entry = m.rooms.get(roomId);
+    assert.equal(entry.room.mode.id, 'gungame');
+    assert.equal(entry.room.map.id, 'fallfight_classic');
+    assert.equal(m.stats[0].mode, 'gungame');
 });

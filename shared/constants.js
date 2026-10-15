@@ -15,10 +15,14 @@ export function validateRoomLimits(limits = ROOMS) {
     return limits;
 }
 
+// Map sizes come from each map (shared/world/maps/); this is what every map shares
 export const ARENA = {
-    size: 60,          // 60 x 60 floor tiles
-    height: 10,        // block layers: the floor, 8-high sniper towers, their parapet and headroom
     voidY: -8          // falling below this kills
+};
+
+// After a match is won (Gun Game, Team Buy, a zombie wipe), the room restarts after this long
+export const MATCH = {
+    restartDelay: 10
 };
 
 export const PLAYER = {

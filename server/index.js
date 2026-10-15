@@ -5,7 +5,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { ROOMS, validateRoomLimits } from '../shared/constants.js';
 import { C2S, S2C } from '../shared/protocol.js';
-import { RoomManager } from './RoomManager.js';
+import { ROOM_MESSAGES, RoomManager } from './RoomManager.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 3000;
@@ -45,7 +45,6 @@ if (SERVE_CLIENT) {
     app.get('/', (_req, res) => res.json({ name: 'FallFight game server', play: PLAY_URL, ...serverStats() }));
 }
 
-const ROOM_MESSAGES = new Set([C2S.STATE, C2S.SELECT, C2S.DRAW, C2S.USE, C2S.PROFILE]);
 const reply = ack => (typeof ack === 'function' ? ack : () => {});
 
 io.on('connection', socket => {
@@ -54,7 +53,7 @@ io.on('connection', socket => {
 
     // Validate a room + password before the client builds the game
     socket.on(C2S.CHECK_ROOM, (data = {}, ack) => {
-        const result = roomManager.check({ roomId: data.roomId, password: data.password });
+        const result = roomManager.check({ roomId: data.roomId, password: data.password, mode: data.mode });
         reply(ack)(result.error ? { error: result.error } : { ok: true });
     });
 
@@ -65,7 +64,9 @@ io.on('connection', socket => {
             roomName: data.roomName,
             password: data.password,
             bots: data.bots !== false,
-            maxPlayers: data.maxPlayers
+            maxPlayers: data.maxPlayers,
+            mode: data.mode,
+            map: data.map
         }));
     });
 

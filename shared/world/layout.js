@@ -1,12 +1,9 @@
 // Static arena layout: boxes of blocks on the 60 x 60 tile grid. Ranges are inclusive; layer 0 is
 // the floor (world y -1..0), layer 1 the first block above it (world y 0..1), and so on.
 
-export const BLOCK_KIND = Object.freeze({ AIR: 0, GRASS: 1, STONE: 2, PLANKS: 3 });
+import { BLOCK_KIND } from './blocks.js';
 
-// Bullet damage a block soaks up before it cracks (the knife breaks any block outright).
-// Floor blocks (layer 0) are FLOOR_HP_SCALE times tougher so a spray doesn't open a pit at once.
-export const BLOCK_HP = Object.freeze({ [BLOCK_KIND.GRASS]: 180, [BLOCK_KIND.STONE]: 300, [BLOCK_KIND.PLANKS]: 110 });
-export const FLOOR_HP_SCALE = 1.5;
+export { BLOCK_KIND };
 
 const SIZE = 60;
 const SNIPER_HEIGHT = 8;

@@ -2,15 +2,16 @@ import { PICKUPS } from '../constants.js';
 
 // Spawns ammo and potion pickups on a timer; the first player to touch one takes it.
 export class PickupSpawner {
-    constructor(rng) {
+    constructor(rng, types = ['ammo', 'health_potion']) {
         this.rng = rng;
+        this.typeList = types;
         this.pickups = new Map();
         this.nextId = 1;
         this.timers = Object.fromEntries(this.types().map(type => [type, PICKUPS[type].interval]));
     }
 
     types() {
-        return ['ammo', 'health_potion'];
+        return this.typeList;
     }
 
     // Returns newly spawned pickups

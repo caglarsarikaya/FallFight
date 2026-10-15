@@ -2,9 +2,9 @@
 
 // Client -> server
 export const C2S = {
-    JOIN: 'join',          // { name, characterId, roomId?, password? } (no roomId = quick play)
+    JOIN: 'join',          // { name, characterId, roomId?, password?, mode? } (no roomId = quick play in that mode)
     CHECK_ROOM: 'checkRoom',   // ack: { roomId, password } -> { ok } | { error }
-    CREATE_ROOM: 'createRoom', // ack: { roomName, password, bots, maxPlayers } -> { roomId } | { error }
+    CREATE_ROOM: 'createRoom', // ack: { roomName, password, bots, maxPlayers, mode, map } -> { roomId } | { error }
     PROFILE: 'profile',    // { name, characterId }
     STATE: 'state',        // { x, y, z, vx, vy, vz, yaw, pitch, onGround, crouching, walking }
     SELECT: 'select',      // { slot }
@@ -13,6 +13,7 @@ export const C2S = {
                            // the shooter was seeing other players at (lag compensation)
     RELOAD: 'reload',      // {}
     SCOPE: 'scope',        // { level } 0 = unscoped
+    BUY: 'buy',            // { item } Team Buy: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion', 'ammo'
     PING: 'latencyCheck',  // ack: {} -> {} round-trip timing ('ping' is reserved by socket.io)
 };
 
@@ -38,5 +39,9 @@ export const S2C = {
     RESPAWN: 'respawn',                // { id, x, y, z, health }
     PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z }
     PICKUP_TAKEN: 'pickupTaken',       // { id, by }
+    MODE_STATE: 'modeState',           // mode-specific: scores, round, timers, wave... (see GameMode.stateJSON)
+    MATCH_END: 'matchEnd',             // { winnerId, winnerTeam, title, standings, restartIn }
+    MATCH_START: 'matchStart',         // {} a new match began (scores reset)
+    LEVEL_UP: 'levelUp',               // { id, level, weapon } Gun Game
     SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

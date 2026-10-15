@@ -1,7 +1,10 @@
-import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, LOADOUT, NET, PLAYER } from '../constants.js';
+import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER } from '../constants.js';
 import { C2S, S2C } from '../protocol.js';
 import { normalize } from '../math.js';
 import { Arena } from '../world/Arena.js';
+import { DEFAULT_MAP, getMap } from '../world/maps/index.js';
+import { DEFAULT_MODE, getModeInfo } from '../config/modes.js';
+import { createMode } from './modes/index.js';
 import { getItem } from '../items/ItemRegistry.js';
 import { weaponSpec } from '../config/weapons.js';
 import { CHARACTERS, DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../characters/definitions.js';
@@ -17,25 +20,39 @@ const BOT_NAMES = ['Steve', 'Alex', 'Notch', 'Herobrine', 'Creeper', 'Blaze', 'E
 const ZONE_RANK = { legs: 0, body: 1, head: 2 };
 const round2 = v => Math.round(v * 100) / 100;
 const round4 = v => Math.round(v * 10000) / 10000;
+const MODE_STATE_INTERVAL = 1;   // seconds between MODE_STATE refreshes (timers) when nothing changed
+
+// The map a room uses: the requested one, or the mode's first choice that exists
+export function resolveMap(modeId, mapId) {
+    if (getMap(mapId)) return getMap(mapId);
+    const preferred = getModeInfo(modeId)?.maps.find(id => getMap(id));
+    return getMap(preferred) || getMap(DEFAULT_MAP);
+}
 
 // Authoritative arena simulation. Transport-agnostic: messages come in through handleMessage()
 // and go out through emit(targetId | null, type, data), where null means everyone in the room.
 // Runs on the Node server for online play and inside the browser for offline play.
 export class GameRoom {
-    constructor({ emit = () => {}, rng = Math.random } = {}) {
+    // mode: 'ffa' | 'gungame' | 'teambuy' | 'zombies'; map: a map id (see shared/world/maps/)
+    constructor({ emit = () => {}, rng = Math.random, mode = DEFAULT_MODE, map = null } = {}) {
         this.emit = emit;
         this.rng = rng;
         this.time = 0;
-        this.arena = new Arena();
+        this.map = resolveMap(mode, map);
+        this.arena = new Arena(this.map);
         this.players = new Map();
         this.bots = new Map();          // id -> BotBrain
         this.projectiles = new Map();
-        this.pickups = new PickupSpawner(rng);
+        this.mode = createMode(mode, this);
+        this.pickups = new PickupSpawner(rng, this.mode.pickupTypes);
         this.lagComp = new LagComp();
         this.nextProjectileId = 1;
         this.nextBotId = 1;
         this.snapshotTimer = 0;
+        this.modeStateTimer = 0;
         this.humans = 0;
+        this.matchOver = null;          // { restartAt, ... } between a win and the next match
+        this.mode.reset();
     }
 
     get humanCount() {
@@ -52,25 +69,42 @@ export class GameRoom {
             characterId: isValidCharacter(characterId) ? characterId : DEFAULT_CHARACTER,
             isBot
         });
-        this.equip(player);
-        this.placeAtSpawn(player);
         this.players.set(id, player);
         if (!isBot) this.humans++;
+        this.mode.resetPlayer(player);
+        this.mode.onJoin(player);
+        // The mode may keep a newcomer out until the next round (alive = false)
+        if (player.alive) {
+            this.equip(player);
+            this.placeAtSpawn(player);
+        } else {
+            this.placeAtSpawn(player);
+        }
 
         if (!isBot) {
             this.emit(id, S2C.WELCOME, {
                 selfId: id,
                 room: roomInfo,
+                mode: this.mode.id,
+                map: this.map.id,
+                modeState: this.mode.stateJSON(),
                 time: this.time,
-                players: [...this.players.values()].map(p => p.toJSON()),
+                players: [...this.players.values()].map(p => this.playerJSON(p, true)),
                 arena: this.arena.toJSON(),
                 pickups: this.pickups.toJSON(),
                 projectiles: [...this.projectiles.values()].map(p => p.toJSON())
             });
             this.notifyInventory(player);
         }
-        this.emit(null, S2C.PLAYER_JOINED, player.toJSON());
+        this.emit(null, S2C.PLAYER_JOINED, this.playerJSON(player, true));
         return player;
+    }
+
+    // Snapshot (or full description) of a player, with the mode's extra fields
+    playerJSON(player, full = false) {
+        const base = full ? player.toJSON() : player.toSnapshot();
+        const extra = this.mode.playerJSON(player);
+        return extra ? Object.assign(base, extra) : base;
     }
 
     removePlayer(id) {
@@ -80,6 +114,7 @@ export class GameRoom {
         if (!player.isBot) this.humans--;
         this.bots.delete(id);
         this.lagComp.forget(id);
+        this.mode.onLeave(player);
         this.emit(null, S2C.PLAYER_LEFT, { id });
     }
 
@@ -98,15 +133,9 @@ export class GameRoom {
         while (this.bots.size > count) this.removePlayer([...this.bots.keys()].pop());
     }
 
-    // Spawn loadout: a random rifle/SMG/sniper and pistol, kevlar and helmet
+    // Spawn loadout comes from the mode
     equip(player) {
-        const pick = list => list[Math.floor(this.rng() * list.length)];
-        player.inventory.reset({
-            weapons: [pick(LOADOUT.primary), pick(LOADOUT.secondary)],
-            counts: { health_potion: LOADOUT.health_potion }
-        });
-        player.armor = LOADOUT.armor;
-        player.helmet = LOADOUT.helmet;
+        this.mode.equip(player);
         player.gun = freshGunState();
     }
 
@@ -130,6 +159,13 @@ export class GameRoom {
         if (!player.alive) return;
         const fields = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch'];
         if (!fields.every(f => Number.isFinite(data[f]))) return;
+        if (this.mode.frozen(player)) {
+            // Freeze time: you may look around and crouch, not walk off
+            player.yaw = data.yaw;
+            player.pitch = data.pitch;
+            player.crouching = !!data.crouching;
+            return;
+        }
         const limit = this.arena.size;
         player.x = clampAbs(data.x, limit);
         player.y = Math.max(data.y, ARENA.voidY - 5);
@@ -165,7 +201,7 @@ export class GameRoom {
 
     // Consumables (health potion)
     useItem(player, slot, dir) {
-        if (!player.alive) return false;
+        if (!player.alive || !this.mode.canFire(player)) return false;
         if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
         const item = player.inventory.selectedItem;
         if (!item || item.isGun || item.isKnife || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
@@ -178,6 +214,7 @@ export class GameRoom {
     // Gun shot or knife attack. data: { slot, seq, dir, t, alt }
     fire(player, { slot, seq = 0, dir, t, alt = false } = {}) {
         if (!player.alive || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
+        if (!this.mode.canFire(player)) return false;
         if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
         const item = player.inventory.selectedItem;
         if (!item) return false;
@@ -259,7 +296,7 @@ export class GameRoom {
     resolveShot(shooter, gun, origin, dirs, time) {
         const spec = gun.spec;
         const targets = this.shotTargets(shooter, time);
-        const hits = new Map(); // victim -> { health, zone, headshot, armorHit, armorBefore }
+        const hits = new Map(); // victim -> { health, zone, armorHit }
         const pellets = [];
         for (const dir of dirs) {
             const end = this.traceBullet(shooter, origin, dir, spec, targets, hits);
@@ -271,6 +308,7 @@ export class GameRoom {
             p: pellets
         });
         for (const [victim, hit] of hits) {
+            if (hit.health <= 0 && !hit.armorHit) continue; // protected or a teammate
             const amount = Math.max(1, Math.round(hit.health));
             this.damage(victim, amount, shooter, gun.id,
                 spec.knockback ? { x: dirs[0].x, z: dirs[0].z, strength: spec.knockback } : null,
@@ -299,7 +337,7 @@ export class GameRoom {
             if (best) {
                 const distance = travelled + best.distance;
                 const raw = damage * Math.pow(spec.rangeModifier, distance / GUN.falloffUnit) * GUN.zoneMultiplier[best.zone];
-                this.addBulletHit(hits, best.target.player, raw, best.zone, spec);
+                this.addBulletHit(hits, best.target.player, raw, best.zone, spec, shooter);
                 return { distance, kind: 2 };
             }
             if (!block) return { distance: travelled + remaining, kind: 0 };
@@ -322,14 +360,14 @@ export class GameRoom {
     }
 
     // Armor works per pellet, like CS: kevlar covers body and head (head only with a helmet)
-    addBulletHit(hits, victim, raw, zone, spec) {
+    addBulletHit(hits, victim, raw, zone, spec, shooter) {
         let entry = hits.get(victim);
         if (!entry) {
             entry = { health: 0, zone, armorHit: false };
             hits.set(victim, entry);
         }
         if (ZONE_RANK[zone] > ZONE_RANK[entry.zone]) entry.zone = zone;
-        if (victim.isProtected(this.time)) return;
+        if (victim.isProtected(this.time) || !this.mode.canDamage(shooter, victim)) return;
         const covered = victim.armor > 0 && zone !== 'legs' && (zone !== 'head' || victim.helmet);
         if (!covered) {
             entry.health += raw;
@@ -364,7 +402,8 @@ export class GameRoom {
 
     // info: { zone, headshot, armorHit, dir, ignoreArmor, armorDone }
     damage(victim, amount, attacker, weapon, knockback, info = {}) {
-        if (!victim.alive || victim.isProtected(this.time)) return false;
+        if (!victim.alive || victim.isProtected(this.time) || this.matchOver) return false;
+        if (attacker && !this.mode.canDamage(attacker, victim)) return false;
         victim.health = Math.max(0, victim.health - amount);
         victim.lastDamage = { by: attacker?.id ?? null, weapon, time: this.time };
         victim.taggedUntil = this.time + PLAYER.tagTime;
@@ -461,23 +500,43 @@ export class GameRoom {
         victim.gun.reload = null;
         victim.gun.scoped = 0;
         victim.deaths++;
-        victim.respawnAt = this.time + PLAYER.respawnDelay;
+        const delay = this.mode.respawnDelay(victim);
+        victim.respawnAt = delay === null ? Infinity : this.time + delay;
 
-        const credited = killer && killer.id !== victim.id ? killer : null;
-        if (credited) {
-            credited.kills++;
-            credited.inventory.add('health_potion', 1); // kill reward
-            this.notifyInventory(credited);
-        }
+        // Team kills and suicides give no credit
+        const credited = killer && killer !== victim && this.mode.isEnemy(killer, victim) ? killer : null;
+        if (credited) credited.kills++;
         this.emit(null, S2C.DEATH, { victimId: victim.id, killerId: credited?.id ?? null, cause, headshot });
+        this.mode.onKill(victim, credited, cause, headshot);
+    }
+
+    // A match was won: show the result, then start over after a pause
+    endMatch(result) {
+        if (this.matchOver) return;
+        this.matchOver = { ...result, restartAt: this.time + MATCH.restartDelay };
+        this.mode.dirty = true;
+        this.emit(null, S2C.MATCH_END, {
+            ...result,
+            standings: this.mode.standings().slice(0, 8),
+            restartIn: MATCH.restartDelay
+        });
+    }
+
+    restartMatch() {
+        this.matchOver = null;
+        this.mode.reset();
+        for (const player of this.players.values()) this.mode.resetPlayer(player);
+        this.emit(null, S2C.MATCH_START, {});
+        for (const player of this.players.values()) this.respawn(player);
     }
 
     placeAtSpawn(player) {
         const others = [...this.players.values()].filter(p => p.alive && p !== player);
-        const spot = this.arena.findSpawn(this.rng, others, { maxY: 0 });
+        const zones = this.mode.spawnZones(player);
+        const spot = this.arena.findSpawn(this.rng, others, zones ? { zones } : { maxY: 0 });
         const center = spot ? this.arena.tileCenter(spot.ix, spot.iz) : { x: 0, z: 0 };
         Object.assign(player, { x: center.x, y: spot ? spot.y : 0, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false });
-        // Face the middle of the arena
+        // Face the middle of the map
         player.yaw = Math.atan2(player.x, player.z);
         player.pitch = 0;
         player.lastGroundBlock = spot ? { ix: spot.ix, iy: spot.y, iz: spot.iz } : null;
@@ -487,8 +546,8 @@ export class GameRoom {
 
     respawn(player) {
         this.equip(player);
-        this.placeAtSpawn(player);
         player.alive = true;
+        this.placeAtSpawn(player);
         player.health = PLAYER.maxHealth;
         player.cooldowns = {};
         player.lastDamage = null;
@@ -528,10 +587,13 @@ export class GameRoom {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         }
 
+        this.mode.tick(dt);
+        if (this.matchOver && this.time >= this.matchOver.restartAt) this.restartMatch();
+
         for (const [id, brain] of this.bots) {
             const bot = this.players.get(id);
             const input = brain.update(dt);
-            if (!bot.alive) continue;
+            if (!bot.alive || this.mode.frozen(bot)) continue;
             stepMovement(bot, this.botMoveInput(bot, input), this.arena, dt);
             this.afterMove(bot);
         }
@@ -573,12 +635,19 @@ export class GameRoom {
         }
         this.lagComp.record(this.time, this.players.values());
 
+        this.modeStateTimer -= dt;
+        if (this.mode.dirty || this.modeStateTimer <= 0) {
+            this.mode.dirty = false;
+            this.modeStateTimer = MODE_STATE_INTERVAL;
+            this.emit(null, S2C.MODE_STATE, this.mode.stateJSON());
+        }
+
         this.snapshotTimer -= dt;
         if (this.snapshotTimer <= 0) {
             this.snapshotTimer += 1 / NET.snapshotRate;
             this.emit(null, S2C.SNAPSHOT, {
                 time: this.time,
-                players: [...this.players.values()].map(p => p.toSnapshot())
+                players: [...this.players.values()].map(p => this.playerJSON(p))
             });
         }
     }

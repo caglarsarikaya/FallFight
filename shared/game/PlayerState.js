@@ -42,6 +42,7 @@ export class PlayerState {
 
         this.kills = 0;
         this.deaths = 0;
+        this.score = 0;         // what the mode ranks by (kills, gun game progress...)
         this.lastDamage = null; // { by, weapon, time }
     }
 
@@ -89,7 +90,8 @@ export class PlayerState {
             alive: this.alive,
             item: this.inventory.selectedId,
             kills: this.kills,
-            deaths: this.deaths
+            deaths: this.deaths,
+            score: this.score
         };
     }
 }

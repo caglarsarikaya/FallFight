@@ -1,4 +1,5 @@
 import { DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../../shared/characters/definitions.js';
+import { DEFAULT_MODE, isValidMode } from '../../shared/config/modes.js';
 
 const KEY = 'fallfight.profile.v1';
 
@@ -11,6 +12,8 @@ const DEFAULTS = {
     roomName: '',
     roomMaxPlayers: 0,
     roomBots: true,
+    roomMap: '',
+    mode: DEFAULT_MODE,     // game mode for Quick Play and new rooms
     sensitivity: 1,
     showStats: true     // FPS / ping / latency readout in the corner
 };
@@ -20,6 +23,7 @@ export class Profile {
     constructor(data = {}) {
         Object.assign(this, DEFAULTS, data);
         if (!isValidCharacter(this.characterId)) this.characterId = DEFAULT_CHARACTER;
+        if (!isValidMode(this.mode)) this.mode = DEFAULT_MODE;
     }
 
     static load() {
@@ -49,7 +53,9 @@ export class Profile {
                 showStats: this.showStats,
                 roomName: this.roomName,
                 roomMaxPlayers: this.roomMaxPlayers,
-                roomBots: this.roomBots
+                roomBots: this.roomBots,
+                roomMap: this.roomMap,
+                mode: this.mode
             }));
         } catch {
             // Private mode or storage disabled: choices last for this session only

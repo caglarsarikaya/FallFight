@@ -74,6 +74,15 @@ const PATCHES = {
         s.tone({ out, type: 'sine', freq: 6860, duration: 2.2, gain: 0.05 });
     },
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 }),
+    levelUp: (s, out) => {
+        [523, 659, 784, 1046].forEach((f, i) => s.tone({ out, type: 'square', freq: f, duration: 0.09, delay: i * 0.07, gain: 0.08 }));
+    },
+    win: (s, out) => {
+        [523, 659, 784, 1046, 1318].forEach((f, i) => s.tone({ out, type: 'triangle', freq: f, duration: i === 4 ? 0.6 : 0.14, delay: i * 0.12, gain: 0.16 }));
+    },
+    lose: (s, out) => {
+        [392, 330, 262, 196].forEach((f, i) => s.tone({ out, type: 'triangle', freq: f, duration: i === 3 ? 0.6 : 0.18, delay: i * 0.16, gain: 0.14 }));
+    },
     ...GUN_PATCHES
 };
 
