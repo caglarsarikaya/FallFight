@@ -84,7 +84,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Accuracy | Standing still is accurate, crouching more so. Moving, jumping and long sprays open up the spread. Snipers are only accurate scoped and standing still. The crosshair shows your current spread |
 | Recoil | Every gun kicks in a fixed pattern (up first, then sideways): pull the mouse down to control a spray, or fire in bursts |
 | Range | Damage drops with distance, much faster for SMGs and shotgun pellets than for rifles |
-| Walls | Rifles, snipers and the Deagle punch through a block (for less damage). Bullets wear blocks down until they crack; the knife breaks any block outright. Broken blocks regrow after 20 s |
+| Walls | Rifles, snipers and the Deagle punch through a block (for less damage). Two bullets crack any block, floor included (the map's outer walls never break); the knife breaks any block outright. Broken blocks regrow after 20 s |
 | Getting hit | Your view flinches, you slow down for a moment, and a red arc shows where the shot came from |
 | Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |

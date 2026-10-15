@@ -367,10 +367,8 @@ export class GameRoom {
             }
             if (!block) return { distance: travelled + remaining, kind: 0 };
 
-            // Bullets chip blocks; enough of them cracks it
-            if (this.arena.damageBlock(block.ix, block.iy, block.iz, damage * GUN.blockDamage)) {
-                this.breakBlock(block.ix, block.iy, block.iz, shooter);
-            }
+            // Every bullet (and every shotgun pellet) chips the block it hits; the second one cracks it
+            if (this.arena.hitBlock(block.ix, block.iy, block.iz)) this.breakBlock(block.ix, block.iy, block.iz, shooter);
             if (penetration <= 0) return { distance: travelled + block.distance, kind: 1 };
             const exit = this.arena.cellExit(block.ix, block.iy, block.iz, o, dir) + 0.01;
             penetration--;

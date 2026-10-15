@@ -14,6 +14,8 @@ const DEFAULTS = {
     roomBots: true,
     roomMap: '',
     mode: DEFAULT_MODE,     // game mode for Quick Play and new rooms
+    playWhere: 'online',    // what the menu's Play does: 'online' (Quick Play) or 'offline' (bots)
+    menuTab: 'player',      // last open main menu tab
     sensitivity: 1,
     showStats: true,    // FPS / ping / latency readout in the corner
     graphics: 'high'    // 'high' (shadows, sharper) or 'low' (for slow computers)
@@ -57,7 +59,9 @@ export class Profile {
                 roomMaxPlayers: this.roomMaxPlayers,
                 roomBots: this.roomBots,
                 roomMap: this.roomMap,
-                mode: this.mode
+                mode: this.mode,
+                playWhere: this.playWhere,
+                menuTab: this.menuTab
             }));
         } catch {
             // Private mode or storage disabled: choices last for this session only

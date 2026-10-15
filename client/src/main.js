@@ -6,6 +6,7 @@ import { OnlineConnection } from './net/OnlineConnection.js';
 import { MainMenu } from './ui/MainMenu.js';
 import { Game } from './Game.js';
 import { C2S } from '../shared/protocol.js';
+import { getModeInfo } from '../shared/config/modes.js';
 
 const container = document.getElementById('game');
 const ui = document.getElementById('ui');
@@ -38,7 +39,9 @@ function startGame(connection, request = {}, notice = null) {
 
 function playOffline(notice = online ? 'Server unavailable: playing offline with bots' : null) {
     online?.close();
-    startGame(new LocalConnection({ botCount: OFFLINE_BOTS, mode: profile.mode }), {}, notice);
+    // The menu's map, if it is one of this mode's maps
+    const map = getModeInfo(profile.mode)?.maps.includes(profile.roomMap) ? profile.roomMap : undefined;
+    startGame(new LocalConnection({ botCount: OFFLINE_BOTS, mode: profile.mode, map }), {}, notice);
 }
 
 // Quick Play: join the fullest public room of the chosen mode (bots fill the empty seats). If the

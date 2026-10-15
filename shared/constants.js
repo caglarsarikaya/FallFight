@@ -68,11 +68,11 @@ export const GUN = {
     penetrationLoss: 0.55,          // damage kept after punching through a block
     fireTolerance: 0.1,             // seconds of bunching allowed between shots arriving over the network
     lagCompensation: 0.25,          // max seconds the server rewinds targets for hit checks
-    blockDamage: 1                  // share of bullet damage that goes into blocks
+    blockHits: 2                    // bullets that crack any breakable block (floor too)
 };
 
 export const BLOCK = {
-    breakDelay: 0.4,   // cracking time before a block disappears
+    breakDelay: 0.2,   // cracking time before a block disappears
     regrowDelay: 20
 };
 

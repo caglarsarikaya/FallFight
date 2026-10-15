@@ -35,7 +35,6 @@ export class RoomBrowser {
         this.listMessage = el('div.room-empty');
         this.createError = el('div.room-error');
         this.root = el('div.rooms', {}, [
-            el('div.label', { text: 'ROOMS' }),
             this.list,
             this.listMessage,
             this.buildCreateForm()
@@ -46,7 +45,7 @@ export class RoomBrowser {
     buildCreateForm() {
         const stop = e => e.stopPropagation();
         this.nameInput = el('input', { type: 'text', maxlength: 24, placeholder: 'Room name', value: this.profile.roomName || '' });
-        this.passwordInput = el('input', { type: 'password', maxlength: 32, placeholder: 'Password (optional)', autocomplete: 'new-password' });
+        this.passwordInput = el('input', { type: 'password', maxlength: 32, placeholder: 'No password', autocomplete: 'new-password' });
         for (const input of [this.nameInput, this.passwordInput]) input.addEventListener('keydown', stop);
 
         this.sizeSelect = el('select.room-size');
@@ -66,10 +65,12 @@ export class RoomBrowser {
         this.botsNo = el('input', { type: 'radio', name: 'room-bots', value: 'no', checked: !withBots });
 
         this.createButton = el('button.btn.primary', { type: 'button', text: 'Create & Join', onclick: () => this.create() });
+        const field = (text, control) => el('label.room-field', {}, [el('span.label', { text }), control]);
         this.createForm = el('div.room-create', {}, [
-            el('div.room-create-row', {}, [this.nameInput, this.sizeSelect]),
-            el('div.room-create-row', {}, [this.modeSelect, this.mapSelect]),
-            this.passwordInput,
+            field('Room name', this.nameInput),
+            field('Password (optional)', this.passwordInput),
+            el('div.room-create-row', {}, [field('Mode', this.modeSelect), field('Map', this.mapSelect)]),
+            field('Players', this.sizeSelect),
             el('div.room-bots', {}, [
                 el('label', {}, [this.botsYes, ' Fill empty seats with bots']),
                 el('label', {}, [this.botsNo, ' No bots: friends only'])

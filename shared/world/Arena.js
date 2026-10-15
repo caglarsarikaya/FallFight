@@ -1,5 +1,5 @@
-import { BLOCK } from '../constants.js';
-import { BLOCK_KIND, BREAKABLE, FLOOR_HP_SCALE, SOLID, blockProps } from './blocks.js';
+import { BLOCK, GUN } from '../constants.js';
+import { BLOCK_KIND, BREAKABLE, SOLID, blockProps } from './blocks.js';
 import { DEFAULT_MAP, getMap } from './maps/index.js';
 
 export { BLOCK_KIND };
@@ -26,7 +26,7 @@ export class Arena {
         this.states = new Uint8Array(size * size * height);
         this.timers = new Map();     // voxel index -> { at, next }
         this.lastBreak = new Map();  // voxel index -> { by, time } for fall kill credit
-        this.wear = new Map();       // voxel index -> bullet damage taken so far
+        this.wear = new Map();       // voxel index -> bullets taken so far
 
         for (const box of layout) {
             for (let iy = box.y0; iy <= box.y1; iy++) {
@@ -232,13 +232,12 @@ export class Arena {
         return true;
     }
 
-    // Bullets wear blocks down. Returns true when this hit used up the block's HP (it should break).
-    damageBlock(ix, iy, iz, amount) {
+    // A bullet hit. Returns true when this was the block's last one (it should break).
+    hitBlock(ix, iy, iz) {
         if (!this.isStable(ix, iy, iz) || !this.isBreakable(ix, iy, iz)) return false;
         const i = this.index(ix, iy, iz);
-        const hp = blockProps(this.kinds[i]).hp * (iy <= this.floor ? FLOOR_HP_SCALE : 1);
-        const wear = (this.wear.get(i) || 0) + amount;
-        if (wear >= hp) {
+        const wear = (this.wear.get(i) || 0) + 1;
+        if (wear >= GUN.blockHits) {
             this.wear.delete(i);
             return true;
         }

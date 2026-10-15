@@ -33,6 +33,23 @@ function noise(ctx, size, base, spread, rng, alpha = 1) {
     ctx.globalAlpha = 1;
 }
 
+// A texture as an image URL, for CSS (the menu's dirt background)
+export function textureDataUrl(draw, size = SIZE) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    draw(canvas.getContext('2d'), size);
+    return canvas.toDataURL();
+}
+
+export function drawDirt(ctx, s) {
+    const rng = createRng(23);
+    noise(ctx, s, '#866043', 0.12, rng);
+    for (let i = 0; i < 14; i++) {
+        ctx.fillStyle = rng() < 0.5 ? '#6b4a32' : '#a07a58';
+        ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+    }
+}
+
 export function createBlockTextures() {
     const grassTop = pixelTexture((ctx, s) => {
         const rng = createRng(11);
@@ -43,14 +60,7 @@ export function createBlockTextures() {
         }
     });
 
-    const dirt = pixelTexture((ctx, s) => {
-        const rng = createRng(23);
-        noise(ctx, s, '#866043', 0.12, rng);
-        for (let i = 0; i < 14; i++) {
-            ctx.fillStyle = rng() < 0.5 ? '#6b4a32' : '#a07a58';
-            ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
-        }
-    });
+    const dirt = pixelTexture(drawDirt);
 
     const grassSide = pixelTexture((ctx, s) => {
         const rng = createRng(37);

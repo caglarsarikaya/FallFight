@@ -219,21 +219,64 @@ test('walls: rifles punch through one block with less damage, shotguns do not', 
     assert.equal(m3.room.eventsOf('shot').at(-1).p[4], 1, 'reported as a block hit');
 });
 
-test('bullets wear blocks down until they crack', () => {
+// Fire the gun in one direction until a block cracks (or 10 shots); returns { shots, crack }
+function shootBlock(room, player, gunId, dir) {
+    const slot = arm(room, player, gunId);
+    let shots = 0;
+    while (!room.eventsOf('blockCracking').length && shots < 10) {
+        room.fire(player, { slot, seq: ++shots, dir, t: room.time });
+        room.tick(WEAPONS[gunId].interval + 0.01);
+        player.inventory.ammo[gunId].mag = WEAPONS[gunId].mag;
+    }
+    return { shots, crack: room.eventsOf('blockCracking').at(-1) };
+}
+
+test('two bullets crack a block, whatever the gun', () => {
+    for (const gunId of ['glock', 'deagle', 'awp']) {
+        const room = createRoom();
+        const a = room.addPlayer({ id: 'a', name: 'A' });
+        place(room, a, 23, 29);
+        const { shots, crack } = shootBlock(room, a, gunId, { x: 1, y: -0.05, z: 0 });
+        assert.ok(crack, gunId);
+        assert.equal(shots, 2, gunId);
+    }
+});
+
+test('two bullets crack the floor block under your feet', () => {
     const room = createRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
-    place(room, a, 23, 29);
-    arm(room, a, 'deagle');
-    let shots = 0;
-    while (!room.eventsOf('blockCracking').length && shots < 20) {
-        room.fire(a, { slot: 1, seq: ++shots, dir: { x: 1, y: -0.05, z: 0 }, t: room.time });
-        room.tick(WEAPONS.deagle.interval);
-        if (a.inventory.ammo.deagle.mag === 0) a.inventory.ammo.deagle.mag = 7;
+    place(room, a, 22, 22);
+    const { shots, crack } = shootBlock(room, a, 'usp', { x: 0, y: -1, z: 0 });
+    assert.deepEqual([crack?.ix, crack?.iy, crack?.iz], [22, room.arena.floor, 22]);
+    assert.equal(shots, 2);
+});
+
+test('one shotgun blast cracks the block it is aimed at', () => {
+    const room = createRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    place(room, a, 22, 22);
+    const { shots, crack } = shootBlock(room, a, 'm3', { x: 0, y: -1, z: 0 });
+    assert.equal(shots, 1);
+    assert.deepEqual([crack?.ix, crack?.iy, crack?.iz], [22, room.arena.floor, 22]);
+});
+
+test('the M3 stays accurate on the run and kills at mid range', () => {
+    const running = { speed: PLAYER.walkSpeed * WEAPONS.m3.moveSpeed };
+    assert.ok(inaccuracy(WEAPONS.m3, running) < 0.075);
+
+    const room = createRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const b = room.addPlayer({ id: 'b', name: 'B' });
+    place(room, a, 22, 22);
+    place(room, b, 22, 16);
+    arm(room, a, 'm3');
+    let blasts = 0;
+    while (b.alive && blasts < 2) {
+        a.vx = running.speed; // strafing at full speed
+        shootAt(room, a, b, 1.2, ++blasts);
+        room.tick(WEAPONS.m3.interval + 0.01);
     }
-    const crack = room.eventsOf('blockCracking').at(-1);
-    assert.ok(crack, `cracked after ${shots} shots`);
-    assert.equal(crack.ix, 24);
-    assert.ok(shots > 2, 'takes a few rounds');
+    assert.equal(b.alive, false, `still alive with ${b.health} hp after ${blasts} blasts`);
 });
 
 test('getting shot slows bots down briefly (tagging)', () => {

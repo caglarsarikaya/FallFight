@@ -75,9 +75,10 @@ export const WEAPONS = Object.freeze({
     }),
     m3: gun({
         id: 'm3', name: 'M3 Super 90', short: 'M3', kind: WEAPON_KIND.SHOTGUN,
-        rpm: 68, damage: 20, pellets: 9, rangeModifier: 0.55, armorPen: 0.5, penetration: 0,
+        rpm: 68, damage: 20, pellets: 9, rangeModifier: 0.70, armorPen: 0.5, penetration: 0,
         mag: 8, reserve: 32, reloadTime: 0.5, reloadStyle: 'shell', deploy: 0.85, moveSpeed: 0.92,
-        spread: { stand: 0.060, crouch: 0.055, move: 0.070, air: 0.09, perShot: 0, maxShot: 0, recover: 4 },
+        // Like CS, a shotgun's spread barely changes on the move
+        spread: { stand: 0.060, crouch: 0.055, move: 0.010, air: 0.030, perShot: 0, maxShot: 0, recover: 4 },
         recoil: { up: 5.5, upMax: 12, side: 0.6, sideFrom: 1, recover: 9 },
         price: 1700, killReward: 900, knockback: 2.5
     }),

@@ -50,7 +50,8 @@ for (const map of Object.values(MAPS)) {
         const y = arena.floor + 1;
         if (!arena.isSolid(0, y, 5)) return; // open maps (the lava arena) have no wall
         assert.equal(arena.startBreak(0, y, 5, 'x', 0), false);
-        assert.equal(arena.damageBlock(0, y, 5, 10000), false);
+        assert.equal(arena.hitBlock(0, y, 5), false);
+        assert.equal(arena.hitBlock(0, y, 5), false);
     });
 
     test(`${map.id}: a bots match runs and players spawn inside their zones`, () => {
