@@ -143,6 +143,20 @@ test('ammo refills every gun carried, for a price', () => {
     assert.equal(a.inventory.ammo[pistol].reserve, WEAPONS[pistol].reserve);
 });
 
+test('primary and secondary ammo refill only their own guns', () => {
+    const { room, a } = duel();
+    a.money = 5000;
+    assert.ok(room.buy(a, 'ak47').ok);
+    const pistol = a.inventory.hotbar[1];
+    a.inventory.ammo.ak47.reserve = 0;
+    a.inventory.ammo[pistol].reserve = 0;
+    assert.ok(room.buy(a, 'ammo_primary').ok);
+    assert.equal(a.inventory.ammo.ak47.reserve, WEAPONS.ak47.reserve);
+    assert.equal(a.inventory.ammo[pistol].reserve, 0, 'pistol untouched');
+    assert.ok(room.buy(a, 'ammo_secondary').ok);
+    assert.equal(a.inventory.ammo[pistol].reserve, WEAPONS[pistol].reserve);
+});
+
 test('first team to the target wins the match, then everything resets', () => {
     const { room, a, b } = duel();
     for (let round = 0; round < TEAM_BUY.roundsToWin; round++) {

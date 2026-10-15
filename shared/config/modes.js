@@ -47,7 +47,11 @@ export const ZOMBIES = Object.freeze({
     drops: { ammo: 0.35, health_potion: 0.12, armor: 0.1, weapon: 0.06 },
     dropLife: 25,
     loadout: ['usp'],       // humans start with a pistol and the knife
-    killMoney: 0
+    // The shop (B, any time): same items and prices as Team Buy
+    startMoney: 800,        // also what everyone has again on a new run
+    killMoney: 150,         // to the player who kills a zombie
+    waveBonus: 500,         // to every human when a wave is cleared
+    maxMoney: 16000
 });
 
 export const MODES = Object.freeze([
@@ -68,7 +72,7 @@ export const MODES = Object.freeze([
     },
     {
         id: 'zombies', name: 'Zombies', short: 'ZOMBIES',
-        description: 'Survive endless waves together. Zombies drop ammo, potions, armor and guns.',
+        description: 'Survive endless waves together. Zombie kills earn money: press B any time to buy guns, armor and ammo.',
         maps: ['de_dust_mini', 'fallfight_classic', 'fy_pool_day', 'fy_iceworld']
     }
 ]);

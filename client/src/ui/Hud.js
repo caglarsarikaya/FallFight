@@ -53,7 +53,7 @@ export class Hud {
         };
         this.underwater = el('div.underwater.hidden');
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C crouch · Space jump · Click fire · Right click scope/stab · R reload · 1-4 / Q / wheel weapons · B buy · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space jump · Click fire · Right click scope/stab · R reload · 1-4 / Q / wheel weapons · B buy · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
@@ -70,6 +70,10 @@ export class Hud {
         this.slots = [];
         this.inventory = null;
         this.crosshairGap = -1;
+        this.crosshairReady = true;
+        this.hitUntil = 0;
+        this.hitLength = 1;
+        this.hitOpacity = 0;
         this.setHealth(PLAYER.maxHealth);
         this.setArmor(0, false);
     }
@@ -176,9 +180,13 @@ export class Hud {
         this.slotTimer = setTimeout(() => this.slotList.classList.remove('show'), SLOT_SHOW_MS);
     }
 
-    // gap in pixels from the centre to each crosshair line
-    setCrosshair(gap, visible = true) {
+    // gap in pixels from the centre to each crosshair line; ready: the gun can shoot right now
+    setCrosshair(gap, visible = true, ready = true) {
         this.crosshair.classList.toggle('hidden', !visible);
+        if (ready !== this.crosshairReady) {
+            this.crosshairReady = ready;
+            this.crosshair.classList.toggle('busy', !ready);
+        }
         const g = Math.round(Math.min(120, gap));
         if (g === this.crosshairGap) return;
         this.crosshairGap = g;
@@ -222,10 +230,22 @@ export class Hud {
         this.protection.classList.toggle('hidden', !on);
     }
 
+    // Hit confirmation: shown at full strength, then faded by update() every frame
     hit(head = false, kill = false) {
-        this.hitmarker.classList.toggle('head', head);
-        this.hitmarker.classList.toggle('kill', kill);
-        flash(this.hitmarker, 'show', kill ? 350 : head ? 250 : 120);
+        // hm- prefix: plain 'kill' is the kill feed row class (with its own fade animation)
+        this.hitmarker.classList.toggle('hm-head', head);
+        this.hitmarker.classList.toggle('hm-kill', kill);
+        this.hitLength = kill ? 0.45 : head ? 0.32 : 0.2;
+        this.hitUntil = performance.now() / 1000 + this.hitLength;
+    }
+
+    // Per frame: fade the hit marker; always ends at 0, whatever happened in between
+    update(now = performance.now() / 1000) {
+        const left = this.hitUntil - now;
+        const opacity = left > 0 ? Math.min(0.95, (left / this.hitLength) * 1.6) : 0;
+        if (opacity === this.hitOpacity) return;
+        this.hitOpacity = opacity;
+        this.hitmarker.style.opacity = opacity.toFixed(2);
     }
 
     flash(kind) {

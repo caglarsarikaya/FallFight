@@ -51,6 +51,7 @@ export class GunView extends ItemView {
             if (o.tag) {
                 tags[o.tag] = mesh;
                 mesh.userData.rest = mesh.position.clone();
+                mesh.userData.restRotX = mesh.rotation.x;
             }
         }
         group.userData.tags = tags;
@@ -106,19 +107,10 @@ export class GunView extends ItemView {
         if (tags.bolt) tags.bolt.position.z = tags.bolt.userData.rest.z + Math.min(1, kick * 2) * 0.04;
 
         if (reload !== null) {
-            // Tilt the gun, drop the magazine, slap a new one in
-            const tilt = Math.sin(Math.min(1, reload / 0.15) * Math.PI / 2) * (1 - smooth(Math.max(0, (reload - 0.85) / 0.15)));
-            model.rotation.z += tilt * 0.55;
-            model.rotation.x += tilt * 0.25;
-            model.position.y -= tilt * 0.05;
-            if (tags.mag) {
-                const out = reload < 0.25 ? smooth((reload - 0.1) / 0.15) : reload < 0.55 ? 1 : 1 - smooth((reload - 0.55) / 0.2);
-                tags.mag.position.y = tags.mag.userData.rest.y - Math.max(0, out) * 0.25;
-                tags.mag.visible = !(reload > 0.25 && reload < 0.45);
-            }
-            if (tags.pump) tags.pump.position.z = tags.pump.userData.rest.z;
+            this.animateReload(model, tags, reload);
         } else if (tags.mag) {
             tags.mag.position.y = tags.mag.userData.rest.y;
+            tags.mag.rotation.x = tags.mag.userData.restRotX;
             tags.mag.visible = true;
         }
         if (tags.pump) {
@@ -129,6 +121,46 @@ export class GunView extends ItemView {
             tags.bolt.position.z = tags.bolt.userData.rest.z + Math.sin(bolt * Math.PI) * 0.07;
             model.rotation.z += Math.sin(bolt * Math.PI) * 0.12;
         }
+    }
+
+    // Magazine reload over progress r (0..1), in beats you can read:
+    //   0-0.15 dip and tilt the gun toward you        0.12-0.38 old mag slides out and falls away
+    //   0.45-0.68 new mag rises into the gun          0.66-0.78 slap it home (a small jolt)
+    //   0.76-0.9 rack the bolt / slide                0.85-1 back on target
+    // The clip-in sound plays at 68% and the bolt sound at 80% (WeaponController).
+    animateReload(model, tags, r) {
+        const tilt = smooth(r / 0.15) * (1 - smooth((r - 0.85) / 0.15));
+        model.rotation.z += tilt * 0.6;
+        model.rotation.x += tilt * 0.3;
+        model.position.y -= tilt * 0.06;
+        model.position.x -= tilt * 0.02;
+        const slap = r > 0.66 && r < 0.78 ? Math.sin(((r - 0.66) / 0.12) * Math.PI) : 0;
+        model.position.y += slap * 0.025;
+        model.rotation.x -= slap * 0.1;
+
+        const mag = tags.mag;
+        if (mag) {
+            const rest = mag.userData.rest;
+            const dir = rest.y > 0.1 ? 1 : -1;    // top-loaded (P90) mags come off upward
+            let offset = 0;
+            let spin = 0;
+            if (r >= 0.12 && r < 0.38) {
+                // Slides out, then drops with gravity and tumbles
+                const u = (r - 0.12) / 0.26;
+                offset = 0.04 * smooth(u / 0.3) + 0.6 * u * u;
+                spin = u * 1.4;
+            } else if (r >= 0.45 && r < 0.68) {
+                offset = (1 - smooth((r - 0.45) / 0.23)) * 0.22;
+            }
+            mag.visible = r < 0.38 || r >= 0.45;
+            mag.position.y = rest.y + dir * offset;
+            mag.rotation.x = mag.userData.restRotX + spin;
+        }
+        if (tags.bolt) {
+            const rack = r > 0.76 && r < 0.9 ? Math.sin(((r - 0.76) / 0.14) * Math.PI) : 0;
+            tags.bolt.position.z = tags.bolt.userData.rest.z + rack * 0.07;
+        }
+        if (tags.pump) tags.pump.position.z = tags.pump.userData.rest.z;
     }
 
     // Fills the whole canvas (wide icons look best for guns)

@@ -21,16 +21,16 @@ them into the lava.
 |---|---|
 | **Deathmatch** | Everyone for themselves, forever. A random rifle and pistol every life, kevlar and helmet, a health potion for every kill |
 | **Gun Game** | Everyone starts with a Glock. Every 5 kills hands you the next gun at once: Glock → USP → Deagle → MP5 → P90 → M3 → Scout → M4A1 → AK-47 → AWP. The first to finish the ladder (50 kills) wins. A knife kill takes a kill away from the victim |
-| **Team Buy** | Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day. Each round opens with a few seconds of freeze time to buy (press **B**); then wipe out the other team. Dead players wait for the next round, and survivors keep their guns. Kills, round wins and even losses pay money ($800 to start, $16000 max). First to 8 rounds wins |
-| **Zombies** | 1–4 players hold out against endless waves together. Every wave brings more, tougher and faster zombies, with runners every 5th wave. Killed zombies drop ammo, potions, kevlar and better guns. Players who fall come back when the wave is cleared; when everyone is down, the run is over. Zombies claw through walls if you hide behind them |
+| **Team Buy** | Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day (here: Pool Arena). Each round opens with a few seconds of freeze time to buy (press **B**); then wipe out the other team. Dead players wait for the next round, and survivors keep their guns. Kills, round wins and even losses pay money ($800 to start, $16000 max). First to 8 rounds wins |
+| **Zombies** | 1–4 players hold out against endless waves together. Every wave brings more, tougher and faster zombies, with runners every 5th wave. Killed zombies drop ammo, potions, kevlar and better guns, and pay $150 each (plus $500 per cleared wave): press **B** any time to buy guns, armor and ammo. Players who fall come back when the wave is cleared; when everyone is down, the run is over. Zombies claw through walls if you hide behind them |
 
 ## Maps
 
 | Map | Inspired by | |
 |---|---|---|
-| **fy_pool_day** | fy_pool_day | Two pool houses across a sunken pool. Swim (Space swims up), dive off the board, climb the stairs to snipe from the roofs. Team Buy's default |
-| **fy_iceworld** | fy_iceworld | A small snow field with an ice-walled square and crates. The rink in the middle is slippery, and it snows |
-| **de_dust_mini** | de_dust | Long, mid and short lanes, mid doors, long doors and roofed tunnels through the middle blocks |
+| **Pool Arena** | fy_pool_day | Two pool houses across a sunken pool. Swim (Space swims up), dive off the board, climb the stairs to snipe from the roofs. Team Buy's default |
+| **Ice Arena** | fy_iceworld | A small snow field with an ice-walled square and crates. The rink in the middle is slippery, and it snows |
+| **Dust Arena** | de_dust | Long, mid and short lanes, mid doors, long doors and roofed tunnels through the middle blocks |
 | **Lava Arena** | the original FallFight | Open grass over lava, a walled plaza and four sniper towers |
 
 Inside each map's outer wall, everything can be shot down or knifed through.
@@ -41,17 +41,17 @@ Inside each map's outer wall, everything can be shot down or knifed through.
 |---|---|
 | WASD | Move |
 | Shift | Walk: quiet footsteps and better accuracy |
-| C | Crouch: the most accurate stance, and a smaller target |
+| C or Ctrl | Crouch: the most accurate stance, and a smaller target. While playing, the browser asks before closing the tab, so Ctrl+W can't kick you out |
 | Space | Jump (shooting in the air is wildly inaccurate) |
 | Mouse | Look |
 | Left click | Fire (hold for automatic guns) · knife slash |
 | Right click | Scope (Scout, AWP: two zoom levels) · knife stab |
 | R | Reload |
 | 1 / 2 / 3 / 4, Q, mouse wheel | Rifle / Pistol / Knife / Health potion · Q = last weapon |
-| B | Team Buy: buy menu. Pick a category, then an item, with the number keys |
+| B | Buy menu (Team Buy, Zombies), numbered like classic CS: 1 pistols, 2 shotguns, 3 SMGs, 4 rifles, 6/7 primary/secondary ammo, 8 equipment. B 4 1 = AK-47, B 4 3 = M4A1, B 3 1 = MP5, B 8 2 = kevlar + helmet. Empty slots are guns still to come |
 | V (or F5) | Switch between first and third person |
 | Tab | Scoreboard |
-| Esc | Menu: change character or nickname, camera, sound, mouse sensitivity, graphics (LOW for slow computers: no shadows) |
+| Esc | Closes the buy menu first; otherwise opens (and closes) the game menu: change character or nickname, camera, sound, mouse sensitivity, graphics (LOW for slow computers: no shadows) |
 
 **Characters:** Robot, Squirrel, Mario, Dr Octopus, Dr Helix and Byte. They all have the same stats;
 only the looks differ. Your nickname, character and settings are remembered in the browser.
@@ -79,7 +79,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | | |
 |---|---|
 | Health and armor | 100 HP. Deathmatch and Gun Game: kevlar + helmet on spawn, respawn after 3 s with 2 s of spawn protection (attacking ends it). Team Buy: buy armor yourself, no respawn until the next round |
-| Loadout | Deathmatch: a random rifle, SMG, shotgun or sniper and a random pistol every life. Gun Game: your ladder gun. Team Buy: a pistol, then whatever you buy. Zombies: a USP, then what the zombies drop. The knife always |
+| Loadout | Deathmatch: a random rifle, SMG, shotgun or sniper and a random pistol every life. Gun Game: your ladder gun. Team Buy: a pistol, then whatever you buy. Zombies: a USP, then what the zombies drop or you buy. The knife always |
 | 🎯 Hit zones | Head ×4, body ×1, legs ×0.75. Kevlar soaks up part of every body hit (how much depends on the gun's armor penetration); only a helmet protects the head |
 | Accuracy | Standing still is accurate, crouching more so. Moving, jumping and long sprays open up the spread. Snipers are only accurate scoped and standing still. The crosshair shows your current spread |
 | Recoil | Every gun kicks in a fixed pattern (up first, then sideways): pull the mouse down to control a spray, or fire in bursts |
@@ -88,7 +88,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Getting hit | Your view flinches, you slow down for a moment, and a red arc shows where the shot came from |
 | Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
-| 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy: $200. Zombies: dropped by zombies |
+| 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy and Zombies: $200 in the buy menu. Zombies also drop them |
 | Pickups | Deathmatch: every 15 s an ammo box (a magazine for every gun you carry), every 60 s a health potion. Gun Game: ammo boxes |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
 

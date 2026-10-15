@@ -52,7 +52,15 @@ export class Game {
         this.profile = profile;
         this.sound = sound;
         this.onEditProfile = onEditProfile;
-        this.onLeave = onLeave;
+        // Ctrl crouches, and Ctrl+W (crouch + forward) would close the tab: ask first while playing
+        this.leaveGuard = e => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        this.onLeave = () => {
+            window.removeEventListener('beforeunload', this.leaveGuard);
+            onLeave();
+        };
 
         this.renderer = new THREE.WebGLRenderer({ antialias: profile.graphics !== 'low', powerPreference: 'high-performance' });
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -123,6 +131,7 @@ export class Game {
         this.stepTimer = 0;
         this.heartbeatTimer = 0;
         this.protectedUntil = 0;
+        this.buyClosedAt = -Infinity;
         this.deathCam = null;
         this.editingProfile = false;
         this.serverOffset = null;       // server time - local time, smoothed
@@ -159,6 +168,7 @@ export class Game {
     // request: {} for quick play, or { roomId, password }
     start(request = {}) {
         this.input.enabled = true;
+        window.addEventListener('beforeunload', this.leaveGuard);
         this.connection.join(this.profile, request);
         this.clickToPlay.classList.remove('hidden');
         let last = performance.now();
@@ -248,9 +258,17 @@ export class Game {
             if (locked) {
                 this.pauseMenu.hide();
                 this.clickToPlay.classList.add('hidden');
-            } else {
-                this.pause();
+                return;
             }
+            // Esc with the buy menu open only closes the buy menu (the browser frees the mouse
+            // anyway, so one click gets back in); otherwise losing the mouse opens the game menu
+            if (this.buyMenu.visible || performance.now() - this.buyClosedAt < 300) {
+                this.buyMenu.hide();
+                this.weapons.setTrigger(false);
+                this.clickToPlay.classList.remove('hidden');
+                return;
+            }
+            this.pause();
         };
         this.input.onAction = (action, value) => {
             if (!this.selfId) return;
@@ -267,18 +285,36 @@ export class Game {
                 case 'primary': return w.setTrigger(value && !!this.canAct);
                 case 'secondary': return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
-                case 'pause': return this.input.exitLock();
+                case 'pause': return this.escape();
             }
         };
+    }
+
+    // Esc, step by step: close the buy menu, else open the game menu, else close the game menu
+    escape() {
+        if (this.buyMenu.visible) {
+            this.buyMenu.hide();
+            this.buyClosedAt = performance.now();
+            return;
+        }
+        if (this.pauseMenu.visible && !this.editingProfile) {
+            this.pauseMenu.hide();
+            this.clickToPlay.classList.remove('hidden');
+            return;
+        }
+        this.input.exitLock();
     }
 
     get canAct() {
         return this.selfId && this.local.alive && this.input.locked && this.weapons.inventory && !this.pauseMenu.visible;
     }
 
+    // Team Buy: in buy time. Zombies: any time you're alive.
     get canBuy() {
+        if (!this.local.alive) return false;
+        if (this.modeId === 'zombies') return true;
         const s = this.modeState;
-        return this.modeId === 'teambuy' && this.local.alive && s && (s.phase === 'freeze' || (s.phase === 'live' && s.buyLeft > 0));
+        return this.modeId === 'teambuy' && s && (s.phase === 'freeze' || (s.phase === 'live' && s.buyLeft > 0));
     }
 
     get frozen() {
@@ -287,7 +323,7 @@ export class Game {
 
     toggleBuyMenu() {
         if (this.buyMenu.visible) return this.buyMenu.hide();
-        if (this.modeId !== 'teambuy') return;
+        if (this.modeId !== 'teambuy' && this.modeId !== 'zombies') return;
         if (!this.canBuy) {
             this.hud.toast('Buy time is over');
             return;
@@ -982,7 +1018,8 @@ export class Game {
         // Crosshair opens up with the current inaccuracy
         const halfFov = (this.camera.fov * Math.PI) / 360;
         const gap = 4 + (Math.tan(this.weapons.currentCone()) / Math.tan(halfFov)) * (window.innerHeight / 2);
-        this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1);
+        this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1, this.weapons.canFireNow);
+        this.hud.update();
 
         // Outline the block the knife would chop
         const aimBlock = this.local.alive && this.weapons.id === KNIFE.id

@@ -50,6 +50,18 @@ export class WeaponController {
         return !!this.reload;
     }
 
+    // Would a shot go off right now? (for the crosshair: grey while reloading, switching, cycling
+    // the bolt or empty). Fast automatic gaps between shots don't count, or it would flicker.
+    get canFireNow() {
+        const spec = this.spec;
+        if (!isGun(this.id)) return true;
+        const now = this.now;
+        const ammo = this.ammo;
+        if (now < this.readyAt || !ammo || ammo.mag <= 0) return false;
+        if (this.reload && !(this.reload.shell && ammo.mag > 0)) return false;
+        return spec.interval < 0.3 || now >= this.nextFireAt;
+    }
+
     // ---- server state -------------------------------------------------------------------
 
     setInventory(data) {
@@ -162,7 +174,12 @@ export class WeaponController {
         this.resumeScope = null;
         this.game.connection.send(C2S.RELOAD, {});
         this.game.sound.play(shell ? 'pump' : 'clipout');
-        if (!shell) setTimeout(() => this.reload?.id === this.id && this.game.sound.play('clipin'), first * 550);
+        if (!shell) {
+            // On the beats of the reload animation (GunView.animateReload): mag in, then the bolt
+            const still = () => this.reload?.id === this.id;
+            setTimeout(() => still() && this.game.sound.play('clipin'), first * 680);
+            if (spec.kind !== WEAPON_KIND.PISTOL) setTimeout(() => still() && this.game.sound.play('boltpull'), first * 800);
+        }
         this.game.onReload(this.id);
         return true;
     }
@@ -311,7 +328,6 @@ export class WeaponController {
                 ammo.mag += take;
                 ammo.reserve -= take;
                 this.reload = null;
-                if (s.kind !== WEAPON_KIND.PISTOL) this.game.sound.play('boltpull');
             }
             this.game.onWeaponChanged();
         }

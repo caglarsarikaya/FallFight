@@ -306,6 +306,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* Dynamic crosshair: four lines pushed out by --gap */
 .crosshair { position: absolute; left: 50%; top: 50%; --gap: 6px; --len: 9px; --thick: 2px; --ch: #5dff5d; }
 .crosshair.hidden { display: none; }
+/* Can't shoot right now (reloading, switching, bolt): grey and faint */
+.crosshair.busy { --ch: #9a9a9a; opacity: 0.55; }
 .ch { position: absolute; background: var(--ch); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); }
 .ch-t, .ch-b { width: var(--thick); height: var(--len); left: calc(var(--thick) / -2); }
 .ch-l, .ch-r { height: var(--thick); width: var(--len); top: calc(var(--thick) / -2); }
@@ -314,23 +316,23 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .ch-l { right: var(--gap); }
 .ch-r { left: var(--gap); }
 
+/* Hit confirmation X; its opacity is set every frame by Hud.update, so it always fades out */
 .hitmarker {
     position: absolute;
     left: 50%; top: 50%;
     width: 22px; height: 22px;
     transform: translate(-50%, -50%) rotate(45deg);
     opacity: 0;
-    transition: opacity 0.2s;
 }
 .hitmarker::before, .hitmarker::after { content: ''; position: absolute; background: #fff; }
 .hitmarker::before { left: 10px; top: 0; width: 2px; height: 22px; }
 .hitmarker::after { left: 0; top: 10px; width: 22px; height: 2px; }
-.hitmarker.show { opacity: 0.95; transition: none; }
-.hitmarker.head::before, .hitmarker.head::after { background: var(--gold); }
-.hitmarker.kill::before, .hitmarker.kill::after { background: var(--danger); }
-.hitmarker.kill { width: 30px; height: 30px; }
-.hitmarker.kill::before { left: 14px; width: 3px; height: 30px; }
-.hitmarker.kill::after { top: 14px; height: 3px; width: 30px; }
+.hitmarker.hm-head::before, .hitmarker.hm-head::after { background: var(--gold); }
+.hitmarker.hm-kill::before, .hitmarker.hm-kill::after { background: #fff4c8; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.hitmarker.hm-kill.hm-head::before, .hitmarker.hm-kill.hm-head::after { background: var(--gold); }
+.hitmarker.hm-kill { width: 30px; height: 30px; }
+.hitmarker.hm-kill::before { left: 14px; width: 3px; height: 30px; }
+.hitmarker.hm-kill::after { top: 14px; height: 3px; width: 30px; }
 
 /* Sniper scope: black everywhere except a circle, with thin cross hairs */
 .scope {
@@ -611,6 +613,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .buy-row .name { flex: 1; }
 .buy-row .price { color: #7fe07f; }
 .buy-row.poor { opacity: 0.4; }
+.buy-row.empty { opacity: 0.3; cursor: default; }
+.buy-row.empty:hover { border-color: transparent; }
 .buy-row.poor .price { color: #ff8a6a; }
 .buy-row canvas { width: 64px; height: 32px; }
 .buy-hint { font-size: 17px; color: var(--muted); }

@@ -26,7 +26,7 @@ const half = [
 
 export default {
     id: 'fy_iceworld',
-    name: 'fy_iceworld',
+    name: 'Ice Arena',
     description: 'Small and fast: a snow field with an ice-walled square and crates in the middle.',
     size: SIZE,
     height: 8,

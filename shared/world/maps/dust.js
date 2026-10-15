@@ -9,7 +9,7 @@ const SIZE = 48;
 // each side of the CT spawn.
 export default {
     id: 'de_dust_mini',
-    name: 'de_dust_mini',
+    name: 'Dust Arena',
     description: 'Long, mid and short lanes, doors and tunnels: a compact take on Dust.',
     size: SIZE,
     height: 8,

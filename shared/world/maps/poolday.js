@@ -29,7 +29,7 @@ const westHouse = [
 
 export default {
     id: 'fy_pool_day',
-    name: 'fy_pool_day',
+    name: 'Pool Arena',
     description: 'Two pool houses across a sunken pool: swim, dive, snipe from the roofs.',
     size: SIZE,
     height: 10,

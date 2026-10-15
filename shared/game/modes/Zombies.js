@@ -2,6 +2,7 @@ import { GUN_GAME, ZOMBIES } from '../../config/modes.js';
 import { S2C } from '../../protocol.js';
 import { FlowField } from '../../ai/FlowField.js';
 import { ZombieBrain } from '../../ai/ZombieBrain.js';
+import { buyItem } from '../Shop.js';
 import { GameMode } from './GameMode.js';
 
 const FLOW_INTERVAL = 0.5;       // seconds between flow field rebuilds
@@ -11,6 +12,7 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // Zombies: 1 to 4 players hold out against endless waves. Each wave sends more, tougher, faster
 // zombies; every few waves some are runners. Killed zombies drop ammo, potions, armor and guns.
 // Players who die come back between waves. When everyone is down, the run is over.
+// Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
 export class Zombies extends GameMode {
     get id() {
         return 'zombies';
@@ -39,6 +41,26 @@ export class Zombies extends GameMode {
         this.nextZombieId = this.nextZombieId ?? 1;
         // Clear any zombies left over from the last run
         for (const p of [...this.room.players.values()]) if (p.isZombie) this.room.removePlayer(p.id);
+    }
+
+    resetPlayer(player) {
+        super.resetPlayer(player);
+        player.money = ZOMBIES.startMoney;
+    }
+
+    onJoin(player) {
+        player.money ??= ZOMBIES.startMoney;
+        super.onJoin(player);
+    }
+
+    pay(player, amount) {
+        player.money = Math.max(0, Math.min(ZOMBIES.maxMoney, (player.money ?? 0) + amount));
+    }
+
+    // Returns { ok, error?, price }; the items are in shared/game/Shop.js
+    buy(player, item) {
+        if (!player.alive || player.isZombie || this.room.matchOver) return { ok: false, error: 'not-now' };
+        return buyItem(this.room, player, item);
     }
 
     isEnemy(a, b) {
@@ -127,10 +149,11 @@ export class Zombies extends GameMode {
         this.phase = 'break';
         this.phaseEndsAt = this.room.time + ZOMBIES.waveBreak;
         this.bestWave = Math.max(this.bestWave, this.wave);
-        // Everyone who fell comes back; survivors get topped up a little
+        // Everyone who fell comes back; survivors get topped up a little; everyone gets paid
         for (const p of this.humans) {
             if (!p.alive) this.room.respawn(p);
             else p.health = Math.min(p.maxHealth, p.health + 25);
+            this.pay(p, ZOMBIES.waveBonus);
         }
         this.dirty = true;
         this.room.emit(null, S2C.WAVE_END, { wave: this.wave, next: this.wave + 1, breakTime: ZOMBIES.waveBreak });
@@ -221,6 +244,7 @@ export class Zombies extends GameMode {
             this.kills++;
             if (killer) {
                 killer.score = killer.kills;
+                if (!killer.isZombie) this.pay(killer, ZOMBIES.killMoney);
                 this.dropLoot(victim);
             }
         }
@@ -262,7 +286,7 @@ export class Zombies extends GameMode {
     }
 
     playerJSON(player) {
-        return player.isZombie ? { isZombie: true, maxHealth: player.maxHealth } : null;
+        return player.isZombie ? { isZombie: true, maxHealth: player.maxHealth } : { money: player.money ?? 0 };
     }
 
     standings() {

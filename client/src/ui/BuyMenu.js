@@ -1,28 +1,30 @@
 import { TEAM_BUY } from '../../shared/config/modes.js';
-import { WEAPONS, WEAPON_KIND } from '../../shared/config/weapons.js';
+import { WEAPONS } from '../../shared/config/weapons.js';
 import { getItemView } from '../items/registry.js';
 import { el } from './dom.js';
 
-// The CS 1.6 buy menu: press B, pick a category with a number key, then an item with another.
-// Esc / B / 0 closes it (0 goes back from a category). Items you can't afford are greyed out;
-// the server checks everything again.
-const gunsOf = kind => Object.values(WEAPONS).filter(w => w.kind === kind).map(w => ({ id: w.id, name: w.name, price: w.price, gun: true }));
+// The buy menu, numbered like classic CS (1.5 / 1.6) so muscle memory works: B 4 1 is the AK-47,
+// B 4 3 the M4A1, B 3 1 the MP5, B 8 2 kevlar + helmet. Slots for guns we don't have yet stay
+// empty (null) so the numbers never shift. Esc / B / 0 closes it (0 goes back from a category).
+// Items you can't afford are greyed out; the server checks everything again.
+const gun = id => ({ id, name: WEAPONS[id].name, price: WEAPONS[id].price, gun: true });
 
 const CATEGORIES = [
-    { name: 'Pistols', items: () => gunsOf(WEAPON_KIND.PISTOL) },
-    { name: 'Shotguns', items: () => gunsOf(WEAPON_KIND.SHOTGUN) },
-    { name: 'SMGs', items: () => gunsOf(WEAPON_KIND.SMG) },
-    { name: 'Rifles', items: () => gunsOf(WEAPON_KIND.RIFLE) },
-    { name: 'Snipers', items: () => gunsOf(WEAPON_KIND.SNIPER) },
+    { name: 'Pistols', items: [gun('usp'), gun('glock'), gun('deagle'), null, null, null] },
+    { name: 'Shotguns', items: [gun('m3'), null] },
+    { name: 'SMGs', items: [gun('mp5'), null, gun('p90'), null, null] },
+    { name: 'Rifles', items: [gun('ak47'), null, gun('m4a1'), null, gun('scout'), gun('awp')] },
+    { name: 'Machine gun', items: [] },
+    { name: 'Primary ammo', direct: 'ammo_primary' },
+    { name: 'Secondary ammo', direct: 'ammo_secondary' },
     {
         name: 'Equipment',
-        items: () => [
+        items: [
             { id: 'kevlar', name: 'Kevlar Vest', price: TEAM_BUY.kevlar },
             { id: 'kevlar_helmet', name: 'Kevlar + Helmet', price: TEAM_BUY.kevlarHelmet },
             { id: 'health_potion', name: 'Health Potion (+20 HP)', price: TEAM_BUY.potion }
         ]
-    },
-    { name: 'Ammo for all guns', direct: 'ammo' }
+    }
 ];
 
 export class BuyMenu {
@@ -83,7 +85,7 @@ export class BuyMenu {
         }
         if (this.category === null) {
             const cat = CATEGORIES[n - 1];
-            if (!cat) return true;
+            if (!cat || (!cat.direct && !cat.items.some(Boolean))) return true;
             if (cat.direct) {
                 this.onBuy(cat.direct);
                 this.hide();
@@ -94,7 +96,7 @@ export class BuyMenu {
             }
             return true;
         }
-        const item = CATEGORIES[this.category].items()[n - 1];
+        const item = CATEGORIES[this.category].items[n - 1];
         if (item) {
             this.onBuy(item.id);
             this.hide();
@@ -106,15 +108,21 @@ export class BuyMenu {
         const money = this.money;
         if (this.category === null) {
             this.title.textContent = `BUY MENU · $${money}`;
-            this.list.replaceChildren(...CATEGORIES.map((cat, i) => el('button.buy-row', { type: 'button', onclick: () => this.key(i + 1) }, [
-                el('span.key', { text: String(i + 1) }), el('span.name', { text: cat.name })
-            ])));
+            this.list.replaceChildren(...CATEGORIES.map((cat, i) => {
+                const empty = !cat.direct && !cat.items.some(Boolean);
+                return el(`button.buy-row${empty ? '.empty' : ''}`, { type: 'button', onclick: () => this.key(i + 1) }, [
+                    el('span.key', { text: String(i + 1) }), el('span.name', { text: cat.name })
+                ]);
+            }));
             this.hint.textContent = '0 / B / Esc to close';
             return;
         }
         const cat = CATEGORIES[this.category];
         this.title.textContent = `${cat.name.toUpperCase()} · $${money}`;
-        this.list.replaceChildren(...cat.items().map((item, i) => {
+        this.list.replaceChildren(...cat.items.map((item, i) => {
+            if (!item) {
+                return el('div.buy-row.empty', {}, [el('span.key', { text: String(i + 1) }), el('span.name', { text: '—' })]);
+            }
             const icon = el('canvas', { width: 64, height: 32 });
             if (item.gun) getItemView(item.id)?.drawIcon(icon.getContext('2d'), 32);
             const poor = item.price > money;

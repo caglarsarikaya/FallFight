@@ -85,6 +85,31 @@ test('killing zombies clears the wave; the fallen come back, then the next wave 
     assert.ok(zombiesOf(room).every(z => z.alive));
 });
 
+test('zombie kills and cleared waves pay money; the shop is open any time, even mid-wave', () => {
+    const room = zombieRoom('fy_pool_day');
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    assert.equal(a.money, ZOMBIES.startMoney);
+    run(room, ZOMBIES.firstWaveDelay + 0.1);
+    assert.equal(room.mode.phase, 'wave');
+    // Mid-wave purchase
+    assert.ok(room.buy(a, 'kevlar').ok);
+    const afterKevlar = a.money;
+    let kills = 0;
+    for (let i = 0; i < 400 && room.mode.phase === 'wave'; i++) {
+        for (const z of zombiesOf(room)) {
+            if (!z.alive) continue;
+            room.kill(z, a, 'usp');
+            kills++;
+        }
+        room.tick(1 / 30);
+    }
+    assert.equal(a.money, afterKevlar + kills * ZOMBIES.killMoney + ZOMBIES.waveBonus);
+    assert.ok(room.buy(a, 'mp5').ok, 'can afford an SMG after the first wave');
+    assert.ok(a.inventory.has('mp5'));
+    // Zombies can't shop, and the snapshot shows the human's money
+    assert.equal(room.mode.playerJSON(a).money, a.money);
+});
+
 test('dead zombies drop loot that players can grab', () => {
     const room = zombieRoom('de_dust_mini', 11);
     const a = room.addPlayer({ id: 'a', name: 'A' });

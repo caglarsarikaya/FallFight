@@ -1,7 +1,8 @@
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
 // ('primary', down) ('secondary') ('reload') ('last') ('pause') ('cycle', +1/-1).
-// Crouch is C (Ctrl would make Ctrl+W close the browser tab), walk is Shift, like CS.
+// Crouch is C or Ctrl, walk is Shift, like CS. Ctrl+W can't be blocked by a web page, so the game
+// asks before the tab closes (see Game); other Ctrl shortcuts are swallowed while playing.
 export class InputManager {
     constructor(element) {
         this.element = element;
@@ -11,6 +12,7 @@ export class InputManager {
         this.enabled = false;
         this.onAction = () => {};
         this.onLockChange = () => {};
+        this.lockLostAt = -Infinity;
 
         document.addEventListener('keydown', e => this.handleKey(e, true));
         document.addEventListener('keyup', e => this.handleKey(e, false));
@@ -45,6 +47,7 @@ export class InputManager {
         document.addEventListener('pointerlockchange', () => {
             const wasLocked = this.locked;
             this.locked = document.pointerLockElement === this.element;
+            if (wasLocked && !this.locked) this.lockLostAt = performance.now();
             if (!this.locked) {
                 this.keys.clear();
                 if (this.primaryDown) {
@@ -71,6 +74,8 @@ export class InputManager {
         if (!this.enabled) return;
         const code = e.code;
         if (['Tab', 'Space', 'F5', 'ArrowUp', 'ArrowDown'].includes(code)) e.preventDefault();
+        // Crouching (Ctrl) while pressing other keys must not trigger browser shortcuts
+        if (this.locked && (e.ctrlKey || e.metaKey)) e.preventDefault();
         if (down) {
             if (e.repeat) return;
             this.keys.add(code);
@@ -80,7 +85,8 @@ export class InputManager {
             if (code === 'KeyB') this.onAction('buy');
             if (code === 'KeyQ') this.onAction('last');
             if (code === 'Tab') this.onAction('scoreboard', true);
-            if (code === 'Escape') this.onAction('pause');
+            // The Esc that just released the mouse (some browsers pass it on) isn't a second press
+            if (code === 'Escape' && performance.now() - this.lockLostAt > 250) this.onAction('pause');
         } else {
             this.keys.delete(code);
             if (code === 'Tab') this.onAction('scoreboard', false);
@@ -100,7 +106,8 @@ export class InputManager {
     }
 
     get crouch() {
-        return this.keys.has('KeyC');
+        const k = this.keys;
+        return k.has('KeyC') || k.has('ControlLeft') || k.has('ControlRight');
     }
 
     get walk() {

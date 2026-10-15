@@ -1,21 +1,11 @@
 import { TEAM_BUY } from '../../config/modes.js';
-import { KNIFE, WEAPONS, WEAPON_SLOT, isGun, weaponSpec } from '../../config/weapons.js';
+import { KNIFE, WEAPONS, WEAPON_SLOT, weaponSpec } from '../../config/weapons.js';
 import { S2C } from '../../protocol.js';
+import { buyItem } from '../Shop.js';
 import { GameMode } from './GameMode.js';
 
 const TEAMS = TEAM_BUY.teams;   // ['t', 'ct']
 const other = team => (team === 't' ? 'ct' : 't');
-
-// Prices and buy menu items that aren't guns
-export const EQUIPMENT = Object.freeze({
-    kevlar: { name: 'Kevlar Vest', price: TEAM_BUY.kevlar },
-    kevlar_helmet: { name: 'Kevlar + Helmet', price: TEAM_BUY.kevlarHelmet },
-    health_potion: { name: 'Health Potion', price: TEAM_BUY.potion },
-    ammo: { name: 'Ammo (all guns)', price: 0 }
-});
-
-// Price of refilling a gun's reserve: a magazine's worth costs about a tenth of the gun
-const ammoPrice = spec => Math.max(30, Math.round(spec.price / 25) * 10);
 
 // Team Buy: Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day.
 // Freeze time at the start of a round to buy (nobody moves), then fight until one team is wiped
@@ -226,54 +216,10 @@ export class TeamBuy extends GameMode {
         return zones.some(z => ix >= z.x0 - 3 && ix <= z.x1 + 3 && iz >= z.z0 - 3 && iz <= z.z1 + 3);
     }
 
-    // Returns { ok, error? }. item: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion' or 'ammo'
+    // Returns { ok, error?, price }; the items are in shared/game/Shop.js
     buy(player, item) {
         if (!this.canBuy(player)) return { ok: false, error: 'not-now' };
-        const inv = player.inventory;
-        let price;
-        let apply;
-        if (isGun(item)) {
-            const spec = WEAPONS[item];
-            if (inv.has(item)) return { ok: false, error: 'owned' };
-            price = spec.price;
-            apply = () => {
-                const slot = inv.give(item);
-                inv.select(slot);
-                player.gun.reload = null;
-                player.gun.scoped = 0;
-                player.gun.readyAt = this.room.time + spec.deploy;
-            };
-        } else if (item === 'kevlar') {
-            if (player.armor >= 100) return { ok: false, error: 'owned' };
-            price = TEAM_BUY.kevlar;
-            apply = () => { player.armor = 100; };
-        } else if (item === 'kevlar_helmet') {
-            if (player.armor >= 100 && player.helmet) return { ok: false, error: 'owned' };
-            // Already wearing a full vest: just the helmet
-            price = player.armor >= 100 ? TEAM_BUY.kevlarHelmet - TEAM_BUY.kevlar : TEAM_BUY.kevlarHelmet;
-            apply = () => {
-                player.armor = 100;
-                player.helmet = true;
-            };
-        } else if (item === 'health_potion') {
-            if (inv.count('health_potion') >= 2) return { ok: false, error: 'owned' };
-            price = TEAM_BUY.potion;
-            apply = () => inv.add('health_potion', 1);
-        } else if (item === 'ammo') {
-            const needs = Object.entries(inv.ammo).filter(([id, a]) => a.reserve < WEAPONS[id].reserve);
-            if (!needs.length) return { ok: false, error: 'owned' };
-            price = needs.reduce((sum, [id]) => sum + ammoPrice(WEAPONS[id]), 0);
-            apply = () => {
-                for (const [id, a] of needs) a.reserve = WEAPONS[id].reserve;
-            };
-        } else {
-            return { ok: false, error: 'unknown' };
-        }
-        if ((player.money ?? 0) < price) return { ok: false, error: 'money' };
-        player.money -= price;
-        apply();
-        this.room.notifyInventory(player);
-        return { ok: true, price };
+        return buyItem(this.room, player, item);
     }
 
     // Bots spend like CS bots: armor first, then the best gun they can afford

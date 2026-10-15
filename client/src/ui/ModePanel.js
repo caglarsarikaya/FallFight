@@ -11,7 +11,7 @@ function formatTime(seconds) {
 
 // The strip at the top centre of the screen: what the current mode is about right now.
 // Deathmatch: your kills vs the leader. Gun Game: your level, gun and progress. Team Buy: score,
-// round timer and who's alive. Zombies: wave and zombies left.
+// round timer and who's alive. Zombies: wave, zombies left and a reminder that B buys.
 export class ModePanel {
     constructor(root) {
         this.title = el('div.mode-title');
@@ -90,7 +90,7 @@ export class ModePanel {
         return {
             title: between ? `WAVE ${state.wave + 1} INCOMING` : `WAVE ${state.wave}`,
             main: between ? `${Math.ceil(state.breakLeft)}s` : `${state.left} zombie${state.left === 1 ? '' : 's'} left`,
-            sub: `Kills ${state.kills} · Best wave ${state.bestWave}${state.phase === 'lost' ? ' · Everyone is down!' : ''}`
+            sub: `Kills ${state.kills} · Best wave ${state.bestWave}${state.phase === 'lost' ? ' · Everyone is down!' : ' · B to buy'}`
         };
     }
 }
