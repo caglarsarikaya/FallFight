@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 // World-space gunfire effects, all pooled and instanced: bullet tracers, bullet holes on blocks,
-// blood pools under kills, and muzzle flashes (a sprite plus one shared light that is always in the scene, so firing
-// never changes the light count and forces a shader recompile).
+// blood pools under kills, smoke grenade clouds, and muzzle flashes (a sprite plus one shared
+// light that is always in the scene, so firing never changes the light count and forces a shader
+// recompile).
 
 const MAX_TRACERS = 64;
 const MAX_DECALS = 256;
@@ -12,6 +13,10 @@ const TRACER_LENGTH = 2.6;
 const DECAL_LIFE = 30;      // seconds before a bullet hole fades
 const MAX_BLOOD = 48;
 const BLOOD_LIFE = 20;      // seconds before a blood pool is cleared
+const SMOKE_PUFFS = 16;     // sprites per smoke cloud
+const MAX_SMOKES = 3;       // clouds at once (a fourth replaces the oldest)
+const SMOKE_GROW = 1.5;     // seconds for a cloud to billow out
+const SMOKE_FADE = 3;       // seconds it thins out at the end
 
 function radialTexture(stops, size = 64) {
     const canvas = document.createElement('canvas');
@@ -142,6 +147,23 @@ export class GunEffects {
             this.flashes.push({ sprite, life: 0 });
         }
         this.nextFlash = 0;
+        // Smoke clouds: pooled soft grey sprites, SMOKE_PUFFS per cloud
+        const smokeMap = radialTexture([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,0.75)'], [1, 'rgba(255,255,255,0)']]);
+        this.smokes = [];
+        for (let c = 0; c < MAX_SMOKES; c++) {
+            const puffs = [];
+            for (let i = 0; i < SMOKE_PUFFS; i++) {
+                const shade = 0.62 + Math.random() * 0.18;
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: smokeMap, color: new THREE.Color(shade, shade, shade * 0.97), transparent: true, depthWrite: false, opacity: 0
+                }));
+                sprite.visible = false;
+                scene.add(sprite);
+                puffs.push({ sprite, ox: 0, oy: 0, oz: 0, size: 1, drift: 0, phase: 0 });
+            }
+            this.smokes.push({ puffs, active: false, x: 0, y: 0, z: 0, radius: 0, born: 0, until: 0 });
+        }
+        this.nextSmoke = 0;
         this.light = new THREE.PointLight('#ffb050', 0, 9, 2);
         scene.add(this.light);
         this.lightLife = 0;
@@ -243,8 +265,67 @@ export class GunEffects {
         this.lightLife = 0.05;
     }
 
+    // A smoke grenade went off at `at`: a cloud of `radius` blocks for `duration` seconds
+    smokeCloud(at, radius, duration) {
+        const cloud = this.smokes[this.nextSmoke];
+        this.nextSmoke = (this.nextSmoke + 1) % MAX_SMOKES;
+        Object.assign(cloud, { active: true, x: at.x, y: at.y + radius * 0.35, z: at.z, radius, born: this.time, until: this.time + duration });
+        for (const p of cloud.puffs) {
+            // Spread through a squashed sphere, denser near the middle
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * radius * 0.75;
+            p.ox = Math.cos(a) * r;
+            p.oz = Math.sin(a) * r;
+            p.oy = (Math.random() - 0.3) * radius * 0.5;
+            p.size = radius * (0.9 + Math.random() * 0.6);
+            p.drift = 0.15 + Math.random() * 0.25;
+            p.phase = Math.random() * Math.PI * 2;
+            p.sprite.material.rotation = Math.random() * Math.PI * 2;
+            p.sprite.visible = true;
+        }
+    }
+
+    // How deep in smoke a point is: 0 outside every cloud, 1 at the heart of a thick one
+    smokeAt(pos) {
+        let best = 0;
+        for (const c of this.smokes) {
+            if (!c.active) continue;
+            const d = Math.hypot(pos.x - c.x, pos.y - c.y, pos.z - c.z) / c.radius;
+            if (d < 1) best = Math.max(best, (1 - d) * 2 * this.smokeDensity(c));
+        }
+        return Math.min(1, best);
+    }
+
+    smokeDensity(c) {
+        const age = this.time - c.born;
+        return Math.min(1, age / SMOKE_GROW, (c.until - this.time) / SMOKE_FADE);
+    }
+
+    updateSmokes() {
+        for (const c of this.smokes) {
+            if (!c.active) continue;
+            if (this.time >= c.until) {
+                c.active = false;
+                for (const p of c.puffs) p.sprite.visible = false;
+                continue;
+            }
+            const density = this.smokeDensity(c);
+            const grow = 0.35 + 0.65 * Math.min(1, (this.time - c.born) / SMOKE_GROW);
+            for (const p of c.puffs) {
+                const t = this.time + p.phase;
+                p.sprite.position.set(
+                    c.x + p.ox * grow + Math.sin(t * p.drift) * 0.3,
+                    c.y + p.oy * grow + Math.sin(t * p.drift * 0.7) * 0.15,
+                    c.z + p.oz * grow + Math.cos(t * p.drift) * 0.3);
+                p.sprite.scale.setScalar(p.size * grow);
+                p.sprite.material.opacity = 0.82 * density;
+            }
+        }
+    }
+
     update(dt) {
         this.time += dt;
+        this.updateSmokes();
         let n = 0;
         const d = this.dummy;
         for (const t of this.tracers) {

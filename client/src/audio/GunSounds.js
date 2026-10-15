@@ -16,6 +16,7 @@ const SHOTS = {
     ak47: { crack: 3800, body: 1700, bodyLen: 0.14, boom: 100, boomLen: 0.16, tail: 0.8, gain: 0.75 },
     m4a1: { crack: 4600, body: 2200, bodyLen: 0.11, boom: 118, boomLen: 0.12, tail: 0.6, gain: 0.68 },
     scout: { crack: 5000, body: 2000, bodyLen: 0.15, boom: 105, boomLen: 0.16, tail: 1.0, gain: 0.8 },
+    m249: { crack: 3500, body: 1500, bodyLen: 0.15, boom: 92, boomLen: 0.17, tail: 0.85, gain: 0.78 },
     awp: { crack: 3000, body: 1150, bodyLen: 0.36, boom: 58, boomLen: 0.42, tail: 1.6, gain: 1.0 }
 };
 
@@ -164,6 +165,21 @@ export const GUN_PATCHES = {
         s.tone({ out, type: 'sine', freq: 85 * p, freqEnd: 28, duration: 0.9, gain: 1.1 });
         s.tone({ out, type: 'triangle', freq: 48 * p, freqEnd: 22, duration: 1.3, gain: 0.7 });
         s.noise({ out, delay: 0.08, duration: 2.2, type: 'lowpass', freq: 650, freqEnd: 70, gain: 0.5 });
+    },
+    // Grenades: the pin coming out, the throw, a clink on every bounce, the hiss of a smoke going off
+    pin: (s, out, p) => {
+        click(s, out, { freq: 3400 * p, gain: 0.3, q: 9 });
+        s.tone({ out, delay: 0.02, type: 'sine', freq: 5200 * p, freqEnd: 4600, duration: 0.08, gain: 0.05 });
+    },
+    throw: (s, out, p) => s.noise({ out, duration: 0.22, type: 'bandpass', freq: 600 * p, freqEnd: 1800 * p, q: 1.2, gain: 0.3 }),
+    grenadeBounce: (s, out, p) => {
+        click(s, out, { freq: 1300 * p, gain: 0.4, q: 4 });
+        s.tone({ out, type: 'triangle', freq: 900 * p, freqEnd: 600, duration: 0.05, gain: 0.08 });
+    },
+    smokePop: (s, out, p) => {
+        click(s, out, { freq: 1500 * p, gain: 0.4 });
+        s.noise({ out, delay: 0.03, duration: 2.4, type: 'highpass', freq: 2600 * p, freqEnd: 1400, gain: 0.32 });
+        s.noise({ out, delay: 0.03, duration: 1.8, type: 'lowpass', freq: 900, freqEnd: 300, gain: 0.2 });
     },
     // The RPG appeared somewhere: a rising two-tone alarm everyone hears
     rpgSpawn: (s, out) => {

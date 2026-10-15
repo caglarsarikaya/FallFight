@@ -7,6 +7,7 @@ import { directionFromAngles, normalize } from '../shared/math.js';
 import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
 import { blockProps } from '../shared/world/blocks.js';
 import { hitTest } from '../shared/game/BodyZones.js';
+import { getItem } from '../shared/items/ItemRegistry.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { GunEffects } from './effects/GunEffects.js';
@@ -45,6 +46,14 @@ const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
 const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth'];
 const SPECTATE_DELAY = 2;   // seconds of the death cam before following a teammate
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
+const REBUY_NAMES = { ammo: 'ammo', kevlar_helmet: 'kevlar + helmet', kevlar: 'kevlar', health_potion: 'potion', hegrenade: 'HE', smokegrenade: 'smoke' };
+
+// ['ammo', 'kevlar', 'health_potion', 'health_potion'] -> "ammo, kevlar, 2 potions"
+function rebuyText(bought = []) {
+    const counts = new Map();
+    for (const item of bought) counts.set(item, (counts.get(item) || 0) + 1);
+    return [...counts].map(([item, n]) => n > 1 ? `${n} ${REBUY_NAMES[item]}s` : REBUY_NAMES[item] || item).join(', ');
+}
 
 // Client game: renders the arena, predicts the local player and its gunfire, sends inputs and
 // reacts to the authoritative room's events. Works the same with a LocalConnection or an
@@ -289,6 +298,7 @@ export class Game {
             if (action === 'slot' && this.buyMenu.visible) return this.buyMenu.key(value + 1);
             switch (action) {
                 case 'buy': return this.toggleBuyMenu();
+                case 'rebuy': return this.rebuy();
                 case 'slot': return this.local.alive && w.select(value);
                 case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.spectating ? this.toggleSpectateView() : this.toggleCamera();
@@ -346,13 +356,27 @@ export class Game {
 
     toggleBuyMenu() {
         if (this.buyMenu.visible) return this.buyMenu.hide();
-        if (this.modeId !== 'teambuy' && this.modeId !== 'zombies' && this.modeId !== 'ffa') return;
+        if (!this.hasShop) return;
         if (!this.canBuy) {
             this.hud.toast('Buy time is over');
             return;
         }
         const free = this.modeId === 'ffa';
         this.buyMenu.show(this.self?.money ?? 0, this.self?.team, { free, randomGuns: free ? this.profile.randomGuns : null });
+    }
+
+    // F3: ammo, armor, potions and grenades in one go (the server buys what the money allows)
+    rebuy() {
+        if (!this.hasShop) return;
+        if (!this.canBuy) {
+            this.hud.toast(this.local.alive ? 'Buy time is over' : 'You can buy once you are back');
+            return;
+        }
+        this.connection.send(C2S.BUY, { item: 'rebuy' });
+    }
+
+    get hasShop() {
+        return this.modeId === 'teambuy' || this.modeId === 'zombies' || this.modeId === 'ffa';
     }
 
     // Deathmatch: random guns every life, or keep the ones picked in the buy menu
@@ -386,6 +410,21 @@ export class Game {
         this.sound.play('drink');
     }
 
+    // Click with a grenade out: throw it, then back to the gun we had before (the server switches too)
+    throwGrenade(id) {
+        const now = performance.now();
+        const w = this.weapons;
+        const inv = w.inventory;
+        if (now < this.nextUseAt || now / 1000 < w.readyAt || !(inv.counts[id] > 0)) return;
+        this.nextUseAt = now + 800;
+        this.connection.send(C2S.USE, { slot: inv.selected, dir: this.aimDirection() });
+        this.viewModel.play('throw');
+        this.self?.avatar.playAction('throw');
+        this.sound.play('pin');
+        setTimeout(() => this.sound.play('throw'), 180);
+        if (inv.counts[id] === 1) setTimeout(() => w.inventory?.hotbar[w.inventory.selected] === id && w.selectLast(), 450);
+    }
+
     // Where the crosshair points, as a direction from the player's eye
     aimDirection() {
         const punch = this.weapons.punch;
@@ -404,7 +443,7 @@ export class Game {
         const w = this.weapons;
         if (!w.inventory) return;
         this.hud.setInventory(w.inventory);
-        this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : ''), w.reloading);
+        this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || getItem(w.id)?.name || '', w.reloading);
         this.viewModel.setItem(w.id);
         this.self?.avatar.setHeldItem(w.id);
     }
@@ -547,6 +586,14 @@ export class Game {
         this.sound.play(IMPACT_SOUND[blockProps(kind).surface] || 'impactStone', { at: point, range: 40, volume: 0.8 });
     }
 
+    // A rocket or a grenade; grenades bounce off our arena and clink as they go
+    addProjectile(data) {
+        this.projectiles.set(data.id, new ProjectileView(this.scene, data, {
+            arena: this.arena,
+            onBounce: at => this.sound.play('grenadeBounce', { at: { x: at.x, y: at.y, z: at.z }, range: 35 })
+        }));
+    }
+
     // ---- network ----------------------------------------------------------------------------
 
     get self() {
@@ -594,6 +641,7 @@ export class Game {
             else if (action === 'swing') this.sound.play('knifeSlash', { at });
             if (action === 'stab') this.sound.play('knifeStab', { at });
             if (action === 'drink') this.sound.play('drink', { at });
+            if (action === 'throw') this.sound.play('throw', { at, range: 30 });
             if (action === 'reload') this.sound.play(weaponSpec(item)?.reloadStyle === 'shell' ? 'pump' : 'clipout', { at, range: 25 });
         });
         on(S2C.SHOT, this.onShot);
@@ -613,7 +661,7 @@ export class Game {
             this.sound.play('restore', { at: this.arena.blockCenter(ix, iy, iz), volume: 0.6 });
         });
         on(S2C.PROJECTILE, data => {
-            this.projectiles.set(data.id, new ProjectileView(this.scene, data));
+            this.addProjectile(data);
             if (data.itemId === 'rpg' && data.ownerId !== this.selfId) {
                 const at = { x: data.x, y: data.y, z: data.z };
                 this.sound.playShot('rpg', at);
@@ -624,6 +672,11 @@ export class Game {
             const view = this.projectiles.get(data.id);
             if (view) view.end(data);
             if (data.explode) this.explosion({ x: data.x, y: data.y, z: data.z }, data.explode);
+            if (data.smoke) {
+                const at = { x: data.x, y: data.y, z: data.z };
+                this.effects.smokeCloud(at, data.smoke.radius, data.smoke.duration);
+                this.sound.play('smokePop', { at, range: 60 });
+            }
         });
         on(S2C.KNOCKBACK, ({ id, knockback }) => {
             if (id === this.selfId && this.local.alive) this.local.applyKnockback(knockback);
@@ -679,15 +732,22 @@ export class Game {
             this.sound.play(winner && winner === this.self?.team ? 'win' : 'lose');
             this.buyMenu.hide();
         });
-        on(S2C.BUY_RESULT, ({ ok, item, error }) => {
+        on(S2C.BUY_RESULT, ({ ok, item, error, bought }) => {
+            if (ok && item === 'rebuy') {
+                this.sound.play('ammoPickup');
+                this.hud.toast(`Bought: ${rebuyText(bought)}`);
+                return;
+            }
             // Deathmatch: picking a gun turns random guns off (the server did the same)
             if (ok && this.modeId === 'ffa' && isGun(item) && this.profile.randomGuns) this.setRandomGuns(false, true);
             if (ok) {
-                this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item === 'ammo' ? 'ammoPickup' : item === 'health_potion' ? 'pickup' : 'deploy');
+                this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item.startsWith('ammo') ? 'ammoPickup'
+                    : item === 'health_potion' || item.endsWith('grenade') ? 'pickup' : 'deploy');
                 return;
             }
             this.sound.play('empty');
-            this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? 'You already have that'
+            const owned = item === 'rebuy' ? 'Already fully stocked' : 'You already have that';
+            this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? owned
                 : error === 'not-now' ? 'Buy in your base during buy time' : 'Can\'t buy that');
         });
         on(S2C.LEVEL_UP, ({ id, level, weapon }) => {
@@ -746,7 +806,7 @@ export class Game {
         this.weapons.resetLife();
         this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
         for (const pickup of data.pickups) this.pickups.set(pickup.id, new PickupView(this.scene, pickup));
-        for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
+        for (const projectile of data.projectiles) this.addProjectile(projectile);
         if (this.modeId === 'ffa') this.connection.send(C2S.PREFS, { randomGuns: this.profile.randomGuns });
     }
 
@@ -1091,6 +1151,7 @@ export class Game {
         }
         const eye = this.local.eye;
         this.hud.setUnderwater(this.arena.isWaterAt(eye.x, eye.y, eye.z));
+        this.hud.setSmoke(this.effects.smokeAt(this.camera.position));
 
         // Send our state ~20 times a second
         this.sendTimer -= dt;

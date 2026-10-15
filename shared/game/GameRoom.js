@@ -44,6 +44,7 @@ export class GameRoom {
         this.bots = new Map();          // id -> BotBrain (seat bots)
         this.npcs = new Map();          // id -> brain (monsters a mode brings, e.g. zombies)
         this.projectiles = new Map();
+        this.smokes = [];               // smoke grenade clouds: { x, y, z, radius, until }
         this.mode = createMode(mode, this);
         this.pickups = new PickupSpawner(rng, this.mode.pickupTypes);
         this.lagComp = new LagComp();
@@ -114,7 +115,7 @@ export class GameRoom {
     // A computer-controlled creature that isn't a seat bot (zombies). setup(player) customises it.
     addNpc({ id, name, characterId, setup = () => {} }) {
         const player = new PlayerState({ id, name, characterId, isBot: true });
-        player.inventory.hotbar = [null, null, null, null, null];
+        player.inventory.hotbar = [null, null, null, null, null, null, null];
         player.inventory.selected = 0;
         setup(player);
         this.players.set(id, player);
@@ -395,6 +396,7 @@ export class GameRoom {
         }
         if (ZONE_RANK[zone] > ZONE_RANK[entry.zone]) entry.zone = zone;
         if (victim.isProtected(this.time) || !this.mode.canDamage(shooter, victim)) return;
+        raw *= shooter.damageScale ?? 1;   // zombie gunners hit softer than people
         const covered = victim.armor > 0 && zone !== 'legs' && (zone !== 'head' || victim.helmet);
         if (!covered) {
             entry.health += raw;
@@ -537,6 +539,25 @@ export class GameRoom {
         }
     }
 
+    // A smoke grenade went off: a cloud for `duration` seconds
+    popSmoke(at, { radius, duration }) {
+        this.smokes.push({ x: at.x, y: at.y + radius * 0.35, z: at.z, radius, until: this.time + duration });
+    }
+
+    // Does any smoke cloud cover the segment from `from` to from + delta? (bots can't see through)
+    smokeBlocks(from, delta) {
+        if (!this.smokes.length) return false;
+        const len2 = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z || 1;
+        for (const s of this.smokes) {
+            const t = Math.max(0, Math.min(1, ((s.x - from.x) * delta.x + (s.y - from.y) * delta.y + (s.z - from.z) * delta.z) / len2));
+            const dx = from.x + delta.x * t - s.x;
+            const dy = from.y + delta.y * t - s.y;
+            const dz = from.z + delta.z * t - s.z;
+            if (dx * dx + dy * dy + dz * dz < s.radius * s.radius) return true;
+        }
+        return false;
+    }
+
     spawnProjectile(owner, item, origin, velocity, extra = {}) {
         const speed = Math.hypot(velocity.x, velocity.y, velocity.z) || 1;
         const projectile = new Projectile({
@@ -612,6 +633,7 @@ export class GameRoom {
         this.matchOver = null;
         this.rpgTimer = RPG.firstDelay;
         this.rpgOut = false;
+        this.smokes.length = 0;
         for (const pickup of this.pickups.removeType('rpg')) this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         this.mode.reset();
         for (const player of this.players.values()) this.mode.resetPlayer(player);
@@ -728,6 +750,7 @@ export class GameRoom {
             this.afterMove(npc);
         }
         this.updateReloads();
+        if (this.smokes.length && this.smokes[0].until <= this.time) this.smokes = this.smokes.filter(s => s.until > this.time);
 
         for (const projectile of this.projectiles.values()) {
             const hit = projectile.step(dt, this, this.time);
@@ -735,7 +758,10 @@ export class GameRoom {
             this.projectiles.delete(projectile.id);
             const weapon = getItem(projectile.itemId);
             const explode = weapon?.blast && projectile.y > ARENA.voidY;
-            if (explode) {
+            const smoke = weapon?.smoke && hit.type === 'fuse' ? weapon.smoke : null;
+            if (smoke) {
+                this.popSmoke(projectile, smoke);
+            } else if (explode) {
                 this.explode(projectile, weapon, this.players.get(projectile.ownerId) || null);
             } else if (hit.type === 'player' && weapon?.damageFor) {
                 const owner = this.players.get(projectile.ownerId) || null;
@@ -750,7 +776,8 @@ export class GameRoom {
                 hitId: hit.type === 'player' ? hit.player.id : null,
                 zone: hit.zone ?? null,
                 stuck: hit.type === 'block' && !explode,
-                explode: explode ? weapon.blast.radius : 0
+                explode: explode ? weapon.blast.radius : 0,
+                smoke
             });
         }
 

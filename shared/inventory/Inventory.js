@@ -1,10 +1,11 @@
 import { WEAPON_SLOT, isGun, weaponSpec } from '../config/weapons.js';
 import { getItem } from '../items/ItemRegistry.js';
 
-const SLOT_COUNT = 5;
+const SLOT_COUNT = 7;
 
-// CS-style slots: 1 primary gun, 2 pistol, 3 knife, 4 health potion, 5 special (the map's RPG). Each gun carried has its own
-// ammo (rounds in the magazine + reserve); consumables are counted in `counts`.
+// CS-style slots: 1 primary gun, 2 pistol, 3 knife, 4 health potion, 5 special (the map's RPG),
+// 6 HE grenade, 7 smoke grenade. Each gun carried has its own ammo (rounds in the magazine +
+// reserve); consumables (potions, grenades) are counted in `counts`.
 export class Inventory {
     // loadout: { weapons: [gunId], counts: { health_potion } }
     constructor(loadout = {}) {
@@ -12,9 +13,9 @@ export class Inventory {
     }
 
     reset({ weapons = [], counts = {} } = {}) {
-        this.hotbar = [null, null, 'knife', 'health_potion', null];
+        this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade'];
         this.ammo = {};
-        this.counts = { health_potion: 0, ...counts };
+        this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, ...counts };
         for (const id of weapons) this.give(id);
         this.selected = this.bestSlot();
     }

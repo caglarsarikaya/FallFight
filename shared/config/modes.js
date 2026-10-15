@@ -44,6 +44,14 @@ export const ZOMBIES = Object.freeze({
     giantEvery: 5,          // wave 5: 1 giant on top of the usual zombies, wave 10: 2, wave 15: 3...
     // A giant, relative to that wave's normal zombie: bigger (hitbox too), tougher, slower, harder hitting
     giant: { scale: 1.6, health: 10, speed: 0.7, damage: 2.2, reach: 2.2, killMoney: 1000 },
+    // A few zombies carry a gun, so nobody is safe on a tower with the stairs shot away. From
+    // fromWave on, `chance` of the normal zombies are gunners; better guns come in as the waves go
+    // on (wave n picks from the first n + 1 guns). They hit softer (damageScale), only shoot within
+    // range, aim badly and never run out of ammo. Their gun is dropped when they die.
+    gunner: {
+        chance: 0.05, fromWave: 2, guns: ['glock', 'usp', 'mp5', 'ak47', 'm4a1'],
+        damageScale: 0.5, range: 30, reaction: [0.6, 1.0], aimError: 0.06, burst: [2, 5], burstPause: [0.8, 1.6]
+    },
     knockback: 0.3,         // how much a bullet's shove moves a zombie (giants: none)
     damage: 20,
     attackInterval: 0.9,

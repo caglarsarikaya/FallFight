@@ -15,7 +15,7 @@ export const BOT_SETTINGS = {
     burst: [3, 7],               // rounds per burst with automatic guns
     burstPause: [0.25, 0.6],
     tapDelay: [0.08, 0.3],       // extra delay between semi-auto shots
-    effectiveRange: { pistol: 45, smg: 20, shotgun: 11, rifle: 48, sniper: 70, launcher: 30, knife: 2 },
+    effectiveRange: { pistol: 45, smg: 20, shotgun: 11, rifle: 48, mg: 40, sniper: 70, launcher: 30, knife: 2 },
     rpgMinRange: 5,              // never fire the RPG at anyone closer (the blast would get us too)
     rpgValue: 120,               // how much the RPG on a tower top is worth the trip
     trapChance: 0.3,             // knife the block under a close target instead of stabbing it
@@ -327,7 +327,7 @@ export class BotBrain {
         const eye = this.player.eye;
         const to = { x: target.x - eye.x, y: target.y + 1.2 - eye.y, z: target.z - eye.z };
         const dist = Math.hypot(to.x, to.y, to.z);
-        return !this.arena.raycast(eye, normalize(to), dist);
+        return !this.arena.raycast(eye, normalize(to), dist) && !this.room.smokeBlocks(eye, to);
     }
 
     // React to the block under its feet cracking by jumping to a safe neighbour

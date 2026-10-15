@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { PROJECTILE } from '../../shared/constants.js';
+import { stepBouncing } from '../../shared/game/Projectile.js';
+import { getItemView } from '../items/registry.js';
 
 const STUCK_TIME = 4;
 
@@ -17,16 +19,28 @@ const ROCKET = (() => {
     });
 })();
 
-// A flying projectile (rockets, future grenades), replayed locally from its spawn velocity with
-// the same gravity as the server
+// A flying projectile (rockets, grenades), replayed locally from its spawn velocity with the
+// same gravity as the server. Grenades bounce off our copy of the arena with the server's own
+// step (shared/game/Projectile.js), tumbling as they go; onBounce(position) plays the clink.
 export class ProjectileView {
-    constructor(scene, data) {
+    constructor(scene, data, { arena = null, onBounce = null } = {}) {
         this.scene = scene;
         this.itemId = data.itemId;
         this.position = new THREE.Vector3(data.x, data.y, data.z);
         this.velocity = new THREE.Vector3(data.vx, data.vy, data.vz);
+        this.gravity = data.gravity ?? PROJECTILE.gravity;
         this.group = new THREE.Group();
-        if (data.itemId === 'rpg') this.buildRocket();
+        if (data.bounce > 0 && arena) {
+            // Plain numbers for the shared step; copied into the mesh every frame
+            this.body = { x: data.x, y: data.y, z: data.z, vx: data.vx, vy: data.vy, vz: data.vz, gravity: this.gravity, bounce: data.bounce, resting: false };
+            this.arena = arena;
+            this.onBounce = onBounce;
+            const model = getItemView(data.itemId)?.createModel();
+            if (model) {
+                model.position.y = -0.08;
+                this.group.add(model);
+            }
+        } else if (data.itemId === 'rpg') this.buildRocket();
         else this.group.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.2), new THREE.MeshLambertMaterial({ color: '#3d4045' })));
         this.group.position.copy(this.position);
         scene.add(this.group);
@@ -77,11 +91,28 @@ export class ProjectileView {
             }
             return true;
         }
-        this.velocity.y -= PROJECTILE.gravity * dt;
+        if (this.body) return this.updateBouncing(dt);
+        this.velocity.y -= this.gravity * dt;
         this.position.addScaledVector(this.velocity, dt);
         this.group.position.copy(this.position);
         this.orient();
         if (this.position.y < -40) {
+            this.dispose();
+            return false;
+        }
+        return true;
+    }
+
+    updateBouncing(dt) {
+        const b = this.body;
+        const hitSpeed = Math.hypot(b.vx, b.vy, b.vz);
+        if (stepBouncing(b, dt, this.arena) && hitSpeed > 2) this.onBounce?.(b);
+        this.group.position.set(b.x, b.y, b.z);
+        if (!b.resting) {
+            this.group.rotation.x += dt * 9;
+            this.group.rotation.z += dt * 5;
+        }
+        if (b.y < -40) {
             this.dispose();
             return false;
         }

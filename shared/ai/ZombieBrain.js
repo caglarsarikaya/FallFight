@@ -1,5 +1,6 @@
 import { PLAYER } from '../constants.js';
 import { normalize, yawTowards } from '../math.js';
+import { weaponSpec } from '../config/weapons.js';
 import { MAX_DROP } from '../world/Arena.js';
 
 const STUCK_TIME = 1.5;       // seconds without progress before it starts tearing through blocks
@@ -8,12 +9,15 @@ const BREAK_REACH = 1.6;
 const LOOK_AHEAD = PLAYER.radius + 0.35;   // how far ahead the ground is checked
 
 const idle = () => ({ moveX: 0, moveZ: 0, jump: false, speedMul: 0 });
+const rand = (rng, [min, max]) => min + rng() * (max - min);
 
 // A zombie: follow the shared flow field to the nearest human, claw them when in reach, and
 // claw through blocks when stuck. Never walks off into a hole: every move is checked against the
 // ground just ahead. Cheap on purpose: dozens of these run at once.
+// A gunner (gunner: ZOMBIES.gunner) also shoots at its target whenever it can see it in range,
+// in short badly aimed bursts, while it keeps walking at them.
 export class ZombieBrain {
-    constructor(mode, player, { speed, damage, attackInterval, reach }) {
+    constructor(mode, player, { speed, damage, attackInterval, reach, gunner = null }) {
         this.mode = mode;
         this.room = mode.room;
         this.player = player;
@@ -25,6 +29,12 @@ export class ZombieBrain {
         this.lastProgressAt = this.room.time;
         this.lastDistance = Infinity;
         this.nextBreakAt = 0;
+        this.gunner = gunner;
+        this.seenId = null;
+        this.nextShotAt = 0;
+        this.burstLeft = 0;
+        this.aimOffset = { yaw: 0, pitch: 0 };
+        this.seq = 0;
     }
 
     update() {
@@ -39,6 +49,7 @@ export class ZombieBrain {
         const dist = Math.hypot(dx, dz);
         const dy = target.y - z.y;
         z.yaw = yawTowards(dx, dz);
+        if (this.gunner) this.shoot(target);
 
         // In reach: claw
         if (dist <= this.reach && Math.abs(dy) < 1.6) {
@@ -85,6 +96,48 @@ export class ZombieBrain {
         const md = Math.hypot(mx, mz);
         if (md < 0.08) return idle();
         return { moveX: mx / md, moveZ: mz / md, jump: false, speedMul: speedMul * Math.min(1, md * 3) };
+    }
+
+    // Gunners: fire at the target if it's in range and in sight (not behind blocks or smoke)
+    shoot(target) {
+        const z = this.player;
+        const room = this.room;
+        const g = this.gunner;
+        const now = room.time;
+        const eye = z.eye;
+        const to = { x: target.x - eye.x, y: target.y + 1.15 - eye.y, z: target.z - eye.z };
+        const dist = Math.hypot(to.x, to.y, to.z);
+        if (dist > g.range || room.arena.raycast(eye, normalize(to), dist) || room.smokeBlocks(eye, to)) {
+            this.seenId = null;
+            return;
+        }
+        if (this.seenId !== target.id) {
+            this.seenId = target.id;
+            this.nextShotAt = Math.max(this.nextShotAt, now + rand(room.rng, g.reaction));
+            this.burstLeft = 0;
+        }
+        const id = z.inventory.selectedId;
+        const spec = weaponSpec(id);
+        const ammo = z.inventory.ammo[id];
+        if (!spec || !ammo || now < this.nextShotAt || z.gun.reload) return;
+        ammo.reserve = spec.reserve;   // never runs dry
+        if (ammo.mag === 0) {
+            room.reload(z);
+            return;
+        }
+        if (this.burstLeft <= 0) {
+            const e = g.aimError;
+            this.aimOffset.yaw = (room.rng() + room.rng() - 1) * e;
+            this.aimOffset.pitch = (room.rng() + room.rng() - 1) * e * 0.7;
+            this.burstLeft = spec.auto ? Math.round(rand(room.rng, g.burst)) : 1;
+        }
+        const yaw = Math.atan2(-to.x, -to.z) + this.aimOffset.yaw;
+        const pitch = Math.asin(Math.max(-1, Math.min(1, to.y / (dist || 1)))) + this.aimOffset.pitch;
+        z.pitch = pitch;
+        const dir = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+        if (!room.fire(z, { slot: z.inventory.selected, seq: ++this.seq, dir, t: now })) return;
+        this.burstLeft--;
+        if (this.burstLeft <= 0) this.nextShotAt = now + (spec.auto ? rand(room.rng, g.burstPause) : spec.interval + rand(room.rng, g.burstPause) * 0.5);
     }
 
     // Is there ground (or a wall) just ahead in direction (nx, nz)? Checks straight ahead and both

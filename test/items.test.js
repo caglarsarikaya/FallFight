@@ -17,12 +17,12 @@ test('item hierarchy: every gun in the table is registered', () => {
     assert.ok(getItem('ak47') instanceof Weapon && getItem('ak47') instanceof Item);
     assert.ok(getItem('health_potion') instanceof Consumable);
     assert.throws(() => registerItem(getItem('knife')), /already registered/);
-    assert.equal(GUN_IDS.length, 11);
+    assert.equal(GUN_IDS.length, 12);
 });
 
 test('inventory: CS slots, guns replace guns of the same slot, ammo per gun', () => {
     const inv = new Inventory({ weapons: ['ak47', 'usp'] });
-    assert.deepEqual(inv.hotbar, ['ak47', 'usp', 'knife', 'health_potion', null]);
+    assert.deepEqual(inv.hotbar, ['ak47', 'usp', 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade']);
     assert.equal(inv.selectedId, 'ak47');
     assert.deepEqual(inv.ammo.ak47, { mag: 30, reserve: 90 });
 
@@ -37,7 +37,7 @@ test('inventory: CS slots, guns replace guns of the same slot, ammo per gun', ()
     assert.ok(!inv.select(7));
 
     const empty = new Inventory();
-    assert.deepEqual(empty.hotbar, [null, null, 'knife', 'health_potion', null]);
+    assert.deepEqual(empty.hotbar, [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade']);
     assert.equal(empty.selectedId, 'knife');
     assert.ok(!empty.select(0), 'no primary to select');
 });

@@ -155,7 +155,7 @@ export class CharacterModel {
     // ---- animation -------------------------------------------------------------------
 
     playAction(name) {
-        const durations = { swing: 0.35, stab: 0.5, shoot: 0.14, drink: 0.6, reload: 1.4 };
+        const durations = { swing: 0.35, stab: 0.5, shoot: 0.14, drink: 0.6, reload: 1.4, throw: 0.45 };
         this.action = { name, t: 0, duration: durations[name] || 0.3 };
     }
 
@@ -230,6 +230,11 @@ export class CharacterModel {
                 const reach = Math.sin(Math.min(1, t * 1.2) * Math.PI);
                 this.rightArm.rotation.set(Math.PI / 2 + pitch - 0.5 * reach, 0, 0.06 + 0.3 * reach);
                 this.leftArm.rotation.set(Math.PI / 2 + pitch - 0.12 - 1.1 * reach, 0.5, 0);
+            } else if (this.action.name === 'throw') {
+                // Overhand: arm back over the shoulder, then forward
+                const arc = t < 0.4 ? -easeOut(t / 0.4) * 0.6 : -0.6 + easeOut((t - 0.4) / 0.6) * 2.6;
+                this.rightArm.rotation.set(2.4 + arc, 0, 0.1);
+                this.body.rotation.y = -Math.sin(t * Math.PI) * 0.2;
             } else if (this.action.name === 'drink') {
                 this.rightArm.rotation.set(2.3, 0, 0.6);
                 this.head.rotation.x = 0.45 * Math.sin(t * Math.PI);

@@ -404,28 +404,39 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .ammo-box.reloading .cs-stat.ammo { animation: pulse 0.4s infinite; }
 .ammo-box.reloading .weapon-name::after { content: ' · RELOADING'; color: #fff; }
 
-/* Weapon slots: shown for a moment after switching, like CS */
+/* Weapon bar: everything carried, bottom centre, always on */
 .slots {
-    position: absolute; right: 22px; top: 50%;
-    transform: translateY(-50%);
-    display: flex; flex-direction: column; gap: 6px;
-    opacity: 0; transition: opacity 0.6s;
+    position: absolute; left: 50%; bottom: 12px;
+    transform: translateX(-50%);
+    display: flex; gap: 4px;
+    pointer-events: none;
 }
-.slots.show { opacity: 1; transition: opacity 0.1s; }
 .slot {
     position: relative;
-    width: 150px; height: 44px;
+    width: 76px; height: 64px;
     background: rgba(0, 0, 0, 0.45);
-    border: 2px solid rgba(255, 179, 58, 0.25);
-    display: flex; align-items: center; gap: 8px; padding: 0 8px;
+    border: 2px solid rgba(255, 179, 58, 0.22);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
 }
-.slot.selected { border-color: #ffb33a; background: rgba(40, 24, 0, 0.6); }
+.slot.selected { border-color: #ffb33a; background: rgba(40, 24, 0, 0.62); }
 .slot.empty { opacity: 0.35; }
-.slot canvas { width: 64px; height: 32px; opacity: 0.85; }
+.slot canvas { width: 56px; height: 28px; opacity: 0.85; }
 .slot.selected canvas { opacity: 1; filter: sepia(1) saturate(4) hue-rotate(-10deg); }
-.slot .key { font-family: var(--font); font-size: 16px; color: #ffcf7a; }
-.slot .name { font-family: var(--font); font-size: 13px; color: #ddd; }
-.slot .count { position: absolute; right: 6px; bottom: 3px; font-family: var(--font); font-size: 16px; color: #fff; }
+.slot .key { position: absolute; left: 4px; top: 1px; font-family: var(--font); font-size: 14px; color: #ffcf7a; }
+.slot .name { font-family: var(--font); font-size: 11px; line-height: 1; color: #ddd; white-space: nowrap; }
+.slot .count { font-family: var(--font); font-size: 13px; line-height: 1; color: #fff; white-space: nowrap; }
+/* Not enough room between health and ammo: sit above them, smaller */
+@media (max-width: 1150px) {
+    .slots { bottom: 74px; }
+    .slot { width: 62px; height: 54px; }
+    .slot canvas { width: 44px; height: 22px; }
+}
+
+/* Inside a smoke cloud: grey, thicker towards the edges */
+.smoke-screen {
+    position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle, rgba(150, 150, 146, 0.85), rgba(120, 120, 116, 1));
+}
 
 .net-stats {
     position: absolute;
@@ -504,7 +515,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .help-hint {
     position: absolute;
     left: 12px; top: 44px;
-    max-width: min(520px, 70vw);
+    max-width: min(400px, 32vw);   /* clear of the mode panel at the top centre */
     font-size: 18px;
     color: var(--muted);
     background: rgba(0, 0, 0, 0.45);

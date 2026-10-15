@@ -1,3 +1,4 @@
+import { GRENADE } from '../../shared/constants.js';
 import { TEAM_BUY } from '../../shared/config/modes.js';
 import { WEAPONS } from '../../shared/config/weapons.js';
 import { getItemView } from '../items/registry.js';
@@ -15,7 +16,7 @@ const CATEGORIES = [
     { name: 'Shotguns', items: [gun('m3'), null] },
     { name: 'SMGs', items: [gun('mp5'), null, gun('p90'), null, null] },
     { name: 'Rifles', items: [gun('ak47'), null, gun('m4a1'), null, gun('scout'), gun('awp')] },
-    { name: 'Machine gun', items: [] },
+    { name: 'Machine gun', items: [gun('m249')] },
     { name: 'Primary ammo', direct: 'ammo_primary' },
     { name: 'Secondary ammo', direct: 'ammo_secondary' },
     {
@@ -23,7 +24,9 @@ const CATEGORIES = [
         items: [
             { id: 'kevlar', name: 'Kevlar Vest', price: TEAM_BUY.kevlar },
             { id: 'kevlar_helmet', name: 'Kevlar + Helmet', price: TEAM_BUY.kevlarHelmet },
-            { id: 'health_potion', name: 'Health Potion (+20 HP)', price: TEAM_BUY.potion }
+            { id: 'health_potion', name: 'Health Potion (+20 HP)', price: TEAM_BUY.potion },
+            { id: 'hegrenade', name: 'HE Grenade', price: GRENADE.he.price, icon: true },
+            { id: 'smokegrenade', name: 'Smoke Grenade', price: GRENADE.smoke.price, icon: true }
         ]
     }
 ];
@@ -133,7 +136,7 @@ export class BuyMenu {
                     el('span.key', { text: String(i + 1) }), el('span.name', { text: cat.name })
                 ]);
             }));
-            this.hint.textContent = '0 / B / Esc to close';
+            this.hint.textContent = '0 / B / Esc to close · F3 rebuys ammo, armor, potions, grenades';
             return;
         }
         const cat = CATEGORIES[this.category];
@@ -144,6 +147,11 @@ export class BuyMenu {
             }
             const icon = el('canvas', { width: 64, height: 32 });
             if (item.gun) getItemView(item.id)?.drawIcon(icon.getContext('2d'), 32);
+            else if (item.icon) {
+                const ctx = icon.getContext('2d');
+                ctx.translate(16, 0);
+                getItemView(item.id)?.drawIcon(ctx, 32);
+            }
             const poor = !this.free && item.price > money;
             const own = item.id === TEAM_BUY.defaultPistol[this.team];
             return el(`button.buy-row${poor ? '.poor' : ''}`, { type: 'button', onclick: () => this.key(i + 1) }, [

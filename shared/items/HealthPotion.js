@@ -10,6 +10,7 @@ export class HealthPotion extends Consumable {
             description: `Heals ${POTION.heal} HP`
         });
         this.heal = POTION.heal;
+        this.short = 'POTION';
     }
 
     // Don't waste a potion at full health

@@ -90,9 +90,25 @@ export const PROJECTILE = {
     radius: 0.1
 };
 
+// Thrown grenades (keys 6 and 7): they arc, bounce off blocks and go off when the fuse runs out.
+// Throw velocity = aim * throwSpeed + up * throwSpeed * upBias + the thrower's own velocity.
+// bounce: share of speed kept after hitting a block. Carry at most `max` of each, like CS.
+//   he     blast like the RPG's (falls off to 0 at the edge, breaks blocks, the thrower is only pushed)
+//   smoke  a cloud that hides whoever is inside or behind it (bots can't see through it)
+export const GRENADE = {
+    throwSpeed: 16,
+    upBias: 0.25,
+    gravity: 20,
+    bounce: 0.45,
+    fuse: 1.6,
+    max: 1,
+    he: { radius: 5, damage: 100, blockRadius: 1.6, knockback: 6, price: 300 },
+    smoke: { radius: 4, duration: 18, price: 300 }
+};
+
 // Free-for-all spawn loadout: a random primary and pistol, the knife and an empty potion slot
 export const LOADOUT = {
-    primary: ['ak47', 'm4a1', 'mp5', 'p90', 'm3', 'scout', 'awp'],
+    primary: ['ak47', 'm4a1', 'mp5', 'p90', 'm3', 'scout', 'awp', 'm249'],
     secondary: ['usp', 'glock', 'deagle'],
     armor: 100,
     helmet: true,

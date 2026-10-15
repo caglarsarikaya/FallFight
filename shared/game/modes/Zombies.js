@@ -3,6 +3,7 @@ import { S2C } from '../../protocol.js';
 import { FlowField } from '../../ai/FlowField.js';
 import { ZombieBrain } from '../../ai/ZombieBrain.js';
 import { buyItem } from '../Shop.js';
+import { isGun } from '../../config/weapons.js';
 import { GameMode } from './GameMode.js';
 
 const FLOW_INTERVAL = 0.5;       // seconds between flow field rebuilds
@@ -11,6 +12,7 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 
 // Zombies: 1 to 4 players hold out against endless waves. Each wave sends more, tougher, faster
 // zombies; every few waves some are runners, and every 5th wave brings giants (one more each time).
+// From wave 2, about one zombie in twenty carries a gun and shoots from range (ZOMBIES.gunner).
 // Killed zombies drop ammo, potions, armor and guns.
 // Players who die come back between waves. When everyone is down, the run is over.
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
@@ -177,16 +179,24 @@ export class Zombies extends GameMode {
     spawnZombie(giant = false) {
         const stats = this.waveStats(this.wave);
         const g = ZOMBIES.giant;
+        const rng = this.room.rng;
         // Every runnerEvery-th wave, a third of the zombies are fast and fragile runners
-        const runner = !giant && this.wave % ZOMBIES.runnerEvery === 0 && this.room.rng() < 0.33;
+        const runner = !giant && this.wave % ZOMBIES.runnerEvery === 0 && rng() < 0.33;
+        const gunner = !giant && !runner && this.wave >= ZOMBIES.gunner.fromWave && rng() < ZOMBIES.gunner.chance;
+        const guns = ZOMBIES.gunner.guns;
+        const gun = gunner ? guns[Math.floor(rng() * Math.min(guns.length, this.wave + 1))] : null;
         const id = `zombie-${this.nextZombieId++}`;
         const zombie = this.room.addNpc({
             id,
-            name: giant ? 'Giant' : runner ? 'Runner' : 'Zombie',
+            name: giant ? 'Giant' : runner ? 'Runner' : gunner ? 'Gunner' : 'Zombie',
             characterId: giant ? 'zombie-giant' : runner ? 'zombie-runner' : 'zombie',
             setup: p => {
                 p.isZombie = true;
                 p.isGiant = giant;
+                if (gun) {
+                    p.inventory.select(p.inventory.give(gun));
+                    p.damageScale = ZOMBIES.gunner.damageScale;
+                }
                 if (giant) p.scale = g.scale;
                 p.knockbackScale = giant ? 0 : ZOMBIES.knockback;
                 p.maxHealth = Math.round(stats.health * (giant ? g.health : runner ? 0.6 : 1));
@@ -197,7 +207,8 @@ export class Zombies extends GameMode {
             speed: stats.speed * (giant ? g.speed : runner ? 1.35 : 1),
             damage: Math.round(ZOMBIES.damage * (giant ? g.damage : 1)),
             attackInterval: ZOMBIES.attackInterval,
-            reach: giant ? g.reach : ZOMBIES.reach
+            reach: giant ? g.reach : ZOMBIES.reach,
+            gunner: gun ? ZOMBIES.gunner : null
         });
         this.room.npcs.set(id, brain);
         if (giant) {
@@ -269,14 +280,16 @@ export class Zombies extends GameMode {
             if (killer) {
                 killer.score = killer.kills;
                 if (!killer.isZombie) this.pay(killer, victim.isGiant ? ZOMBIES.giant.killMoney : ZOMBIES.killMoney);
-                this.dropLoot(victim, victim.isGiant ? 'weapon' : null);
+                // A gunner always leaves its gun behind
+                const gun = victim.inventory.hotbar.find(isGun);
+                this.dropLoot(victim, victim.isGiant || gun ? 'weapon' : null, gun);
             }
         }
     }
 
     // One roll per kill: maybe ammo, a potion, armor or a better gun on the ground.
-    // sure: a drop type that always comes (a giant always leaves a gun)
-    dropLoot(zombie, sure = null) {
+    // sure: a drop type that always comes (a giant always leaves a gun); weapon: which gun
+    dropLoot(zombie, sure = null, weapon = null) {
         const rng = this.room.rng;
         let type = sure;
         if (!type) {
@@ -296,7 +309,7 @@ export class Zombies extends GameMode {
             // Better guns as the waves go on
             const ladder = GUN_GAME.ladder;
             const top = Math.min(ladder.length - 1, 2 + this.wave);
-            extra = { weapon: ladder[Math.floor(rng() * (top + 1))] };
+            extra = { weapon: weapon || ladder[Math.floor(rng() * (top + 1))] };
         }
         const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, ZOMBIES.dropLife, extra);
         if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);

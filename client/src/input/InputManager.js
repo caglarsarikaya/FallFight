@@ -1,6 +1,6 @@
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
-// ('primary', down) ('secondary') ('reload') ('last') ('pause').
+// ('primary', down) ('secondary') ('reload') ('last') ('buy') ('rebuy', F3) ('pause').
 // Crouch is C or Ctrl, walk is Shift, like CS. Jump is Space or the mouse wheel (either way), one
 // jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page, so the game
 // asks before the tab closes (see Game); other Ctrl shortcuts (and Ctrl+wheel zoom) are swallowed
@@ -79,7 +79,8 @@ export class InputManager {
     handleKey(e, down) {
         if (!this.enabled) return;
         const code = e.code;
-        if (['Tab', 'Space', 'F5', 'ArrowUp', 'ArrowDown'].includes(code)) e.preventDefault();
+        // F3 is the browser's Find; here it's rebuy
+        if (['Tab', 'Space', 'F3', 'F5', 'ArrowUp', 'ArrowDown'].includes(code)) e.preventDefault();
         // Crouching (Ctrl) while pressing other keys must not trigger browser shortcuts (Ctrl+D
         // bookmarks...), also with the mouse released (buy menu); text fields keep theirs
         const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName);
@@ -92,6 +93,7 @@ export class InputManager {
             if (code === 'KeyV' || code === 'F5') this.onAction('camera');
             if (code === 'KeyR') this.onAction('reload');
             if (code === 'KeyB') this.onAction('buy');
+            if (code === 'F3') this.onAction('rebuy');
             if (code === 'KeyQ') this.onAction('last');
             if (code === 'Tab') this.onAction('scoreboard', true);
             // The Esc that just released the mouse (some browsers pass it on) isn't a second press

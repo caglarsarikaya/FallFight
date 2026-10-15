@@ -6,6 +6,7 @@ import { heatAfter, inaccuracy, pelletDirections, recoilKick, shotSeed } from '.
 const DEG = Math.PI / 180;
 const BOLT_TIME = 0.55;      // bolt / pump animation after a sniper or shotgun shot
 const HIT_PUNCH = 2.6;       // degrees the view flinches when we get shot
+const GRENADES = { hegrenade: 'HE grenades', smokegrenade: 'smoke grenades' };
 
 // The local player's weapon handling, predicted on the client so shooting feels instant:
 // rate of fire, magazine and reload, deploy time, recoil (view punch), spread and scopes.
@@ -68,7 +69,9 @@ export class WeaponController {
         const previous = this.inventory;
         // A gun just given to us (bought, picked up, levelled up) and selected by the server: take it
         const gained = previous && previous.hotbar[data.selected] !== data.hotbar[data.selected];
-        const keepSelection = !gained && previous && data.hotbar[previous.selected];
+        // ...and an empty grenade slot isn't kept either: the server already switched back to a gun
+        const kept = previous && data.hotbar[previous.selected];
+        const keepSelection = !gained && kept && !(GRENADES[kept] && !(data.counts[kept] > 0));
         const selected = keepSelection ? this.inventory.selected : data.selected;
         // Shots still in flight: keep our own (lower) magazine count for the gun we're firing
         if (previous && this.now - this.lastShotAt < 0.35 && data.ammo[this.id] && previous.ammo[this.id]) {
@@ -99,8 +102,13 @@ export class WeaponController {
     select(slot) {
         const inv = this.inventory;
         if (!inv || slot === inv.selected || !inv.hotbar[slot]) return false;
-        if (inv.hotbar[slot] === 'health_potion' && !(inv.counts.health_potion > 0)) {
+        const id = inv.hotbar[slot];
+        if (id === 'health_potion' && !(inv.counts.health_potion > 0)) {
             this.game.hud.toast('No health potions');
+            return false;
+        }
+        if (GRENADES[id] && !(inv.counts[id] > 0)) {
+            this.game.hud.toast(`No ${GRENADES[id]}: buy one (B 8)`);
             return false;
         }
         this.lastSlot = inv.selected;
@@ -180,10 +188,11 @@ export class WeaponController {
         const id = this.id;
         if (!id || !this.game.canShoot) return;
         if (id === KNIFE.id) return this.knife(false);
-        if (id === 'health_potion') {
+        if (id === 'health_potion' || GRENADES[id]) {
             if (!this.triggerUsed) {
                 this.triggerUsed = true;
-                this.game.useConsumable();
+                if (GRENADES[id]) this.game.throwGrenade(id);
+                else this.game.useConsumable();
             }
             return;
         }

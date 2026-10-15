@@ -1,14 +1,15 @@
 import { PLAYER } from '../../shared/constants.js';
-import { WEAPON_SLOT, weaponSpec } from '../../shared/config/weapons.js';
+import { weaponSpec } from '../../shared/config/weapons.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
 import { el, flash } from './dom.js';
 
-const SLOT_SHOW_MS = 2500;
 const MAX_DAMAGE_ARCS = 4;
+const STACKED = ['health_potion', 'hegrenade', 'smokegrenade'];   // counted items: shown even when out
 
 // Heads-up display, laid out like CS 1.6: health and armor bottom left, ammo bottom right,
-// a crosshair that opens up with inaccuracy, weapon slots on switching, kill feed top right.
+// a crosshair that opens up with inaccuracy, kill feed top right, and a weapon bar bottom centre
+// with everything carried (key, icon, name, rounds or how many).
 export class Hud {
     constructor(root) {
         this.reloadText = el('span');
@@ -54,15 +55,17 @@ export class Hud {
             heal: el('div.vignette.heal')
         };
         this.underwater = el('div.underwater.hidden');
+        this.smoke = el('div.smoke-screen');
+        this.smokeShown = 0;
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · B buy · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · F3 rebuy · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
         }, 14000);
 
         this.root = el('div.hud', {}, [
-            this.underwater, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
+            this.underwater, this.smoke, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             ...Object.values(this.vignettes),
             el('div.hud-left', {}, [this.health, this.armor]),
             this.ammoBox, this.slotList, this.banner,
@@ -136,52 +139,70 @@ export class Hud {
         this.ammoBox.classList.toggle('reloading', reloading);
     }
 
-    // inventory: { hotbar: [itemId|null], ammo, counts, selected }
+    // inventory: { hotbar: [itemId|null], ammo, counts, selected }. Called on every change of
+    // ammo or selection, so it only touches the text that changed.
     setInventory(inventory) {
         const layoutChanged = !this.inventory || this.inventory.hotbar.join() !== inventory.hotbar.join();
         this.inventory = inventory;
         this.inventoryId = inventory.hotbar[inventory.selected];
         if (layoutChanged) this.buildSlots();
-        this.slots.forEach((slot, i) => {
-            const id = inventory.hotbar[i];
-            if (id === 'health_potion') {
-                const n = inventory.counts.health_potion || 0;
-                slot.count.textContent = String(n);
-                slot.node.classList.toggle('empty', n === 0);
+        for (const slot of this.slots) {
+            if (!slot) continue;
+            const id = slot.itemId;
+            let text = '';
+            let out = false;
+            if (STACKED.includes(id)) {
+                const n = inventory.counts[id] || 0;
+                text = `×${n}`;
+                out = n === 0;
+            } else if (inventory.ammo[id]) {
+                const a = inventory.ammo[id];
+                text = `${a.mag}/${a.reserve}`;
+                out = a.mag + a.reserve === 0;
             }
-        });
+            if (text !== slot.text) {
+                slot.text = text;
+                slot.count.textContent = text;
+            }
+            if (out !== slot.out) {
+                slot.out = out;
+                slot.node.classList.toggle('empty', out);
+            }
+        }
         this.setSelected(inventory.selected);
     }
 
+    // One cell per slot that holds something; empty gun slots and the RPG slot (unless carried) are left out
     buildSlots() {
         this.slotList.replaceChildren();
         this.slots = this.inventory.hotbar.map((itemId, i) => {
+            if (!itemId) return null;
             const icon = el('canvas', { width: 64, height: 32 });
             const ctx = icon.getContext('2d');
             if (!weaponSpec(itemId)?.mag) ctx.translate(16, 0); // square pixel icons, centred
-            if (itemId) getItemView(itemId)?.drawIcon(ctx, 32);
+            getItemView(itemId)?.drawIcon(ctx, 32);
             const count = el('div.count');
-            const name = el('div.name', { text: itemId ? (weaponSpec(itemId)?.short || getItem(itemId)?.name || '') : '' });
-            const node = el(`div.slot${itemId ? '' : '.empty'}`, {}, [el('div.key', { text: String(i + 1) }), icon, name, count]);
-            if (i === WEAPON_SLOT.SPECIAL && !itemId) node.classList.add('hidden'); // only while carrying the RPG
+            const name = el('div.name', { text: weaponSpec(itemId)?.short || getItem(itemId)?.short || getItem(itemId)?.name || '' });
+            const node = el('div.slot', {}, [el('div.key', { text: String(i + 1) }), icon, name, count]);
             this.slotList.append(node);
-            return { node, count, itemId };
+            return { node, count, itemId, text: null, out: false };
         });
+        this.selected = null;
     }
 
     setSelected(index) {
-        this.slots.forEach((slot, i) => slot.node.classList.toggle('selected', i === index));
-        if (this.selected !== index) {
-            this.selected = index;
-            this.inventoryId = this.inventory?.hotbar[index];
-            this.showSlots();
-        }
+        if (this.selected === index) return;
+        this.selected = index;
+        this.inventoryId = this.inventory?.hotbar[index];
+        this.slots.forEach((slot, i) => slot?.node.classList.toggle('selected', i === index));
     }
 
-    showSlots() {
-        this.slotList.classList.add('show');
-        clearTimeout(this.slotTimer);
-        this.slotTimer = setTimeout(() => this.slotList.classList.remove('show'), SLOT_SHOW_MS);
+    // 0..1: how deep in a smoke cloud the camera is (the screen greys out)
+    setSmoke(amount) {
+        const v = Math.round(amount * 20) / 20;
+        if (v === this.smokeShown) return;
+        this.smokeShown = v;
+        this.smoke.style.opacity = String(v * 0.92);
     }
 
     // gap in pixels from the centre to each crosshair line; ready: the gun can shoot right now
@@ -285,7 +306,7 @@ export class Hud {
 
     // entry: { killer, victim, weapon, headshot, mine }
     kill({ killer, victim, weapon, headshot, mine }) {
-        const label = weapon === 'fall' ? 'FELL' : weaponSpec(weapon)?.short || weapon?.toUpperCase() || '';
+        const label = weapon === 'fall' ? 'FELL' : weaponSpec(weapon)?.short || getItem(weapon)?.short || weapon?.toUpperCase() || '';
         const tag = el('span.weapon', {}, [label, headshot ? el('span.hs', { text: ' ◎' }) : null]);
         const node = el(`div.kill${mine ? '.mine' : ''}`, {}, killer
             ? [el('span.killer', { text: killer }), tag, el('span.victim', { text: victim })]

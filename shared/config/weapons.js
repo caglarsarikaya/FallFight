@@ -15,11 +15,12 @@
 //   scope          sniper zoom levels (fov divisor); unscoped spread is huge, like a no-scope
 export const WEAPON_KIND = Object.freeze({
     KNIFE: 'knife', PISTOL: 'pistol', SMG: 'smg', SHOTGUN: 'shotgun', RIFLE: 'rifle', SNIPER: 'sniper',
-    LAUNCHER: 'launcher'
+    MG: 'mg', LAUNCHER: 'launcher'
 });
 
-// SPECIAL: map power weapons (the Lava Arena RPG), never bought or given in a loadout
-export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3, SPECIAL: 4 });
+// SPECIAL: map power weapons (the Lava Arena RPG), never bought or given in a loadout.
+// HE / SMOKE: grenades, bought in the shop (keys 6 and 7)
+export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3, SPECIAL: 4, HE: 5, SMOKE: 6 });
 
 const SLOT_OF_KIND = { [WEAPON_KIND.PISTOL]: WEAPON_SLOT.SECONDARY, [WEAPON_KIND.LAUNCHER]: WEAPON_SLOT.SPECIAL };
 
@@ -103,6 +104,16 @@ export const WEAPONS = Object.freeze({
         spread: { stand: 0.0035, crouch: 0.002, move: 0.050, air: 0.15, perShot: 0.005, maxShot: 0.04, recover: 6.5 },
         recoil: { up: 0.9, upMax: 7.5, side: 0.55, sideFrom: 6, recover: 11 },
         price: 3100, killReward: 300
+    }),
+    // ---- machine gun ----------------------------------------------------------------------
+    // ammoPrice: refilling its 200 spare rounds (the usual formula would ask $2300)
+    m249: gun({
+        id: 'm249', name: 'M249 Para', short: 'M249', kind: WEAPON_KIND.MG, auto: true,
+        rpm: 750, damage: 32, range: 45, armorPen: 0.8, penetration: 2,
+        mag: 100, reserve: 200, reloadTime: 3.3, deploy: 1.0, moveSpeed: 0.85,
+        spread: { stand: 0.009, crouch: 0.006, move: 0.075, air: 0.18, perShot: 0.0045, maxShot: 0.06, recover: 5 },
+        recoil: { up: 0.85, upMax: 8, side: 0.6, sideFrom: 8, recover: 9 },
+        price: 5750, ammoPrice: 600, killReward: 300
     }),
     // ---- snipers -------------------------------------------------------------------------
     scout: gun({
