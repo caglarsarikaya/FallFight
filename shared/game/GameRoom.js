@@ -14,7 +14,7 @@ import { PlayerState, freshGunState } from './PlayerState.js';
 import { Projectile } from './Projectile.js';
 import { PickupSpawner } from './PickupSpawner.js';
 import { LagComp } from './LagComp.js';
-import { hitTest } from './Hitbox.js';
+import { hitTest } from './BodyZones.js';
 
 const BOT_NAMES = ['Steve', 'Alex', 'Notch', 'Herobrine', 'Creeper', 'Blaze', 'Ender', 'Wither'];
 const ZONE_RANK = { legs: 0, body: 1, head: 2 };

@@ -126,7 +126,7 @@ test/     node:test unit tests and bot simulations
     because they're seeded per shot. That makes the shooter's tracers, bullet holes and sounds instant
     (`client/src/weapons/WeaponController.js`).
   - The server resolves the real hits (`GameRoom.resolveShot`). It checks head/body/legs hitboxes
-    (`shared/game/Hitbox.js`) against where the shooter saw its targets: `shared/game/LagComp.js`
+    (`shared/game/BodyZones.js`) against where the shooter saw its targets: `shared/game/LagComp.js`
     rewinds them by up to 250 ms.
   - Rate of fire, magazines, reloads and deploy times are enforced on the server too.
 - **Game modes (OOP):** `shared/game/modes/GameMode.js` holds the rules the room asks about:

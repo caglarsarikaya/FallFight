@@ -1,5 +1,5 @@
 import { PLAYER } from './constants.js';
-import { bodyHeight } from './game/Hitbox.js';
+import { bodyHeight } from './game/BodyZones.js';
 
 const SKIN = 1e-4;
 

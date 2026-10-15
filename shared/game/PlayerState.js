@@ -1,6 +1,6 @@
 import { PLAYER } from '../constants.js';
 import { Inventory } from '../inventory/Inventory.js';
-import { bodyHeight } from './Hitbox.js';
+import { bodyHeight } from './BodyZones.js';
 
 // Per-player weapon timers (server time): deploy, rate of fire, spray heat, reload, scope
 export function freshGunState() {

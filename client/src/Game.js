@@ -6,7 +6,7 @@ import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
 import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
 import { blockProps } from '../shared/world/blocks.js';
-import { hitTest } from '../shared/game/Hitbox.js';
+import { hitTest } from '../shared/game/BodyZones.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { GunEffects } from './effects/GunEffects.js';
