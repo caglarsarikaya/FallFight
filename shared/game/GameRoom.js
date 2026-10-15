@@ -171,6 +171,7 @@ export class GameRoom {
             case C2S.RELOAD: return this.reload(player);
             case C2S.SCOPE: return this.setScope(player, data.level);
             case C2S.BUY: return this.buy(player, data.item);
+            case C2S.REVIVE: return this.mode.onRevive?.(player, data);
             case C2S.PREFS: return this.mode.setRandomGuns?.(player, data.randomGuns !== false);
             case C2S.PROFILE: return this.onProfile(player, data);
         }
@@ -495,19 +496,25 @@ export class GameRoom {
         }
     }
 
-    // A rocket blew up at `at`: hurts everyone in the radius (less towards the edge, armor doesn't
-    // help), throws them away from the centre and breaks every block close by. The shooter is only
+    // A rocket blew up at `at`: hurts everyone in the radius (full damage inside the core share of
+    // it, then less towards the edge; armor doesn't help), throws them away from the centre and
+    // breaks every block close by. Distance is to the nearest point of a body, so big bodies (giants)
+    // catch more of it; `direct` (whoever the rocket hit) always takes it all. The shooter is only
     // thrown, never hurt (rocket jumps).
-    explode(at, weapon, owner) {
-        const { radius, damage, blockRadius, knockback } = weapon.blast;
+    explode(at, weapon, owner, direct = null) {
+        const { radius, damage, blockRadius, knockback, core = 0 } = weapon.blast;
+        const inner = radius * core;
         for (const victim of this.players.values()) {
             if (!victim.alive) continue;
+            const { min, max } = victim.bounds;
+            const dist = Math.hypot(
+                at.x - Math.max(min.x, Math.min(max.x, at.x)),
+                at.y - Math.max(min.y, Math.min(max.y, at.y)),
+                at.z - Math.max(min.z, Math.min(max.z, at.z)));
+            if (dist >= radius && victim !== direct) continue;
+            const share = victim === direct || dist <= inner ? 1 : 1 - (dist - inner) / (radius - inner);
             const dx = victim.x - at.x;
-            const dy = victim.y + 0.9 - at.y;
             const dz = victim.z - at.z;
-            const dist = Math.hypot(dx, dy, dz);
-            if (dist >= radius) continue;
-            const share = 1 - dist / radius;
             const flat = Math.hypot(dx, dz) || 1;
             const kb = {
                 x: round2((dx / flat) * knockback * share),
@@ -666,6 +673,18 @@ export class GameRoom {
         this.notifyInventory(player);
     }
 
+    // Back on their feet where they fell, with what they carried (Zombies revive)
+    revive(player, health) {
+        player.alive = true;
+        player.health = Math.min(player.maxHealth, health);
+        player.vx = player.vy = player.vz = 0;
+        player.protectedUntil = this.time + PLAYER.spawnProtection;
+        player.lastDamage = null;
+        this.lagComp.reset(player.id);
+        this.emit(null, S2C.RESPAWN, { id: player.id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, health: player.health, armor: player.armor });
+        this.notifyInventory(player);
+    }
+
     // Is any living player's body inside this block (so it must not regrow yet)
     isBlockOccupied(ix, iy, iz) {
         const c = this.arena.blockCenter(ix, iy, iz);
@@ -762,7 +781,8 @@ export class GameRoom {
             if (smoke) {
                 this.popSmoke(projectile, smoke);
             } else if (explode) {
-                this.explode(projectile, weapon, this.players.get(projectile.ownerId) || null);
+                this.explode(projectile, weapon, this.players.get(projectile.ownerId) || null,
+                    hit.type === 'player' ? hit.player : null);
             } else if (hit.type === 'player' && weapon?.damageFor) {
                 const owner = this.players.get(projectile.ownerId) || null;
                 const { amount, headshot } = weapon.damageFor({ zone: hit.zone, power: projectile.power });

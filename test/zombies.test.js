@@ -247,3 +247,56 @@ test('zombies walk around a hole in the floor instead of falling into the lava',
     assert.equal(falls.length, 0, 'no zombie fell in');
     assert.ok(room.eventsOf('damage').some(d => d.victimId === 'a' && d.weapon === 'claws'), 'they still got to the player');
 });
+
+test('revive: a teammate holding E over a fallen player for 5 s brings them back there', () => {
+    const room = zombieRoom('fy_pool_day');
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const b = room.addPlayer({ id: 'b', name: 'B' });
+    run(room, ZOMBIES.firstWaveDelay + 0.1);
+    room.mode.toSpawn = 1000;   // the wave goes on; zombies are cleared as they come
+    const step = seconds => {
+        for (let t = 0; t < seconds; t += 1 / 30) {
+            for (const z of zombiesOf(room)) if (z.alive) room.kill(z, null, 'ak47');
+            room.tick(1 / 30);
+        }
+    };
+    b.inventory.give('ak47');
+    Object.assign(b, { x: a.x + 1, y: a.y, z: a.z });
+    room.kill(b, null, 'claws');
+    const at = { x: b.x, y: b.y, z: b.z };
+
+    // Nobody revives from too far
+    a.x -= 3;
+    room.handleMessage('a', 'revive', { id: 'b' });
+    assert.equal(room.eventsOf('revive').length, 0);
+    a.x += 3;
+
+    // Letting go early stops it
+    room.handleMessage('a', 'revive', { id: 'b' });
+    assert.equal(room.eventsOf('revive').at(-1).until, room.time + ZOMBIES.revive.time);
+    step(2);
+    room.handleMessage('a', 'revive', { id: null });
+    assert.equal(room.eventsOf('revive').at(-1).until, null);
+    step(ZOMBIES.revive.time);
+    assert.equal(b.alive, false);
+
+    // Walking off stops it too
+    room.handleMessage('a', 'revive', { id: 'b' });
+    step(1);
+    a.x -= 3;
+    step(0.1);
+    assert.equal(room.eventsOf('revive').at(-1).until, null);
+    a.x += 3;
+
+    // Held for the full time: back on their feet where they fell, with what they carried
+    room.handleMessage('a', 'revive', { id: 'b' });
+    step(ZOMBIES.revive.time - 0.5);
+    assert.equal(b.alive, false);
+    step(0.6);
+    assert.equal(b.alive, true);
+    assert.equal(b.health, ZOMBIES.revive.health);
+    assert.deepEqual({ x: b.x, y: b.y, z: b.z }, at);
+    assert.ok(b.inventory.has('ak47'));
+    assert.deepEqual(room.eventsOf('revived').at(-1), { reviverId: 'a', targetId: 'b' });
+    assert.equal(room.mode.phase, 'wave');
+});

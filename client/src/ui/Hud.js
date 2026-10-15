@@ -49,6 +49,10 @@ export class Hud {
         this.latencyText = el('span');
         this.netStats = el('div.net-stats', {}, [this.fpsText, this.pingText, this.latencyText]);
         this.protection = el('div.protection.hidden', { text: 'SPAWN PROTECTION' });
+        this.useHint = el('div.use-hint.hidden');
+        this.reviveFill = el('div.revive-fill');
+        this.reviveLabel = el('span');
+        this.reviveBar = el('div.revive-bar.hidden', {}, [this.reviveFill, this.reviveLabel]);
         this.vignettes = {
             damage: el('div.vignette.damage'),
             danger: el('div.vignette.danger'),
@@ -58,7 +62,7 @@ export class Hud {
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · F3 rebuy · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · N rebuy · E revive (Zombies) · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
@@ -66,6 +70,7 @@ export class Hud {
 
         this.root = el('div.hud', {}, [
             this.underwater, this.smoke, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
+            this.useHint, this.reviveBar,
             ...Object.values(this.vignettes),
             el('div.hud-left', {}, [this.health, this.armor]),
             this.ammoBox, this.slotList, this.banner,
@@ -265,6 +270,22 @@ export class Hud {
 
     setProtected(on) {
         this.protection.classList.toggle('hidden', !on);
+    }
+
+    // "Hold E to ..." under the crosshair, or null
+    setUseHint(text) {
+        if (text === this.useHintShown) return;
+        this.useHintShown = text;
+        this.useHint.classList.toggle('hidden', !text);
+        if (text) this.useHint.textContent = text;
+    }
+
+    // Zombies revive in progress: { label, progress 0..1 } or null
+    setRevive(status) {
+        this.reviveBar.classList.toggle('hidden', !status);
+        if (!status) return;
+        if (status.label !== this.reviveLabel.textContent) this.reviveLabel.textContent = status.label;
+        this.reviveFill.style.width = `${(Math.min(1, status.progress) * 100).toFixed(1)}%`;
     }
 
     // Hit confirmation: shown at full strength, then faded by update() every frame

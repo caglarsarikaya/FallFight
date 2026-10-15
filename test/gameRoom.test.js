@@ -150,7 +150,7 @@ test('physics: walk speed, jump height, falling through a hole', () => {
     assert.ok(body.y < -1);
 });
 
-test('bunny hop: a jump on landing keeps speed, air strafing gains a little, capped', () => {
+test('bunny hop: a jump on landing keeps speed, air strafing gains speed, capped', () => {
     const arena = new Arena();
     const start = arena.tileCenter(22, 22);
     const fly = (body, input) => {
@@ -174,7 +174,7 @@ test('bunny hop: a jump on landing keeps speed, air strafing gains a little, cap
     stepMovement(body, { moveX: 1, moveZ: 0, jump: true }, arena, 1 / 60);
     fly(body, strafe);
     const landed = speedOf(body);
-    assert.ok(landed > PLAYER.walkSpeed * 1.02, `strafed to ${landed}`);
+    assert.ok(landed > PLAYER.walkSpeed * 1.1, `strafed to ${landed}`);
 
     // Jumping on the landing tick skips ground friction; staying on the ground loses the extra
     const hop = { ...body };
@@ -187,6 +187,16 @@ test('bunny hop: a jump on landing keeps speed, air strafing gains a little, cap
     Object.assign(body, { x: start.x, z: start.z, vx: PLAYER.walkSpeed * 3, vz: 0, vy: 0, onGround: true });
     stepMovement(body, { moveX: 0, moveZ: 0, jump: true }, arena, 1 / 60);
     assert.ok(speedOf(body) <= PLAYER.walkSpeed * PLAYER.bhopCap + 1e-9);
+
+    // Landing with crouch held (duck-hop) keeps the speed: the cap goes by standing speed
+    Object.assign(body, { x: start.x, z: start.z, vx: PLAYER.walkSpeed * 1.4, vz: 0, vy: 0, onGround: true });
+    stepMovement(body, { moveX: 0, moveZ: 0, jump: true, crouch: true }, arena, 1 / 60);
+    assert.ok(Math.abs(speedOf(body) - PLAYER.walkSpeed * 1.4) < 1e-9, `duck-hop kept ${speedOf(body)}`);
+
+    // A hop at walking speed with only A/D held doesn't get a ground tick turning you sideways
+    Object.assign(body, { x: start.x, z: start.z, vx: PLAYER.walkSpeed, vz: 0, vy: 0, onGround: true, crouching: false });
+    stepMovement(body, { moveX: 0, moveZ: 1, jump: true }, arena, 1 / 60);
+    assert.ok(body.vz <= PLAYER.airWishCap * PLAYER.walkSpeed + 1e-9 && Math.abs(body.vx - PLAYER.walkSpeed) < 1e-9, `turned to ${body.vx}, ${body.vz}`);
 });
 
 test('arena raycast finds the tile under the crosshair', () => {

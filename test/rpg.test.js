@@ -95,3 +95,23 @@ test('rpg: own rocket at your feet only pushes you', () => {
     const kb = room.eventsOf(S2C.KNOCKBACK).at(-1);
     assert.ok(kb && kb.id === 'a' && kb.knockback.y > 0);
 });
+
+test('rpg: the blast kills everyone close by and the one it hits, and falls off towards the edge', () => {
+    const room = createRoom();
+    const owner = room.addPlayer({ id: 'a', name: 'A' });
+    const hit = room.addPlayer({ id: 'b', name: 'B' });
+    const near = room.addPlayer({ id: 'c', name: 'C' });
+    const edge = room.addPlayer({ id: 'd', name: 'D' });
+    place(room, owner, 22, 10);
+    place(room, hit, 22, 22);
+    place(room, near, 24, 22);
+    place(room, edge, 27, 22);
+    for (const p of [hit, near, edge]) p.health = p.maxHealth = 150;
+    const { radius, core } = WEAPONS.rpg.rocket;
+    // In front of the direct hit, at chest height: 2 blocks to `near` is inside the core
+    room.explode({ x: hit.x - 0.4, y: hit.y + 1, z: hit.z }, getItem('rpg'), owner, hit);
+    assert.ok(2 < radius * core);
+    assert.equal(hit.alive, false, 'direct hit');
+    assert.equal(near.alive, false, 'inside the core');
+    assert.ok(edge.alive && edge.health > 75, `edge took ${150 - edge.health}`);
+});

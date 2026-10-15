@@ -40,18 +40,19 @@ export function stepMovement(body, input, arena, dt) {
     let speed = moveSpeed({ ...input, crouching: body.crouching, onGround: body.onGround });
     if (inWater) speed *= WATER.speed;
 
-    // A hop (jumping faster than top speed) skips ground friction, so timed jumps keep speed
+    // The jump tick is an air tick (GoldSrc: the jump comes before friction), so a hop timed on
+    // landing keeps its speed. The cap goes by the standing speed, so duck-hops don't lose it.
     let grounded = body.onGround;
     if (input.jump && body.onGround && !inWater) {
         body.vy = PLAYER.jumpSpeed;
         body.onGround = false;
+        grounded = false;
         const hs = Math.hypot(body.vx, body.vz);
-        const cap = PLAYER.bhopCap * speed;
+        const cap = PLAYER.bhopCap * moveSpeed({ ...input, crouching: false, walk: false });
         if (hs > cap) {
             body.vx *= cap / hs;
             body.vz *= cap / hs;
         }
-        if (hs > speed) grounded = false;
     }
 
     if (grounded || inWater) {
@@ -60,14 +61,18 @@ export function stepMovement(body, input, arena, dt) {
         body.vx += (input.moveX * speed - body.vx) * blend;
         body.vz += (input.moveZ * speed - body.vz) * blend;
     } else {
-        // Air: only add speed along the wish direction, up to top speed along it
+        // Air: only add speed along the wish direction. Below top speed you steer gently up to it
+        // (so a jump from a standstill still gets you up a step); above it, GoldSrc-style, only up
+        // to a small cap along the keys, so holding W does nothing but strafing A/D while turning
+        // builds speed.
         const wish = Math.hypot(input.moveX, input.moveZ);
         if (wish > 1e-6) {
             const wx = input.moveX / wish, wz = input.moveZ / wish;
             const wishSpeed = speed * wish;
-            const add = wishSpeed - (body.vx * wx + body.vz * wz);
+            const fast = Math.hypot(body.vx, body.vz) >= speed;
+            const add = (fast ? Math.min(wishSpeed, PLAYER.airWishCap * speed) : wishSpeed) - (body.vx * wx + body.vz * wz);
             if (add > 0) {
-                const gain = Math.min(add, PLAYER.airAccel * wishSpeed * dt);
+                const gain = Math.min(add, (fast ? PLAYER.airAccel : PLAYER.airControl) * wishSpeed * dt);
                 body.vx += wx * gain;
                 body.vz += wz * gain;
             }

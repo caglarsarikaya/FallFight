@@ -135,15 +135,16 @@ export const WEAPONS = Object.freeze({
         price: 4750, killReward: 100, knockback: 3
     }),
     // ---- specials (spawned by the map, one shot, then gone) -------------------------------
-    // rocket: flight speed, life (s), blast radius, damage at the centre (falls off to 0 at the
-    // edge, ignores armor), blockRadius (every block inside breaks), knockback at the centre
+    // rocket: flight speed, life (s), blast radius, damage (full inside the core share of the
+    // radius and on whoever it hits, then falls off to 0 at the edge, ignores armor), blockRadius
+    // (every block inside breaks), knockback at the centre
     rpg: gun({
         id: 'rpg', name: 'RPG-7', short: 'RPG', kind: WEAPON_KIND.LAUNCHER, special: true,
         rpm: 30, damage: 180, range: 120, armorPen: 1, penetration: 0,
         mag: 1, reserve: 0, reloadTime: 2, deploy: 0.8, moveSpeed: 0.85,
         spread: { stand: 0.004, crouch: 0.003, move: 0.03, air: 0.08, perShot: 0, maxShot: 0, recover: 4 },
         recoil: { up: 8, upMax: 10, side: 0.8, sideFrom: 1, recover: 7 },
-        rocket: { speed: 38, life: 3, radius: 4, damage: 180, blockRadius: 2.6, knockback: 9 },
+        rocket: { speed: 38, life: 3, radius: 6, core: 0.4, damage: 250, blockRadius: 2.6, knockback: 11 },
         killReward: 300
     })
 });

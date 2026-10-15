@@ -14,7 +14,8 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // zombies; every few waves some are runners, and every 5th wave brings giants (one more each time).
 // From wave 2, about one zombie in twenty carries a gun and shoots from range (ZOMBIES.gunner).
 // Killed zombies drop ammo, potions, armor and guns.
-// Players who die come back between waves. When everyone is down, the run is over.
+// Players who die come back between waves, or sooner if a teammate holds E over the body for a
+// few seconds (ZOMBIES.revive). When everyone is down, the run is over.
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
 export class Zombies extends GameMode {
     get id() {
@@ -43,6 +44,7 @@ export class Zombies extends GameMode {
         this.kills = 0;
         this.bestWave = this.bestWave ?? 0;
         this.nextZombieId = this.nextZombieId ?? 1;
+        this.revives = new Map();    // reviver id -> { targetId, until }
         // Clear any zombies left over from the last run
         for (const p of [...this.room.players.values()]) if (p.isZombie) this.room.removePlayer(p.id);
     }
@@ -154,6 +156,7 @@ export class Zombies extends GameMode {
     }
 
     endWave() {
+        this.stopRevives();
         this.phase = 'break';
         this.phaseEndsAt = this.room.time + ZOMBIES.waveBreak;
         this.bestWave = Math.max(this.bestWave, this.wave);
@@ -255,12 +258,14 @@ export class Zombies extends GameMode {
         }
         if (this.phase === 'wave') {
             if (census.humans && census.humansAlive === 0) {
+                this.stopRevives();
                 this.phase = 'lost';
                 this.bestWave = Math.max(this.bestWave, this.wave - 1);
                 this.dirty = true;
                 room.endMatch({ title: `Overrun on wave ${this.wave}! ${this.kills} zombies down.` });
                 return;
             }
+            this.updateRevives(now);
             this.spawnTimer -= dt;
             let alive = census.zombiesAlive;
             if (this.toSpawn + this.giantsToSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
@@ -269,6 +274,54 @@ export class Zombies extends GameMode {
                 alive++;
             }
             if (this.toSpawn + this.giantsToSpawn === 0 && alive === 0) this.endWave();
+        }
+    }
+
+    // ---- revive -----------------------------------------------------------------------------
+
+    // Hold E on a fallen teammate: { id } starts, { id: null } stops
+    onRevive(player, { id } = {}) {
+        if (id == null) return this.stopRevive(player.id);
+        const target = this.room.players.get(id);
+        if (this.phase !== 'wave' || !this.canRevive(player, target) || this.revives.get(player.id)?.targetId === id) return;
+        this.stopRevive(player.id);
+        // One helper per body
+        for (const r of this.revives.values()) if (r.targetId === id) return;
+        const until = this.room.time + ZOMBIES.revive.time;
+        this.revives.set(player.id, { targetId: id, until });
+        this.room.emit(null, S2C.REVIVE, { reviverId: player.id, targetId: id, until });
+    }
+
+    canRevive(player, target) {
+        if (!player?.alive || player.isZombie || !target || target.alive || target.isZombie || target === player) return false;
+        const reach = ZOMBIES.revive.reach;
+        return Math.hypot(player.x - target.x, player.z - target.z) <= reach && Math.abs(player.y - target.y) <= reach;
+    }
+
+    stopRevive(reviverId) {
+        const r = this.revives.get(reviverId);
+        if (!r) return;
+        this.revives.delete(reviverId);
+        this.room.emit(null, S2C.REVIVE, { reviverId, targetId: r.targetId, until: null });
+    }
+
+    stopRevives() {
+        for (const id of [...this.revives.keys()]) this.stopRevive(id);
+    }
+
+    // Helpers who walked off, died or lost the body stop; those who held on long enough revive
+    updateRevives(now) {
+        for (const [reviverId, r] of this.revives) {
+            const player = this.room.players.get(reviverId);
+            const target = this.room.players.get(r.targetId);
+            if (!this.canRevive(player, target)) {
+                this.stopRevive(reviverId);
+            } else if (now >= r.until) {
+                this.stopRevive(reviverId);
+                this.room.revive(target, ZOMBIES.revive.health);
+                this.room.emit(null, S2C.REVIVED, { reviverId, targetId: target.id });
+                this.dirty = true;
+            }
         }
     }
 

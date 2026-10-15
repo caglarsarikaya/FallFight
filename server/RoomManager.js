@@ -24,7 +24,7 @@ export const ROOM_ERRORS = Object.freeze({
 
 // Messages a client in a room may send to its GameRoom (everything else is ignored)
 export const ROOM_MESSAGES = new Set([
-    C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.PREFS, C2S.PROFILE
+    C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.REVIVE, C2S.PREFS, C2S.PROFILE
 ]);
 
 const modeOrDefault = mode => (isPlayableMode(mode) ? mode : DEFAULT_MODE);

@@ -77,7 +77,7 @@ export function buyItem(room, player, item, { free = false, notify = true } = {}
     return { ok: true, price };
 }
 
-// F3: top everything up in one go. When money is short the order decides what you get: ammo for
+// Rebuy (N): top everything up in one go. When money is short the order decides what you get: ammo for
 // every gun, then kevlar (with the helmet if it can be paid for), then two potions, then an HE,
 // then a smoke. Things already full or too dear are skipped.
 // Returns { ok, bought: [item...], price } or { ok: false, error: 'money' | 'owned' }.

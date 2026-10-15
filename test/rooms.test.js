@@ -119,8 +119,8 @@ test('the welcome tells the player which room they are in', () => {
     assert.deepEqual(welcome.data.room, { id: roomId, name: 'Lobby', kind: 'custom', bots: false, maxPlayers: 4, mode: 'ffa', map: 'fallfight_classic', locked: true });
 });
 
-test('every gameplay message reaches the room: firing, reloading, scoping, buying', () => {
-    for (const type of [C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.PROFILE]) {
+test('every gameplay message reaches the room: firing, reloading, scoping, buying, reviving', () => {
+    for (const type of [C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.REVIVE, C2S.PROFILE]) {
         assert.ok(ROOM_MESSAGES.has(type), type);
     }
     assert.ok(!ROOM_MESSAGES.has(C2S.JOIN) && !ROOM_MESSAGES.has(C2S.CREATE_ROOM));

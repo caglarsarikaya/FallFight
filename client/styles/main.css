@@ -512,6 +512,32 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     text-shadow: 1px 1px 0 #000;
 }
 
+.use-hint {
+    position: absolute;
+    left: 50%; top: calc(50% + 70px);
+    transform: translateX(-50%);
+    font-family: var(--font);
+    font-size: 18px;
+    color: #fff;
+    text-shadow: 1px 1px 0 #000;
+}
+
+/* Zombies revive: a bar that fills over the revive time */
+.revive-bar {
+    position: absolute;
+    left: 50%; top: calc(50% + 96px);
+    transform: translateX(-50%);
+    width: min(280px, 70vw); height: 22px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    overflow: hidden;
+}
+.revive-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #4cd964; }
+.revive-bar span {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font); font-size: 15px; color: #fff; text-shadow: 1px 1px 0 #000;
+}
+
 .help-hint {
     position: absolute;
     left: 12px; top: 44px;

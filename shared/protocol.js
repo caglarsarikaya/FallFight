@@ -14,6 +14,7 @@ export const C2S = {
     RELOAD: 'reload',      // {}
     SCOPE: 'scope',        // { level } 0 = unscoped
     BUY: 'buy',            // { item } Team Buy: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion', 'ammo'
+    REVIVE: 'revive',      // { id } Zombies: start reviving that fallen teammate (hold E); id null stops
     PREFS: 'prefs',        // { randomGuns } Deathmatch: random guns every life, or keep the ones you picked
     PING: 'latencyCheck',  // ack: {} -> {} round-trip timing ('ping' is reserved by socket.io)
 };
@@ -50,5 +51,7 @@ export const S2C = {
     BUY_RESULT: 'buyResult',           // { ok, item, error? } to the buyer
     WAVE_START: 'waveStart',           // { wave, count } Zombies
     WAVE_END: 'waveEnd',               // { wave, next, breakTime }
+    REVIVE: 'revive',                  // { reviverId, targetId, until } until = server time it's done, null = stopped
+    REVIVED: 'revived',                // { reviverId, targetId } a fallen player is back on their feet
     SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

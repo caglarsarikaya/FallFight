@@ -162,6 +162,9 @@ export class Game {
         this.armor = 0;
         this.helmet = false;
         this.look = { dx: 0, dy: 0 };
+        this.shake = 0;                 // explosion camera shake, in blocks
+        this.reviveTarget = null;       // Zombies: the fallen teammate we're holding E on
+        this.revive = null;             // { label, until } a revive we're part of (server time)
         this.tmpVec = new THREE.Vector3();
 
         this.bindInput();
@@ -313,6 +316,7 @@ export class Game {
                     if (this.spectating) return this.cycleSpectate(-1);
                     return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
+                case 'use': return this.setReviving(value);
                 case 'pause': return this.escape();
             }
         };
@@ -365,7 +369,7 @@ export class Game {
         this.buyMenu.show(this.self?.money ?? 0, this.self?.team, { free, randomGuns: free ? this.profile.randomGuns : null });
     }
 
-    // F3: ammo, armor, potions and grenades in one go (the server buys what the money allows)
+    // N: ammo, armor, potions and grenades in one go (the server buys what the money allows)
     rebuy() {
         if (!this.hasShop) return;
         if (!this.canBuy) {
@@ -423,6 +427,58 @@ export class Game {
         this.sound.play('pin');
         setTimeout(() => this.sound.play('throw'), 180);
         if (inv.counts[id] === 1) setTimeout(() => w.inventory?.hotbar[w.inventory.selected] === id && w.selectLast(), 450);
+    }
+
+    // ---- Zombies revive (hold E on a fallen teammate) -----------------------------------------
+
+    // The nearest fallen teammate close enough to revive, or null
+    reviveCandidate() {
+        if (this.modeId !== 'zombies' || !this.local.alive) return null;
+        const { x, y, z } = this.local.body;
+        const reach = ZOMBIES.revive.reach;
+        let best = null;
+        let bestDist = Infinity;
+        for (const info of this.players.values()) {
+            if (info.alive || info.isZombie || info.id === this.selfId) continue;
+            const p = info.avatar.group.position;
+            const d = Math.hypot(p.x - x, p.z - z);
+            if (d <= reach && Math.abs(p.y - y) <= reach && d < bestDist) {
+                best = info;
+                bestDist = d;
+            }
+        }
+        return best;
+    }
+
+    // E down: start reviving whoever is at our feet; E up: stop
+    setReviving(down) {
+        const target = down ? this.reviveCandidate() : null;
+        if ((target?.id ?? null) === this.reviveTarget) return;
+        this.reviveTarget = target?.id ?? null;
+        this.connection.send(C2S.REVIVE, { id: this.reviveTarget });
+    }
+
+    onRevive({ reviverId, targetId, until }) {
+        if (reviverId === this.selfId && until === null) this.reviveTarget = null;
+        if (reviverId !== this.selfId && targetId !== this.selfId) return;
+        if (until === null) {
+            this.revive = null;
+            return;
+        }
+        const other = this.players.get(reviverId === this.selfId ? targetId : reviverId)?.name || 'teammate';
+        this.revive = { label: reviverId === this.selfId ? `Reviving ${other}...` : `${other} is reviving you...`, until };
+    }
+
+    // Every frame: the hint, the progress bar, and following E (held while walking up to a body
+    // starts it; letting go or losing the mouse stops it)
+    updateRevive() {
+        const held = this.input.keys.has('KeyE') && this.local.alive;
+        if (this.reviveTarget ? !held : held && !this.revive) this.setReviving(held);
+        const candidate = !this.revive && this.input.locked ? this.reviveCandidate() : null;
+        this.hud.setUseHint(candidate ? `Hold E to revive ${candidate.name}` : null);
+        const r = this.revive;
+        const now = this.serverOffset === null ? null : performance.now() / 1000 + this.serverOffset;
+        this.hud.setRevive(r && now !== null ? { label: r.label, progress: 1 - (r.until - now) / ZOMBIES.revive.time } : null);
     }
 
     // Where the crosshair points, as a direction from the player's eye
@@ -505,16 +561,26 @@ export class Game {
         this.onWeaponChanged();
     }
 
-    // A rocket landed: fireball, smoke, debris, the blast sound, and a shake when it's close
+    // A rocket landed: a big fireball with a lingering glow, smoke, debris, a dust ring along the
+    // ground, the blast sound, and a flinch and camera shake that grow the closer it is
     explosion(at, radius) {
-        this.effects.flash(at, radius * 1.2);
-        this.particles.burst(at, { count: 60, colors: FIRE, speed: 9, up: 6, gravity: 4, life: 0.6, size: 0.3, spread: 1, glow: true });
-        this.particles.burst(at, { count: 40, colors: SMOKE, speed: 4, up: 3, gravity: -1.2, life: 2.2, size: 0.55, spread: 1.6 });
-        this.particles.burst(at, { count: 30, colors: ['#5b4632', '#7a7a7a', '#3e6b2a'], speed: 10, up: 9, gravity: 22, life: 1.2, size: 0.12, spread: 0.6 });
-        this.sound.play('explosion', { at, range: 140, reverb: 0.4 });
+        const k = radius / 4;   // effects scale with the blast (the RPG's is 6, an HE grenade's 5)
+        this.effects.flash(at, radius * 1.6);
+        setTimeout(() => this.effects.flash(at, radius * 1.1), 70);
+        this.particles.burst(at, { count: Math.round(110 * k), colors: FIRE, speed: 11 * k, up: 7, gravity: 4, life: 0.75, size: 0.38, spread: radius * 0.3, glow: true });
+        this.particles.burst(at, { count: Math.round(70 * k), colors: SMOKE, speed: 5 * k, up: 3.5, gravity: -1.2, life: 2.8, size: 0.7, spread: radius * 0.4 });
+        this.particles.burst(at, { count: Math.round(45 * k), colors: ['#5b4632', '#7a7a7a', '#3e6b2a'], speed: 13 * k, up: 10, gravity: 22, life: 1.4, size: 0.14, spread: 0.6 });
+        // Dust ring: fast, flat, low
+        this.particles.burst({ x: at.x, y: at.y + 0.1, z: at.z }, { count: Math.round(50 * k), colors: SMOKE, speed: 14 * k, up: 0.4, gravity: 0, life: 0.9, size: 0.45, spread: 0.2 });
+        this.sound.play('explosion', { at, range: 180, reverb: 0.5 });
         if (!this.local?.alive) return;
         const d = this.sound.distanceTo(at);
-        if (d < radius * 3) this.weapons.flinch(60 * (1 - d / (radius * 3)));
+        const reach = radius * 4;
+        if (d < reach) {
+            const close = 1 - d / reach;
+            this.weapons.flinch(60 * close);
+            this.shake = Math.max(this.shake || 0, 0.35 * close);
+        }
     }
 
     onKnife(stab, dir) {
@@ -696,6 +762,13 @@ export class Game {
             }
         });
         on(S2C.DEATH, this.onDeath);
+        on(S2C.REVIVE, this.onRevive);
+        on(S2C.REVIVED, ({ reviverId, targetId }) => {
+            const name = id => this.players.get(id)?.name || 'Someone';
+            if (targetId === this.selfId) this.hud.toast(`${name(reviverId)} revived you!`);
+            else if (reviverId === this.selfId) this.hud.toast(`You revived ${name(targetId)}`);
+            else this.hud.toast(`${name(reviverId)} revived ${name(targetId)}`);
+        });
         on(S2C.RESPAWN, this.onRespawn);
         on(S2C.MODE_STATE, state => {
             this.modeState = state;
@@ -709,6 +782,8 @@ export class Game {
         });
         on(S2C.MATCH_START, () => {
             this.matchEnd.hide();
+            this.revive = null;
+            this.reviveTarget = null;
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
             this.hud.toast('New match!');
         });
@@ -1181,6 +1256,7 @@ export class Game {
         this.viewModel.setBolt(this.weapons.boltProgress());
         this.viewModel.update(dt, { speed, onGround: body.onGround, crouching: body.crouching, lookX: this.look.dx, lookY: this.look.dy });
         this.hud.setProtected(this.local.alive && now < this.protectedUntil);
+        this.updateRevive();
         if (this.weapons.inventory) {
             const w = this.weapons;
             this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : ''), w.reloading);
@@ -1321,5 +1397,13 @@ export class Game {
             pitch: this.local.pitch + punch.pitch,
             arena: this.arena
         });
+        // Explosion shake: the camera jitters and settles
+        if (this.shake > 0) {
+            const s = this.shake;
+            this.camera.position.x += (Math.random() - 0.5) * s;
+            this.camera.position.y += (Math.random() - 0.5) * s;
+            this.camera.position.z += (Math.random() - 0.5) * s;
+            this.shake = Math.max(0, s - dt * 0.6);
+        }
     }
 }
