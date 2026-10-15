@@ -1,5 +1,5 @@
 import { BLOCK } from '../constants.js';
-import { BLOCK_HP, BLOCK_KIND, FLOOR_HP_SCALE } from './blocks.js';
+import { BLOCK_KIND, BREAKABLE, FLOOR_HP_SCALE, SOLID, blockProps } from './blocks.js';
 import { DEFAULT_MAP, getMap } from './maps/index.js';
 
 export { BLOCK_KIND };
@@ -14,9 +14,10 @@ const EPS = 1e-6;
 // Built from a map definition (shared/world/maps/).
 export class Arena {
     constructor(map = getMap(DEFAULT_MAP)) {
-        const { id, size, height, layout } = map;
+        const { id, size, height, layout, floor = 0 } = map;
         this.mapId = id;
         this.map = map;
+        this.floor = floor;          // the block layer players normally stand on
         this.size = size;
         this.height = height;
         this.min = -size / 2;
@@ -45,7 +46,7 @@ export class Arena {
         const queue = [];
         for (let iz = 0; iz < this.size; iz++) {
             for (let ix = 0; ix < this.size; ix++) {
-                if (this.surfaceHeight(ix, iz) === 0) {
+                if (this.surfaceHeight(ix, iz) === this.floor) {
                     reachable[iz * this.size + ix] = 1;
                     queue.push([ix, iz]);
                 }
@@ -111,11 +112,30 @@ export class Arena {
         return this.inBounds(ix, iy, iz) ? this.states[this.index(ix, iy, iz)] : BLOCK_STATE.BROKEN;
     }
 
-    // Cracking blocks still hold you up until they break
+    // Cracking blocks still hold you up until they break. Water is not solid.
     isSolid(ix, iy, iz) {
         if (!this.inBounds(ix, iy, iz)) return false;
         const i = this.index(ix, iy, iz);
-        return this.kinds[i] !== BLOCK_KIND.AIR && this.states[i] !== BLOCK_STATE.BROKEN;
+        return SOLID[this.kinds[i]] === 1 && this.states[i] !== BLOCK_STATE.BROKEN;
+    }
+
+    isWater(ix, iy, iz) {
+        return this.kindAt(ix, iy, iz) === BLOCK_KIND.WATER;
+    }
+
+    isWaterAt(x, y, z) {
+        const { ix, iy, iz } = this.cellAt(x, y, z);
+        return this.isWater(ix, iy, iz);
+    }
+
+    isBreakable(ix, iy, iz) {
+        return BREAKABLE[this.kindAt(ix, iy, iz)] === 1;
+    }
+
+    // Grip of the ground under a point (ice is slippery); 1 in the air or on normal ground
+    frictionAt(x, y, z) {
+        const { ix, iy, iz } = this.cellAt(x, y - 0.05, z);
+        return this.isSolid(ix, iy, iz) ? blockProps(this.kinds[this.index(ix, iy, iz)]).friction : 1;
     }
 
     // Solid and not about to break
@@ -169,7 +189,7 @@ export class Arena {
     // ---- breaking ---------------------------------------------------------------------------
 
     startBreak(ix, iy, iz, by, now) {
-        if (!this.isStable(ix, iy, iz)) return false;
+        if (!this.isStable(ix, iy, iz) || !this.isBreakable(ix, iy, iz)) return false;
         const i = this.index(ix, iy, iz);
         this.states[i] = BLOCK_STATE.CRACKING;
         this.timers.set(i, { at: now + BLOCK.breakDelay, next: BLOCK_STATE.BROKEN });
@@ -179,9 +199,9 @@ export class Arena {
 
     // Bullets wear blocks down. Returns true when this hit used up the block's HP (it should break).
     damageBlock(ix, iy, iz, amount) {
-        if (!this.isStable(ix, iy, iz)) return false;
+        if (!this.isStable(ix, iy, iz) || !this.isBreakable(ix, iy, iz)) return false;
         const i = this.index(ix, iy, iz);
-        const hp = (BLOCK_HP[this.kinds[i]] ?? 150) * (iy === 0 ? FLOOR_HP_SCALE : 1);
+        const hp = blockProps(this.kinds[i]).hp * (iy <= this.floor ? FLOOR_HP_SCALE : 1);
         const wear = (this.wear.get(i) || 0) + amount;
         if (wear >= hp) {
             this.wear.delete(i);

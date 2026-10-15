@@ -6,12 +6,12 @@ import { Pathfinder } from './Pathfinder.js';
 
 // Bot tuning (distances in blocks, times in seconds)
 export const BOT_SETTINGS = {
-    reactionTime: [0.2, 0.4],    // before the first shot at a newly seen target
+    reactionTime: [0.3, 0.55],   // before the first shot at a newly seen target
     knifeRange: 1.7,
     preferredKnifeDistance: 1.2,
-    aimError: 0.022,             // radians of aim noise per burst
+    aimError: 0.03,              // radians of aim noise per burst
     shotJitter: 0.006,           // extra noise per shot
-    headChance: 0.2,             // share of bursts aimed at the head
+    headChance: 0.12,            // share of bursts aimed at the head
     burst: [3, 7],               // rounds per burst with automatic guns
     burstPause: [0.25, 0.6],
     tapDelay: [0.08, 0.3],       // extra delay between semi-auto shots

@@ -3,6 +3,9 @@ import { bodyHeight } from './game/Hitbox.js';
 
 const SKIN = 1e-4;
 
+// Movement in water, relative to normal
+const WATER = { speed: 0.6, accel: 5, gravity: 0.25, swimUp: 4.2, sink: 2.5 };
+
 function collides(arena, x, y, z, height) {
     const r = PLAYER.radius;
     return arena.boxCollides(x - r, y, z - r, x + r, y + height, z + r);
@@ -26,17 +29,28 @@ export function stepMovement(body, input, arena, dt) {
     if (input.crouch) body.crouching = true;
     else if (body.crouching && !collides(arena, body.x, body.y, body.z, PLAYER.height)) body.crouching = false;
 
-    const speed = moveSpeed({ ...input, crouching: body.crouching, onGround: body.onGround });
-    const accel = body.onGround ? PLAYER.groundAccel : PLAYER.airAccel;
+    // Swimming: slow, floaty, Space swims up
+    const inWater = arena.isWaterAt(body.x, body.y + 0.4, body.z);
+    body.inWater = inWater;
+    let speed = moveSpeed({ ...input, crouching: body.crouching, onGround: body.onGround });
+    if (inWater) speed *= WATER.speed;
+    const grip = body.onGround ? arena.frictionAt(body.x, body.y, body.z) : 1;
+    const accel = inWater ? WATER.accel : body.onGround ? PLAYER.groundAccel * grip : PLAYER.airAccel;
     const blend = 1 - Math.exp(-accel * dt);
     body.vx += (input.moveX * speed - body.vx) * blend;
     body.vz += (input.moveZ * speed - body.vz) * blend;
 
-    if (input.jump && body.onGround) {
+    if (input.jump && body.onGround && !inWater) {
         body.vy = PLAYER.jumpSpeed;
         body.onGround = false;
     }
-    body.vy -= PLAYER.gravity * dt;
+    if (inWater) {
+        body.vy -= PLAYER.gravity * WATER.gravity * dt;
+        if (input.jump) body.vy = Math.max(body.vy, WATER.swimUp);
+        body.vy = Math.max(body.vy, -WATER.sink);
+    } else {
+        body.vy -= PLAYER.gravity * dt;
+    }
 
     moveHorizontal(body, arena, 'x', body.vx * dt);
     moveHorizontal(body, arena, 'z', body.vz * dt);

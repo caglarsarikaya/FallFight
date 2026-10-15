@@ -91,7 +91,104 @@ export function createBlockTextures() {
         for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 2, 1);
     });
 
-    return { grassTop, grassSide, dirt, stoneBricks, planks };
+    const sand = pixelTexture((ctx, s) => {
+        const rng = createRng(83);
+        noise(ctx, s, '#d9c08a', 0.08, rng);
+        for (let i = 0; i < 20; i++) {
+            ctx.fillStyle = rng() < 0.5 ? '#c4a96f' : '#ead39f';
+            ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+        }
+    });
+
+    const sandstone = pixelTexture((ctx, s) => {
+        const rng = createRng(89);
+        noise(ctx, s, '#d6b77c', 0.07, rng);
+        ctx.fillStyle = '#b8955a';
+        for (const y of [0, 7, 8]) ctx.fillRect(0, y, s, 1);
+        ctx.fillStyle = '#e6cc94';
+        for (const y of [1, 9]) ctx.fillRect(0, y, s, 1);
+        for (let i = 0; i < 8; i++) ctx.fillRect(Math.floor(rng() * s), 3 + Math.floor(rng() * 3), 2, 1);
+    });
+
+    const snow = pixelTexture((ctx, s) => {
+        const rng = createRng(97);
+        noise(ctx, s, '#eef3f8', 0.05, rng);
+        ctx.fillStyle = '#d7e2ee';
+        for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+    });
+
+    const snowSide = pixelTexture((ctx, s) => {
+        const rng = createRng(98);
+        noise(ctx, s, '#866043', 0.12, rng);
+        for (let x = 0; x < s; x++) {
+            const depth = 3 + Math.floor(rng() * 3);
+            for (let y = 0; y < depth; y++) {
+                ctx.fillStyle = shade('#eef3f8', (rng() - 0.5) * 0.05);
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+    });
+
+    const ice = pixelTexture((ctx, s) => {
+        const rng = createRng(101);
+        noise(ctx, s, '#9fd0f0', 0.06, rng);
+        ctx.fillStyle = '#d9f0ff';
+        for (let i = 0; i < 4; i++) {
+            let x = Math.floor(rng() * s);
+            let y = Math.floor(rng() * s);
+            for (let k = 0; k < 6; k++) {
+                ctx.fillRect(x, y, 1, 1);
+                x = (x + 1) % s;
+                y = (y + (rng() < 0.5 ? 1 : 0)) % s;
+            }
+        }
+    });
+
+    const tile = pixelTexture((ctx, s) => {
+        const rng = createRng(107);
+        noise(ctx, s, '#f2f5f7', 0.03, rng);
+        ctx.fillStyle = '#7fb6d9';
+        for (const v of [0, 8]) {
+            ctx.fillRect(0, v, s, 1);
+            ctx.fillRect(v, 0, 1, s);
+        }
+    });
+
+    // Map walls: plain concrete panels (tinted per map)
+    const bedrock = pixelTexture((ctx, s) => {
+        const rng = createRng(113);
+        noise(ctx, s, '#b4b6ba', 0.04, rng);
+        ctx.fillStyle = '#9a9ca1';
+        ctx.fillRect(0, 0, s, 1);
+        ctx.fillRect(0, 0, 1, s);
+        ctx.fillStyle = '#c4c6ca';
+        ctx.fillRect(1, 1, s - 1, 1);
+        for (let i = 0; i < 6; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+    });
+
+    const crate = pixelTexture((ctx, s) => {
+        const rng = createRng(127);
+        noise(ctx, s, '#a87a42', 0.08, rng);
+        ctx.fillStyle = '#6b4a24';
+        ctx.fillRect(0, 0, s, 2);
+        ctx.fillRect(0, s - 2, s, 2);
+        ctx.fillRect(0, 0, 2, s);
+        ctx.fillRect(s - 2, 0, 2, s);
+        for (let i = 2; i < s - 2; i++) {
+            ctx.fillRect(i, i, 1, 1);
+            ctx.fillRect(s - 1 - i, i, 1, 1);
+        }
+    });
+
+    const water = pixelTexture((ctx, s) => {
+        const rng = createRng(131);
+        noise(ctx, s, '#2f86c9', 0.08, rng);
+        ctx.fillStyle = '#7fc3f2';
+        for (let i = 0; i < 9; i++) ctx.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 3, 1);
+    });
+    water.wrapS = water.wrapT = THREE.RepeatWrapping;
+
+    return { grassTop, grassSide, dirt, stoneBricks, planks, sand, sandstone, snow, snowSide, ice, tile, bedrock, crate, water };
 }
 
 // Crack overlays for the breaking animation (stage 0..4)

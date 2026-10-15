@@ -48,6 +48,7 @@ export class Hud {
             danger: el('div.vignette.danger'),
             heal: el('div.vignette.heal')
         };
+        this.underwater = el('div.underwater.hidden');
         this.helpHint = el('div.help-hint', {
             text: 'WASD move · Shift walk · C crouch · Space jump · Click fire · Right click scope/stab · R reload · 1-4 / Q / wheel weapons · V camera · Tab scores · Esc menu'
         });
@@ -56,7 +57,7 @@ export class Hud {
         }, 14000);
 
         this.root = el('div.hud', {}, [
-            this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
+            this.underwater, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             ...Object.values(this.vignettes),
             el('div.hud-left', {}, [this.health, this.armor]),
             this.ammoBox, this.slotList,
@@ -179,6 +180,12 @@ export class Hud {
         if (g === this.crosshairGap) return;
         this.crosshairGap = g;
         this.crosshair.style.setProperty('--gap', `${g}px`);
+    }
+
+    setUnderwater(on) {
+        if (on === this.isUnderwater) return;
+        this.isUnderwater = on;
+        this.underwater.classList.toggle('hidden', !on);
     }
 
     setScope(on) {

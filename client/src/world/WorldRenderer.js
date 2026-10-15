@@ -10,7 +10,15 @@ const REGROW_TIME = 0.35;
 export const DEBRIS_COLORS = {
     [BLOCK_KIND.GRASS]: ['#866043', '#6b4a32', '#5d9b3a', '#4e8a2f'],
     [BLOCK_KIND.STONE]: ['#8a8a8a', '#6e6e6e', '#a3a3a3'],
-    [BLOCK_KIND.PLANKS]: ['#b8945f', '#9c7a48', '#7d6139']
+    [BLOCK_KIND.PLANKS]: ['#b8945f', '#9c7a48', '#7d6139'],
+    [BLOCK_KIND.SAND]: ['#d9c08a', '#c4a96f', '#ead39f'],
+    [BLOCK_KIND.SANDSTONE]: ['#d6b77c', '#b8955a', '#e6cc94'],
+    [BLOCK_KIND.SNOW]: ['#ffffff', '#e4edf5', '#cfdbe8'],
+    [BLOCK_KIND.ICE]: ['#bfe4fb', '#9fd0f0', '#ffffff'],
+    [BLOCK_KIND.TILE]: ['#f2f5f7', '#d9e2e8', '#7fb6d9'],
+    [BLOCK_KIND.BEDROCK]: ['#4b4d52', '#2e3034', '#65686e'],
+    [BLOCK_KIND.CRATE]: ['#a87a42', '#6b4a24', '#c49a5c'],
+    [BLOCK_KIND.DIRT]: ['#866043', '#6b4a32', '#a07a58']
 };
 
 // Draws the arena's blocks (one instanced mesh per block kind) and animates cracking,
@@ -31,13 +39,25 @@ export class WorldRenderer {
     }
 
     materialsFor(kind) {
-        const { grassTop, grassSide, dirt, stoneBricks, planks } = this.textures;
+        const t = this.textures;
         const lambert = map => new THREE.MeshLambertMaterial({ map });
-        if (kind === BLOCK_KIND.GRASS) {
-            const side = lambert(grassSide);
-            return [side, side, lambert(grassTop), lambert(dirt), side, side];
+        const sided = (top, side, bottom) => {
+            const s = lambert(side);
+            return [s, s, lambert(top), lambert(bottom), s, s];
+        };
+        switch (kind) {
+            case BLOCK_KIND.GRASS: return sided(t.grassTop, t.grassSide, t.dirt);
+            case BLOCK_KIND.SNOW: return sided(t.snow, t.snowSide, t.dirt);
+            case BLOCK_KIND.STONE: return lambert(t.stoneBricks);
+            case BLOCK_KIND.SAND: return lambert(t.sand);
+            case BLOCK_KIND.SANDSTONE: return lambert(t.sandstone);
+            case BLOCK_KIND.ICE: return new THREE.MeshLambertMaterial({ map: t.ice, transparent: true, opacity: 0.88 });
+            case BLOCK_KIND.TILE: return lambert(t.tile);
+            case BLOCK_KIND.BEDROCK: return new THREE.MeshLambertMaterial({ map: t.bedrock, color: this.theme?.wall || '#9a9ca1' });
+            case BLOCK_KIND.CRATE: return lambert(t.crate);
+            case BLOCK_KIND.DIRT: return lambert(t.dirt);
+            default: return lambert(t.planks);
         }
-        return lambert(kind === BLOCK_KIND.STONE ? stoneBricks : planks);
     }
 
     setArena(arena) {
@@ -48,12 +68,15 @@ export class WorldRenderer {
         }
         this.meshes = [];
         this.instances.clear();
+        this.theme = arena.map.theme || {};
+        this.sky.setTheme(this.theme);
+        this.buildWater(arena);
 
-        // Group voxels by kind
+        // Group voxels by kind (water is drawn separately, as surfaces)
         const byKind = new Map();
         for (let i = 0; i < arena.kinds.length; i++) {
             const kind = arena.kinds[i];
-            if (kind === BLOCK_KIND.AIR) continue;
+            if (kind === BLOCK_KIND.AIR || kind === BLOCK_KIND.WATER) continue;
             if (!byKind.has(kind)) byKind.set(kind, []);
             byKind.get(kind).push(i);
         }
@@ -77,6 +100,36 @@ export class WorldRenderer {
             this.scene.add(mesh);
             this.meshes.push(mesh);
         }
+    }
+
+    // One flat, see-through, slowly moving surface on top of every water column
+    buildWater(arena) {
+        if (this.water) {
+            this.scene.remove(this.water);
+            this.water.dispose();
+            this.water = null;
+        }
+        const surfaces = [];
+        for (let i = 0; i < arena.kinds.length; i++) {
+            if (arena.kinds[i] !== BLOCK_KIND.WATER) continue;
+            const { ix, iy, iz } = arena.coords(i);
+            if (!arena.isWater(ix, iy + 1, iz)) surfaces.push({ ix, iy, iz });
+        }
+        if (!surfaces.length) return;
+        const geometry = new THREE.PlaneGeometry(1, 1);
+        geometry.rotateX(-Math.PI / 2);
+        const material = new THREE.MeshLambertMaterial({
+            map: this.textures.water, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.InstancedMesh(geometry, material, surfaces.length);
+        surfaces.forEach(({ ix, iy, iz }, id) => {
+            const c = arena.blockCenter(ix, iy, iz);
+            this.matrix.makeTranslation(c.x, c.y + 0.38, c.z);
+            mesh.setMatrixAt(id, this.matrix);
+        });
+        mesh.renderOrder = 2;
+        this.scene.add(mesh);
+        this.water = mesh;
     }
 
     setBlockScale(voxel, scale) {
@@ -148,9 +201,13 @@ export class WorldRenderer {
         }
     }
 
-    update(dt) {
+    update(dt, camera = null) {
         this.time += dt;
-        this.sky.update(dt);
+        this.sky.update(dt, camera);
+        if (this.water) {
+            this.textures.water.offset.x = Math.sin(this.time * 0.3) * 0.2;
+            this.textures.water.offset.y += dt * 0.05;
+        }
 
         for (const entry of this.cracking.values()) {
             const progress = Math.min(0.999, (this.time - entry.startedAt) / BLOCK.breakDelay);

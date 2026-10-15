@@ -21,6 +21,20 @@ const PATCHES = {
         s.noise({ out, duration: 0.06, type: 'lowpass', freq: 900 * p, gain: 0.28 });
         s.tone({ out, type: 'triangle', freq: 210 * p, freqEnd: 120, duration: 0.05, gain: 0.12 });
     },
+    stepSnow: (s, out, p) => {
+        // Crunchy: a few tiny crackles
+        for (let i = 0; i < 3; i++) s.noise({ out, delay: i * 0.018, duration: 0.03, type: 'bandpass', freq: (1300 + i * 400) * p, q: 2, gain: 0.18 });
+    },
+    stepSand: (s, out, p) => s.noise({ out, duration: 0.1, type: 'bandpass', freq: 2200 * p, freqEnd: 1200, q: 0.8, gain: 0.16 }),
+    stepIce: (s, out, p) => {
+        s.noise({ out, duration: 0.03, type: 'highpass', freq: 3000 * p, gain: 0.16 });
+        s.tone({ out, type: 'sine', freq: 1800 * p, duration: 0.03, gain: 0.03 });
+    },
+    swim: (s, out, p) => s.noise({ out, duration: 0.25, type: 'lowpass', freq: 900 * p, freqEnd: 300, gain: 0.18 }),
+    splash: (s, out) => {
+        s.noise({ out, duration: 0.45, type: 'lowpass', freq: 2500, freqEnd: 300, gain: 0.5 });
+        s.noise({ out, delay: 0.05, duration: 0.3, type: 'bandpass', freq: 1500, q: 1, gain: 0.25 });
+    },
     jump: (s, out) => s.noise({ out, duration: 0.09, type: 'bandpass', freq: 650, gain: 0.15 }),
     land: (s, out) => {
         s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.35 });

@@ -389,6 +389,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     transition: opacity 1s;
 }
 
+.underwater { position: absolute; inset: 0; background: radial-gradient(circle, rgba(30, 110, 170, 0.35), rgba(5, 40, 80, 0.75)); }
+.underwater.hidden { display: none; }
 .vignette { position: absolute; inset: 0; opacity: 0; transition: opacity 0.5s; }
 .vignette.damage { box-shadow: inset 0 0 160px 50px rgba(255, 0, 0, 0.6); }
 .vignette.danger { box-shadow: inset 0 0 120px 30px rgba(255, 140, 0, 0.8); }

@@ -4,7 +4,8 @@ import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.
 import { getModeInfo } from '../shared/config/modes.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
-import { Arena, BLOCK_KIND, BLOCK_STATE } from '../shared/world/Arena.js';
+import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
+import { blockProps } from '../shared/world/blocks.js';
 import { hitTest } from '../shared/game/Hitbox.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
@@ -32,8 +33,9 @@ const BASE_FOV = 75;
 const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
 const WHIZ_DISTANCE = 1.6;       // bullets passing this close to your head crack past your ears
 const BLOOD = ['#9c0a0a', '#6e0606', '#c21a1a'];
-const IMPACT_SOUND = { [BLOCK_KIND.GRASS]: 'impactDirt', [BLOCK_KIND.STONE]: 'impactStone', [BLOCK_KIND.PLANKS]: 'impactWood' };
-const STEP_SOUND = { [BLOCK_KIND.GRASS]: 'step', [BLOCK_KIND.STONE]: 'stepStone', [BLOCK_KIND.PLANKS]: 'stepWood' };
+// Sounds by block surface (see shared/world/blocks.js)
+const IMPACT_SOUND = { grass: 'impactDirt', sand: 'impactDirt', snow: 'impactDirt', stone: 'impactStone', ice: 'impactStone', wood: 'impactWood' };
+const STEP_SOUND = { grass: 'step', sand: 'stepSand', snow: 'stepSnow', stone: 'stepStone', ice: 'stepIce', wood: 'stepWood' };
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
 const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie'];
@@ -397,10 +399,11 @@ export class Game {
         const normal = ax >= ay && ax >= az ? { x: Math.sign(dx), y: 0, z: 0 }
             : ay >= az ? { x: 0, y: Math.sign(dy), z: 0 } : { x: 0, y: 0, z: Math.sign(dz) };
         this.effects.decal(point, normal, this.arena.index(ix, iy, iz));
+        if (!blockProps(kind).solid) return;
         const colors = DEBRIS_COLORS[kind] || DEBRIS_COLORS[1];
         this.particles.burst(point, { count: 5, colors, speed: 2.5, up: 2.5, size: 0.06, spread: 0.05, life: 0.5, dir: normal, dirSpeed: 3 });
         this.particles.burst(point, { count: 2, colors: ['#d9d2c0', '#bdb5a3'], speed: 1, up: 1.2, gravity: 1, size: 0.12, spread: 0.05, life: 0.6, glow: true, dir: normal, dirSpeed: 1 });
-        this.sound.play(IMPACT_SOUND[kind] || 'impactStone', { at: point, range: 40, volume: 0.8 });
+        this.sound.play(IMPACT_SOUND[blockProps(kind).surface] || 'impactStone', { at: point, range: 40, volume: 0.8 });
     }
 
     // ---- network ----------------------------------------------------------------------------
@@ -796,7 +799,7 @@ export class Game {
         for (const view of this.pickups.values()) view.update(dt);
         this.particles.update(dt);
         this.effects.update(dt);
-        this.world.update(dt);
+        this.world.update(dt, this.camera);
 
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
@@ -831,6 +834,13 @@ export class Game {
         }
         if (this.local.events.jumped) this.sound.play('jump');
         if (this.local.events.landed) this.sound.play('land', { volume: Math.min(1, 0.3 + this.local.events.fallSpeed / 14) });
+        // Into the water: splash; head under: everything goes blue
+        if (body.inWater !== this.wasInWater) {
+            if (body.inWater && this.local.alive) this.sound.play('splash');
+            this.wasInWater = body.inWater;
+        }
+        const eye = this.local.eye;
+        this.hud.setUnderwater(this.arena.isWaterAt(eye.x, eye.y, eye.z));
 
         // Send our state ~20 times a second
         this.sendTimer -= dt;
@@ -880,8 +890,9 @@ export class Game {
     }
 
     stepSound(body) {
+        if (this.arena.isWaterAt(body.x, body.y + 0.4, body.z)) return 'swim';
         const under = this.arena.supportBlock(body.x, body.y, body.z, 0);
-        return STEP_SOUND[under ? this.arena.kindAt(under.ix, under.iy, under.iz) : BLOCK_KIND.GRASS] || 'step';
+        return STEP_SOUND[under ? blockProps(this.arena.kindAt(under.ix, under.iy, under.iz)).surface : 'grass'] || 'step';
     }
 
     // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch
