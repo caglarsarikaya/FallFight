@@ -15,7 +15,8 @@ const DEFAULTS = {
     roomMap: '',
     mode: DEFAULT_MODE,     // game mode for Quick Play and new rooms
     sensitivity: 1,
-    showStats: true     // FPS / ping / latency readout in the corner
+    showStats: true,    // FPS / ping / latency readout in the corner
+    graphics: 'high'    // 'high' (shadows, sharper) or 'low' (for slow computers)
 };
 
 // Player choices remembered between visits (browser storage may be unavailable; that's fine)
@@ -51,6 +52,7 @@ export class Profile {
                 volume: this.volume,
                 sensitivity: this.sensitivity,
                 showStats: this.showStats,
+                graphics: this.graphics,
                 roomName: this.roomName,
                 roomMaxPlayers: this.roomMaxPlayers,
                 roomBots: this.roomBots,

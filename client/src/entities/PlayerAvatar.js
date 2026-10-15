@@ -129,7 +129,7 @@ export class PlayerAvatar {
         while (this.buffer.length > 2 && this.buffer[1].t < now - 1000) this.buffer.shift();
         this.onGround = state.onGround;
         this.crouching = !!state.crouching;
-        this.setHeldItem(state.item);
+        if (state.item !== undefined) this.setHeldItem(state.item);
         if (state.health !== this.health) this.setHealth(state.health);
     }
 
@@ -188,7 +188,7 @@ export class PlayerAvatar {
         let turn = b.yaw - a.yaw;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         this.group.rotation.y = a.yaw + turn * t;
-        this.pitch = THREE.MathUtils.lerp(a.pitch, b.pitch, t);
+        this.pitch = THREE.MathUtils.lerp(a.pitch ?? 0, b.pitch ?? 0, t); // monsters don't send pitch
     }
 
     playAction(action) {

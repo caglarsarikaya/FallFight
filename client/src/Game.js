@@ -54,10 +54,8 @@ export class Game {
         this.onEditProfile = onEditProfile;
         this.onLeave = onLeave;
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.renderer = new THREE.WebGLRenderer({ antialias: profile.graphics !== 'low', powerPreference: 'high-performance' });
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.autoClear = false;
         container.append(this.renderer.domElement);
@@ -104,6 +102,11 @@ export class Game {
                 profile.save();
                 this.hud.setStatsVisible(v);
             },
+            onGraphics: v => {
+                profile.graphics = v;
+                profile.save();
+                this.applyGraphics();
+            },
             onLeave: () => this.onLeave()
         });
         this.pauseMenu.setCameraLabel(this.cameraController.view.label);
@@ -133,7 +136,23 @@ export class Game {
 
         this.bindInput();
         this.bindNetwork();
+        this.applyGraphics();
         window.addEventListener('resize', () => this.resize());
+        this.resize();
+    }
+
+    // Low: no shadows and native-pixel rendering, for slow computers. High: shadows, sharper.
+    applyGraphics() {
+        const high = this.profile.graphics !== 'low';
+        this.renderer.setPixelRatio(high ? Math.min(window.devicePixelRatio, 1.5) : 1);
+        if (this.renderer.shadowMap.enabled !== high) {
+            this.renderer.shadowMap.enabled = high;
+            this.world.sky.sunLight.castShadow = high;
+            // Materials must recompile for the shadow change
+            this.scene.traverse(o => {
+                if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true;
+            });
+        }
         this.resize();
     }
 

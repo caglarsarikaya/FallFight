@@ -73,13 +73,15 @@ export class PickupSpawner {
         return removed;
     }
 
-    // First living player overlapping a pickup takes it. Returns [{ pickup, player }]
-    collect(players) {
-        const list = [...players]; // may be a one-shot iterator, and we loop over it once per pickup
+    // First living player overlapping a pickup takes it; canTake(player) can rule some out.
+    // players: an array or a Map's values (re-iterable). Returns [{ pickup, player }]
+    collect(players, canTake = () => true) {
         const taken = [];
+        if (this.pickups.size === 0) return taken;
+        const list = Array.isArray(players) ? players : [...players];
         for (const pickup of this.pickups.values()) {
             for (const player of list) {
-                if (!player.alive) continue;
+                if (!player.alive || !canTake(player)) continue;
                 const near = Math.hypot(player.x - pickup.x, player.z - pickup.z) <= PICKUPS.radius;
                 if (near && Math.abs(player.y - pickup.baseY) < 1.2) {
                     this.pickups.delete(pickup.id);

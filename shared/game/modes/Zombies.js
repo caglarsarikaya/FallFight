@@ -74,6 +74,22 @@ export class Zombies extends GameMode {
         return [...this.room.players.values()].filter(p => p.isZombie);
     }
 
+    // Counts in one pass, without building arrays (runs every tick)
+    census() {
+        const c = this.counts || (this.counts = { humans: 0, humansAlive: 0, zombiesAlive: 0 });
+        c.humans = c.humansAlive = c.zombiesAlive = 0;
+        for (const p of this.room.players.values()) {
+            if (p.isZombie) {
+                if (p.alive) c.zombiesAlive++;
+            } else {
+                c.humans++;
+                if (p.alive) c.humansAlive++;
+            }
+        }
+        return c;
+    }
+
+    // Nearest living human (zombies chase whoever is closest)
     nearestHuman(from) {
         let best = null;
         let bestDist = Infinity;
@@ -174,13 +190,13 @@ export class Zombies extends GameMode {
             if (p.isZombie && !p.alive && now - p.diedAt > CORPSE_TIME) room.removePlayer(p.id);
         }
 
-        const humans = this.humans;
+        const census = this.census();
         if (this.phase === 'break') {
-            if (now >= this.phaseEndsAt && humans.length) this.startWave();
+            if (now >= this.phaseEndsAt && census.humans) this.startWave();
             return;
         }
         if (this.phase === 'wave') {
-            if (humans.length && humans.every(p => !p.alive)) {
+            if (census.humans && census.humansAlive === 0) {
                 this.phase = 'lost';
                 this.bestWave = Math.max(this.bestWave, this.wave - 1);
                 this.dirty = true;
@@ -188,7 +204,7 @@ export class Zombies extends GameMode {
                 return;
             }
             this.spawnTimer -= dt;
-            let alive = this.zombies.filter(z => z.alive).length;
+            let alive = census.zombiesAlive;
             if (this.toSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
                 this.spawnTimer = SPAWN_INTERVAL;
                 this.spawnZombie();

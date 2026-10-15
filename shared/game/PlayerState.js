@@ -79,6 +79,19 @@ export class PlayerState {
         };
     }
 
+    // Monsters (zombies) only need where they are and how hurt they are, 20 times a second;
+    // the rest is in the full description they joined with
+    toNpcSnapshot() {
+        return {
+            id: this.id,
+            x: round2(this.x), y: round2(this.y), z: round2(this.z),
+            yaw: round2(this.yaw),
+            onGround: this.onGround,
+            health: this.health,
+            alive: this.alive
+        };
+    }
+
     // Compact per-tick state
     toSnapshot() {
         return {
@@ -99,3 +112,4 @@ export class PlayerState {
 }
 
 const round = v => Math.round(v * 1000) / 1000;
+const round2 = v => Math.round(v * 100) / 100;

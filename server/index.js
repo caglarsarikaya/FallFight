@@ -18,7 +18,8 @@ validateRoomLimits(ROOMS); // refuse to start with a broken shared/config/rooms.
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
+// Snapshots are repetitive JSON: compressing the bigger messages cuts bandwidth several times over
+const io = new Server(server, { cors: { origin: CORS_ORIGIN }, perMessageDeflate: { threshold: 1024 } });
 
 // Live room list and player counts, shown on everyone's start menu
 const serverStats = () => {

@@ -1,8 +1,18 @@
 import { el } from './dom.js';
 
-// Esc menu: resume, change character/name, camera, volume, sensitivity, stats overlay, leave
+// Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, stats overlay, leave
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onGraphics, onLeave }) {
+        this.graphics = profile.graphics;
+        this.graphicsButton = el('button.btn', {
+            type: 'button',
+            onclick: () => {
+                this.graphics = this.graphics === 'low' ? 'high' : 'low';
+                this.updateGraphicsLabel();
+                onGraphics(this.graphics);
+            }
+        });
+        this.updateGraphicsLabel();
         this.cameraButton = el('button.btn', { type: 'button', onclick: () => onToggleCamera() });
         this.showStats = profile.showStats;
         this.statsButton = el('button.btn', {
@@ -27,6 +37,7 @@ export class PauseMenu {
             this.cameraButton,
             el('div.setting', {}, [el('span.label', { text: 'SOUND' }), this.volume]),
             el('div.setting', {}, [el('span.label', { text: 'MOUSE SENSITIVITY' }), this.sensitivity]),
+            this.graphicsButton,
             this.statsButton,
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
@@ -39,6 +50,10 @@ export class PauseMenu {
 
     setCameraLabel(label) {
         this.cameraButton.textContent = `Camera: ${label}`;
+    }
+
+    updateGraphicsLabel() {
+        this.graphicsButton.textContent = `Graphics: ${this.graphics === 'low' ? 'LOW (fast)' : 'HIGH'}`;
     }
 
     updateStatsLabel() {

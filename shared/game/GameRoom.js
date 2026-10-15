@@ -103,6 +103,7 @@ export class GameRoom {
 
     // Snapshot (or full description) of a player, with the mode's extra fields
     playerJSON(player, full = false) {
+        if (!full && player.isZombie) return player.toNpcSnapshot();
         const base = full ? player.toJSON() : player.toSnapshot();
         const extra = this.mode.playerJSON(player);
         return extra ? Object.assign(base, extra) : base;
@@ -658,8 +659,7 @@ export class GameRoom {
         for (const pickup of this.pickups.expire(this.time)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         }
-        const collectors = [...this.players.values()].filter(p => this.mode.canPickUp(p));
-        for (const { pickup, player } of this.pickups.collect(collectors)) {
+        for (const { pickup, player } of this.pickups.collect(this.players.values(), p => this.mode.canPickUp(p))) {
             if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount * 2);
             else if (pickup.type === 'armor') {
                 player.armor = 100;

@@ -7,12 +7,33 @@ them into the lava.
 
 **▶ Play: https://caglarsarikaya.github.io/FallFight/**
 
-- **Quick Play** puts you in a public room. Rooms are always full: bots fill the empty seats, and a bot
-  steps out whenever a person joins. If the game server can't be reached (or is full), you play the
-  same game against bots in your browser.
-- **Rooms**: create your own room with a name, an optional password, a player count, and a choice to
-  **fill empty seats with bots** or play **friends only**. Friends see it in the room list and join it
-  (entering the password if there is one).
+- **Four game modes**: Deathmatch, Gun Game, Team Buy and Zombies (see below). Pick one on the menu.
+- **Quick Play** puts you in a public room of the chosen mode. Rooms are always full: bots fill the
+  empty seats, and a bot steps out whenever a person joins. If the game server can't be reached (or is
+  full), you play the same game against bots in your browser. **Play Offline** does that on purpose.
+- **Rooms**: create your own room with a name, an optional password, a player count, a **mode and a
+  map**, and a choice to **fill empty seats with bots** or play **friends only**. Friends see it in the
+  room list and join it (entering the password if there is one).
+
+## Game modes
+
+| Mode | How it works |
+|---|---|
+| **Deathmatch** | Everyone for themselves, forever. A random rifle and pistol every life, kevlar and helmet, a health potion for every kill |
+| **Gun Game** | Everyone starts with a Glock. Every 5 kills hands you the next gun at once: Glock → USP → Deagle → MP5 → P90 → M3 → Scout → M4A1 → AK-47 → AWP. The first to finish the ladder (50 kills) wins. A knife kill takes a kill away from the victim |
+| **Team Buy** | Terrorists vs Counter-Terrorists in rounds, like CS on fy_pool_day. Each round opens with a few seconds of freeze time to buy (press **B**); then wipe out the other team. Dead players wait for the next round, and survivors keep their guns. Kills, round wins and even losses pay money ($800 to start, $16000 max). First to 8 rounds wins |
+| **Zombies** | 1–4 players hold out against endless waves together. Every wave brings more, tougher and faster zombies, with runners every 5th wave. Killed zombies drop ammo, potions, kevlar and better guns. Players who fall come back when the wave is cleared; when everyone is down, the run is over. Zombies claw through walls if you hide behind them |
+
+## Maps
+
+| Map | Inspired by | |
+|---|---|---|
+| **fy_pool_day** | fy_pool_day | Two pool houses across a sunken pool. Swim (Space swims up), dive off the board, climb the stairs to snipe from the roofs. Team Buy's default |
+| **fy_iceworld** | fy_iceworld | A small snow field with an ice-walled square and crates. The rink in the middle is slippery, and it snows |
+| **de_dust_mini** | de_dust | Long, mid and short lanes, mid doors, long doors and roofed tunnels through the middle blocks |
+| **Lava Arena** | the original FallFight | Open grass over lava, a walled plaza and four sniper towers |
+
+Inside each map's outer wall, everything can be shot down or knifed through.
 
 ## How to play
 
@@ -27,9 +48,10 @@ them into the lava.
 | Right click | Scope (Scout, AWP: two zoom levels) · knife stab |
 | R | Reload |
 | 1 / 2 / 3 / 4, Q, mouse wheel | Rifle / Pistol / Knife / Health potion · Q = last weapon |
+| B | Team Buy: buy menu. Pick a category, then an item, with the number keys |
 | V (or F5) | Switch between first and third person |
 | Tab | Scoreboard |
-| Esc | Menu: change character or nickname, camera, sound, mouse sensitivity |
+| Esc | Menu: change character or nickname, camera, sound, mouse sensitivity, graphics (LOW for slow computers: no shadows) |
 
 **Characters:** Robot, Squirrel, Mario, Dr Octopus, Dr Helix and Byte. They all have the same stats;
 only the looks differ. Your nickname, character and settings are remembered in the browser.
@@ -56,8 +78,8 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 
 | | |
 |---|---|
-| Health and armor | 100 HP, 100 kevlar + helmet on spawn. Respawn after 3 s with 2 s of spawn protection; attacking ends the protection |
-| Loadout | Every life: a random rifle, SMG, shotgun or sniper, a random pistol, the knife and an empty potion slot |
+| Health and armor | 100 HP. Deathmatch and Gun Game: kevlar + helmet on spawn, respawn after 3 s with 2 s of spawn protection (attacking ends it). Team Buy: buy armor yourself, no respawn until the next round |
+| Loadout | Deathmatch: a random rifle, SMG, shotgun or sniper and a random pistol every life. Gun Game: your ladder gun. Team Buy: a pistol, then whatever you buy. Zombies: a USP, then what the zombies drop. The knife always |
 | 🎯 Hit zones | Head ×4, body ×1, legs ×0.75. Kevlar soaks up part of every body hit (how much depends on the gun's armor penetration); only a helmet protects the head |
 | Accuracy | Standing still is accurate, crouching more so. Moving, jumping and long sprays open up the spread. Snipers are only accurate scoped and standing still. The crosshair shows your current spread |
 | Recoil | Every gun kicks in a fixed pattern (up first, then sideways): pull the mouse down to control a spray, or fire in bursts |
@@ -66,8 +88,8 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Getting hit | Your view flinches, you slow down for a moment, and a red arc shows where the shot came from |
 | Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
-| 🧪 Health potion | Heals 20 HP, one use. Every kill rewards **one** potion |
-| Pickups | Every 15 s: an ammo box (a magazine for every gun you carry). Every 60 s: a health potion |
+| 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy: $200. Zombies: dropped by zombies |
+| Pickups | Deathmatch: every 15 s an ammo box (a magazine for every gun you carry), every 60 s a health potion. Gun Game: ammo boxes |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
 
 ## Architecture
@@ -107,6 +129,23 @@ test/     node:test unit tests and bot simulations
     (`shared/game/Hitbox.js`) against where the shooter saw its targets: `shared/game/LagComp.js`
     rewinds them by up to 250 ms.
   - Rate of fire, magazines, reloads and deploy times are enforced on the server too.
+- **Game modes (OOP):** `shared/game/modes/GameMode.js` holds the rules the room asks about:
+  - spawn loadout and spawn zones;
+  - who can hurt whom;
+  - what a kill is worth;
+  - when you respawn, and whether you're frozen;
+  - match end;
+  - the extra state clients see.
+
+  `FreeForAll`, `GunGame`, `TeamBuy` and `Zombies` override what they need. Tuning is in
+  `shared/config/modes.js`.
+- **Maps** (`shared/world/maps/`) are lists of block boxes plus spawn zones, landmarks and a theme
+  (sky, fog, what lies below). Block kinds and their properties are in `shared/world/blocks.js`:
+  solid, breakable, bullet HP, grip and sound. Water isn't solid, and ice is slippery.
+  - **Navigation knows about floors:** a place to stand is a column plus a height, so a house floor
+    and its roof are different places for spawns, bots (A* in `Pathfinder.js`) and zombies.
+  - **Zombies** are room NPCs. They share one flow field (`FlowField.js`, a BFS from every living
+    player), so a horde costs one pass over the map per update, however big it is.
 - **Feel:** most of the gun feel comes from the client, all of it pooled so a spray allocates
   nothing:
   - recoil view punch, a dynamic crosshair and weapon sway;
@@ -136,6 +175,22 @@ variations, and any name without a file keeps its synthesised version.
 [`client/assets/sfx/SOURCES.md`](client/assets/sfx/SOURCES.md) lists every sound name and where to
 find free (CC0 / royalty-free) gun recordings.
 
+### Adding a map
+
+1. Create `shared/world/maps/my_map.js`. It's a layout of `box(kind, x0, x1, z0, z1, y0, y1)`
+   ranges (helpers such as `ring`, `house` and `stairs` are in `build.js`), plus `spawns` (tile
+   rectangles for `t`, `ct` and `zombie`), `landmarks.sniperPerches` and a `theme`.
+2. Register it in `shared/world/maps/index.js`, and list it under the modes that should offer it in
+   `shared/config/modes.js`.
+3. `test/maps.test.js` checks every map automatically: room to spawn, a route between the teams,
+   reachable perches, unbreakable walls and a bot match.
+
+### Adding a game mode
+
+Extend `GameMode` in `shared/game/modes/`, register it in `modes/index.js`, describe it in
+`MODES` (`shared/config/modes.js`), and give it a view in `client/src/ui/ModePanel.js` and columns
+in `Scoreboard.js`.
+
 ### Adding a character
 
 1. Add an entry to `shared/characters/definitions.js`.
@@ -157,7 +212,7 @@ To point any copy of the page at a different server, add `?server=<url>`, e.g.
 `?server=http://localhost:3000`.
 
 Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`): reaction time, aim error,
-burst length, headshot chance. Bots navigate with A* (`shared/ai/Pathfinder.js`). Rules are in
+burst length, headshot chance. Zombie waves are tuned in `ZOMBIES` (`shared/config/modes.js`). Bots navigate with A* (`shared/ai/Pathfinder.js`). Rules are in
 `shared/constants.js`, gun balance in `shared/config/weapons.js`, and the arena layout in
 `shared/world/layout.js`.
 

@@ -9,7 +9,8 @@ import { el } from './dom.js';
 const CONTROLS = [
     ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C', 'Crouch'], ['Space', 'Jump'],
     ['Left click', 'Fire / slash'], ['Right click', 'Scope / knife stab'], ['R', 'Reload'],
-    ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q, wheel', 'Switch weapon'], ['V', 'First / third person'],
+    ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q, wheel', 'Switch weapon'], ['B', 'Buy menu (Team Buy)'],
+    ['V', 'First / third person'],
     ['Tab', 'Scoreboard'], ['Esc', 'Menu: change character or name']
 ];
 
