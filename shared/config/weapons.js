@@ -5,7 +5,7 @@
 // unless the field name says deg.
 //   rpm            rounds per minute (sets the time between shots)
 //   damage         per bullet (per pellet for shotguns) at point blank, before hit zone and armor
-//   rangeModifier  damage multiplier per GUN.falloffUnit blocks travelled (CS: per 500 units)
+//   range          blocks of full damage; past it damage halves every GUN.falloffHalf blocks
 //   armorPen       share of damage that still goes to health through kevlar
 //   penetration    how many blocks a bullet can punch through (losing damage each time)
 //   reloadTime     seconds (per shell for shotguns); about 30% quicker than CS 1.6
@@ -35,32 +35,32 @@ export const WEAPONS = Object.freeze({
     // ---- pistols -----------------------------------------------------------------------
     glock: gun({
         id: 'glock', name: 'Glock-18', short: 'GLOCK', kind: WEAPON_KIND.PISTOL,
-        rpm: 400, damage: 25, rangeModifier: 0.75, armorPen: 0.5, penetration: 1,
+        rpm: 400, damage: 25, range: 45, armorPen: 0.5, penetration: 1,
         mag: 20, reserve: 120, reloadTime: 1.55, deploy: 0.6, moveSpeed: 1,
-        spread: { stand: 0.010, crouch: 0.007, move: 0.030, air: 0.12, perShot: 0.010, maxShot: 0.05, recover: 7 },
+        spread: { stand: 0.005, crouch: 0.0035, move: 0.030, air: 0.12, perShot: 0.010, maxShot: 0.05, recover: 7 },
         recoil: { up: 1.4, upMax: 6, side: 0.3, sideFrom: 3, recover: 14 },
         price: 400, killReward: 300
     }),
     usp: gun({
         id: 'usp', name: 'USP .45', short: 'USP', kind: WEAPON_KIND.PISTOL,
-        rpm: 352, damage: 34, rangeModifier: 0.79, armorPen: 0.5, penetration: 1,
+        rpm: 352, damage: 34, range: 45, armorPen: 0.5, penetration: 1,
         mag: 12, reserve: 100, reloadTime: 1.9, deploy: 0.6, moveSpeed: 1,
-        spread: { stand: 0.008, crouch: 0.005, move: 0.030, air: 0.12, perShot: 0.011, maxShot: 0.05, recover: 6 },
+        spread: { stand: 0.004, crouch: 0.0025, move: 0.030, air: 0.12, perShot: 0.011, maxShot: 0.05, recover: 6 },
         recoil: { up: 1.8, upMax: 7, side: 0.3, sideFrom: 3, recover: 13 },
         price: 500, killReward: 300
     }),
     deagle: gun({
         id: 'deagle', name: 'Desert Eagle', short: 'DEAGLE', kind: WEAPON_KIND.PISTOL,
-        rpm: 267, damage: 54, rangeModifier: 0.81, armorPen: 0.75, penetration: 2,
+        rpm: 267, damage: 54, range: 45, armorPen: 0.75, penetration: 2,
         mag: 7, reserve: 35, reloadTime: 1.55, deploy: 0.75, moveSpeed: 1,
-        spread: { stand: 0.009, crouch: 0.006, move: 0.045, air: 0.16, perShot: 0.030, maxShot: 0.09, recover: 3.5 },
+        spread: { stand: 0.0045, crouch: 0.003, move: 0.045, air: 0.16, perShot: 0.030, maxShot: 0.09, recover: 3.5 },
         recoil: { up: 4.2, upMax: 10, side: 0.8, sideFrom: 1, recover: 11 },
         price: 650, killReward: 300, knockback: 1.5
     }),
     // ---- SMGs and shotgun ----------------------------------------------------------------
     mp5: gun({
         id: 'mp5', name: 'MP5 Navy', short: 'MP5', kind: WEAPON_KIND.SMG, auto: true,
-        rpm: 750, damage: 26, rangeModifier: 0.84, armorPen: 0.5, penetration: 1,
+        rpm: 750, damage: 26, range: 16, armorPen: 0.5, penetration: 1,
         mag: 30, reserve: 120, reloadTime: 1.8, deploy: 0.75, moveSpeed: 0.98,
         spread: { stand: 0.012, crouch: 0.009, move: 0.025, air: 0.10, perShot: 0.0035, maxShot: 0.035, recover: 9 },
         recoil: { up: 0.55, upMax: 5, side: 0.35, sideFrom: 6, recover: 12 },
@@ -68,7 +68,7 @@ export const WEAPONS = Object.freeze({
     }),
     p90: gun({
         id: 'p90', name: 'ES P90', short: 'P90', kind: WEAPON_KIND.SMG, auto: true,
-        rpm: 857, damage: 21, rangeModifier: 0.84, armorPen: 0.75, penetration: 1,
+        rpm: 857, damage: 21, range: 16, armorPen: 0.75, penetration: 1,
         mag: 50, reserve: 100, reloadTime: 2.4, deploy: 0.8, moveSpeed: 0.98,
         spread: { stand: 0.014, crouch: 0.011, move: 0.024, air: 0.10, perShot: 0.003, maxShot: 0.035, recover: 10 },
         recoil: { up: 0.5, upMax: 5, side: 0.4, sideFrom: 6, recover: 12 },
@@ -76,7 +76,7 @@ export const WEAPONS = Object.freeze({
     }),
     m3: gun({
         id: 'm3', name: 'M3 Super 90', short: 'M3', kind: WEAPON_KIND.SHOTGUN,
-        rpm: 68, damage: 20, pellets: 9, rangeModifier: 0.70, armorPen: 0.5, penetration: 0,
+        rpm: 68, damage: 20, pellets: 9, range: 6, armorPen: 0.5, penetration: 0,
         mag: 8, reserve: 32, reloadTime: 0.35, reloadStyle: 'shell', deploy: 0.85, moveSpeed: 0.92,
         // Like CS, a shotgun's spread barely changes on the move
         spread: { stand: 0.060, crouch: 0.055, move: 0.010, air: 0.030, perShot: 0, maxShot: 0, recover: 4 },
@@ -86,7 +86,7 @@ export const WEAPONS = Object.freeze({
     // ---- rifles --------------------------------------------------------------------------
     ak47: gun({
         id: 'ak47', name: 'AK-47', short: 'AK-47', kind: WEAPON_KIND.RIFLE, auto: true,
-        rpm: 600, damage: 36, rangeModifier: 0.98, armorPen: 0.775, penetration: 2,
+        rpm: 600, damage: 36, range: 45, armorPen: 0.775, penetration: 2,
         mag: 30, reserve: 90, reloadTime: 1.7, deploy: 0.85, moveSpeed: 0.88,
         spread: { stand: 0.004, crouch: 0.002, move: 0.060, air: 0.16, perShot: 0.0065, maxShot: 0.05, recover: 6 },
         recoil: { up: 1.15, upMax: 9, side: 0.75, sideFrom: 5, recover: 10 },
@@ -94,7 +94,7 @@ export const WEAPONS = Object.freeze({
     }),
     m4a1: gun({
         id: 'm4a1', name: 'M4A1', short: 'M4A1', kind: WEAPON_KIND.RIFLE, auto: true,
-        rpm: 666, damage: 33, rangeModifier: 0.97, armorPen: 0.7, penetration: 2,
+        rpm: 666, damage: 33, range: 45, armorPen: 0.7, penetration: 2,
         mag: 30, reserve: 90, reloadTime: 2.15, deploy: 0.85, moveSpeed: 0.92,
         spread: { stand: 0.0035, crouch: 0.002, move: 0.050, air: 0.15, perShot: 0.005, maxShot: 0.04, recover: 6.5 },
         recoil: { up: 0.9, upMax: 7.5, side: 0.55, sideFrom: 6, recover: 11 },
@@ -103,7 +103,7 @@ export const WEAPONS = Object.freeze({
     // ---- snipers -------------------------------------------------------------------------
     scout: gun({
         id: 'scout', name: 'Schmidt Scout', short: 'SCOUT', kind: WEAPON_KIND.SNIPER,
-        rpm: 48, damage: 75, rangeModifier: 0.98, armorPen: 0.85, penetration: 3,
+        rpm: 48, damage: 75, range: 120, armorPen: 0.85, penetration: 3,
         mag: 10, reserve: 90, reloadTime: 1.4, deploy: 0.9, moveSpeed: 1,
         spread: { stand: 0.065, crouch: 0.055, move: 0.10, air: 0.10, perShot: 0, maxShot: 0, recover: 4 },
         recoil: { up: 2.5, upMax: 6, side: 0.3, sideFrom: 1, recover: 10 },
@@ -112,7 +112,7 @@ export const WEAPONS = Object.freeze({
     }),
     awp: gun({
         id: 'awp', name: 'AWP Magnum', short: 'AWP', kind: WEAPON_KIND.SNIPER,
-        rpm: 41, damage: 115, rangeModifier: 0.99, armorPen: 0.975, penetration: 3,
+        rpm: 41, damage: 115, range: 120, armorPen: 0.975, penetration: 3,
         mag: 10, reserve: 30, reloadTime: 1.75, deploy: 1.2, moveSpeed: 0.84,
         spread: { stand: 0.085, crouch: 0.075, move: 0.13, air: 0.13, perShot: 0, maxShot: 0, recover: 4 },
         recoil: { up: 4, upMax: 8, side: 0.4, sideFrom: 1, recover: 9 },

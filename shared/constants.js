@@ -65,7 +65,8 @@ export const ARMOR = {
 
 export const GUN = {
     maxRange: 160,
-    falloffUnit: 12.5,              // blocks per CS 500 units
+    falloffHalf: 8,                 // blocks past a gun's range for its damage to halve
+    falloffFloor: 0.2,              // share of damage a bullet always keeps, however far
     zoneMultiplier: { head: 4, body: 1, legs: 0.75 },
     penetrationLoss: 0.55,          // damage kept after punching through a block
     fireTolerance: 0.1,             // seconds of bunching allowed between shots arriving over the network

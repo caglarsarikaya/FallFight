@@ -85,16 +85,23 @@ test('kevlar soaks up body damage and wears down; the helmet guards the head', (
     assert.equal(helmet.b.alive, true);
 });
 
-test('damage falls off with distance, much faster for shotgun pellets', () => {
-    const near = duel();
-    arm(near.room, near.a, 'mp5');
-    place(near.room, near.b, 22, 18);
-    shootAt(near.room, near.a, near.b, 1.1);
-    const far = duel();
-    arm(far.room, far.a, 'mp5');
-    place(far.room, far.b, 22, 0);
-    shootAt(far.room, far.a, far.b, 1.1);
-    assert.ok(far.room.eventsOf('damage').at(-1).amount < near.room.eventsOf('damage').at(-1).amount);
+// Body shot from the duel spot at a target `blocks` away; returns the damage dealt
+function bodyShotAt(gun, blocks) {
+    const { room, a, b } = duel();
+    arm(room, a, gun);
+    place(room, b, 22, 22 - blocks);
+    shootAt(room, a, b, 1.1);
+    return room.eventsOf('damage').at(-1)?.amount;
+}
+
+test('SMGs hit full strength up close but fade past mid range; rifles and pistols carry', () => {
+    assert.equal(bodyShotAt('mp5', 4), bodyShotAt('mp5', 12), 'no falloff inside SMG range');
+    const smgFar = bodyShotAt('mp5', 22);
+    assert.ok(smgFar < WEAPONS.mp5.damage * 0.75, `mp5 at 22: ${smgFar}`);
+    assert.equal(bodyShotAt('usp', 22), WEAPONS.usp.damage, 'pistols keep full damage');
+    assert.equal(bodyShotAt('ak47', 22), WEAPONS.ak47.damage, 'rifles keep full damage');
+    // Even a headshot from an SMG stops killing at range
+    assert.ok(smgFar * GUN.zoneMultiplier.head < PLAYER.maxHealth);
 });
 
 test('the M3 fires 9 pellets in one shot and lands one combined hit', () => {

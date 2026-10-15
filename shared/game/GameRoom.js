@@ -362,7 +362,8 @@ export class GameRoom {
             }
             if (best) {
                 const distance = travelled + best.distance;
-                const raw = damage * Math.pow(spec.rangeModifier, distance / GUN.falloffUnit) * GUN.zoneMultiplier[best.zone];
+                const falloff = Math.max(GUN.falloffFloor, Math.pow(0.5, Math.max(0, distance - spec.range) / GUN.falloffHalf));
+                const raw = damage * falloff * GUN.zoneMultiplier[best.zone];
                 this.addBulletHit(hits, best.target.player, raw, best.zone, spec, shooter);
                 return { distance, kind: 2 };
             }

@@ -15,7 +15,7 @@ export const BOT_SETTINGS = {
     burst: [3, 7],               // rounds per burst with automatic guns
     burstPause: [0.25, 0.6],
     tapDelay: [0.08, 0.3],       // extra delay between semi-auto shots
-    effectiveRange: { pistol: 26, smg: 30, shotgun: 11, rifle: 48, sniper: 70, knife: 2 },
+    effectiveRange: { pistol: 45, smg: 20, shotgun: 11, rifle: 48, sniper: 70, knife: 2 },
     trapChance: 0.3,             // knife the block under a close target instead of stabbing it
     potionBelowHealth: 50,
     retargetInterval: 2.5,
