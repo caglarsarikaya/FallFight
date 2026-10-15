@@ -57,7 +57,8 @@ test('a 1-high block can be jumped onto, a 2-high one cannot', () => {
     step(low, arena, {}, 0.5);
     assert.equal(low.y, 0, 'tower too high to jump on from the floor');
     // From the step onto the tower top
-    step(body, arena, { moveX: -1, jump: true }, 0.8);
+    step(body, arena, { moveX: -1, jump: true }, 1 / 60); // one press, like the game
+    step(body, arena, { moveX: -1 }, 0.5);
     step(body, arena, {}, 0.5);
     assert.equal(body.y, 2, 'climbed the tower via its step');
 });

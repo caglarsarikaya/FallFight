@@ -17,6 +17,7 @@ export class LocalPlayerController {
         this.accumulator = 0;
         this.eyeHeight = PLAYER.eyeHeight;
         this.taggedUntil = 0;
+        this.jumpUntil = 0;        // a jump press waits this long for the ground (bunny hop timing)
         this.events = { jumped: false, landed: false, fallSpeed: 0 };
     }
 
@@ -45,22 +46,27 @@ export class LocalPlayerController {
     }
 
     // Fixed-step simulation so movement feels the same at any frame rate.
-    // input: { forward, strafe, jump, crouch, walk }; speedMul from the weapon in hand
+    // input: { forward, strafe, jump (pressed this frame), crouch, walk }; speedMul from the weapon in hand
     update(dt, { forward, strafe, jump, crouch = false, walk = false }, arena, speedMul = 1) {
         this.events.jumped = false;
         this.events.landed = false;
         this.walking = walk;
-        const slow = performance.now() / 1000 < this.taggedUntil ? PLAYER.tagSpeed : 1;
+        const now = performance.now() / 1000;
+        const slow = now < this.taggedUntil ? PLAYER.tagSpeed : 1;
+        if (jump) this.jumpUntil = now + PLAYER.jumpBuffer;
         this.accumulator = Math.min(this.accumulator + dt, 0.25);
         while (this.accumulator >= STEP) {
             this.accumulator -= STEP;
             const wasOnGround = this.body.onGround;
             const vy = this.body.vy;
             const input = this.alive
-                ? { ...wishDirection(forward, strafe, this.yaw), jump, crouch, walk, speedMul, slow }
+                ? { ...wishDirection(forward, strafe, this.yaw), jump: now < this.jumpUntil, crouch, walk, speedMul, slow }
                 : { moveX: 0, moveZ: 0, jump: false };
             stepMovement(this.body, input, arena, STEP);
-            if (wasOnGround && !this.body.onGround && this.body.vy > 0) this.events.jumped = true;
+            if (wasOnGround && !this.body.onGround && this.body.vy > 0) {
+                this.events.jumped = true;
+                this.jumpUntil = 0; // one press, one jump
+            }
             if (!wasOnGround && this.body.onGround) {
                 this.events.landed = true;
                 this.events.fallSpeed = -vy;

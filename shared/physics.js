@@ -23,6 +23,8 @@ export function moveSpeed({ speedMul = 1, crouching = false, walk = false, slow 
 // body:  { x, y, z, vx, vy, vz, onGround, crouching } (mutated); y is the feet height
 // input: { moveX, moveZ } world-space wish direction (length <= 1), { jump, crouch, walk }
 //        booleans, { speedMul } from the held weapon, { slow } while tagged
+// In the air you keep your momentum and steer GoldSrc-style, so strafing while turning gains a
+// little speed; jumping on the tick you land skips ground friction (bunny hop, capped).
 // Collision is box-vs-voxel, one axis at a time; there is no auto step-up, so 1-high blocks
 // need a jump and 2-high blocks are walls. Standing up needs headroom.
 export function stepMovement(body, input, arena, dt) {
@@ -34,15 +36,39 @@ export function stepMovement(body, input, arena, dt) {
     body.inWater = inWater;
     let speed = moveSpeed({ ...input, crouching: body.crouching, onGround: body.onGround });
     if (inWater) speed *= WATER.speed;
-    const grip = body.onGround ? arena.frictionAt(body.x, body.y, body.z) : 1;
-    const accel = inWater ? WATER.accel : body.onGround ? PLAYER.groundAccel * grip : PLAYER.airAccel;
-    const blend = 1 - Math.exp(-accel * dt);
-    body.vx += (input.moveX * speed - body.vx) * blend;
-    body.vz += (input.moveZ * speed - body.vz) * blend;
 
+    // A hop (jumping faster than top speed) skips ground friction, so timed jumps keep speed
+    let grounded = body.onGround;
     if (input.jump && body.onGround && !inWater) {
         body.vy = PLAYER.jumpSpeed;
         body.onGround = false;
+        const hs = Math.hypot(body.vx, body.vz);
+        const cap = PLAYER.bhopCap * speed;
+        if (hs > cap) {
+            body.vx *= cap / hs;
+            body.vz *= cap / hs;
+        }
+        if (hs > speed) grounded = false;
+    }
+
+    if (grounded || inWater) {
+        const grip = grounded ? arena.frictionAt(body.x, body.y, body.z) : 1;
+        const blend = 1 - Math.exp(-(inWater ? WATER.accel : PLAYER.groundAccel * grip) * dt);
+        body.vx += (input.moveX * speed - body.vx) * blend;
+        body.vz += (input.moveZ * speed - body.vz) * blend;
+    } else {
+        // Air: only add speed along the wish direction, up to top speed along it
+        const wish = Math.hypot(input.moveX, input.moveZ);
+        if (wish > 1e-6) {
+            const wx = input.moveX / wish, wz = input.moveZ / wish;
+            const wishSpeed = speed * wish;
+            const add = wishSpeed - (body.vx * wx + body.vz * wz);
+            if (add > 0) {
+                const gain = Math.min(add, PLAYER.airAccel * wishSpeed * dt);
+                body.vx += wx * gain;
+                body.vz += wz * gain;
+            }
+        }
     }
     if (inWater) {
         body.vy -= PLAYER.gravity * WATER.gravity * dt;

@@ -38,7 +38,9 @@ export const PLAYER = {
     jumpSpeed: 7.6,    // ~1.2 block jump with the gravity below
     gravity: 24,
     groundAccel: 14,
-    airAccel: 3,
+    airAccel: 3,       // air strafing: turning while holding A/D adds a little speed (bunny hop)
+    bhopCap: 1.5,      // a jump never starts faster than this times the top speed (CS anti mega-bhop)
+    jumpBuffer: 0.1,   // seconds a jump press waits for the ground, so a hop can be timed a bit early
     respawnDelay: 3,
     spawnProtection: 2,
     // Hit zones by height above the feet (projectiles)

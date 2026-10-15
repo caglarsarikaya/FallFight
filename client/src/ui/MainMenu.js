@@ -9,9 +9,9 @@ import { RoomBrowser } from './RoomBrowser.js';
 import { el } from './dom.js';
 
 const CONTROLS = [
-    ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space', 'Jump'],
+    ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space, wheel', 'Jump'],
     ['Left click', 'Fire / slash'], ['Right click', 'Scope / knife stab'], ['R', 'Reload'],
-    ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q, wheel', 'Switch weapon'], ['B', 'Buy menu (Team Buy, Zombies)'],
+    ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q', 'Switch weapon'], ['B', 'Buy menu (Team Buy, Zombies)'],
     ['V', 'First / third person'],
     ['Tab', 'Scoreboard'], ['Esc', 'Close the buy menu, open / close the game menu']
 ];

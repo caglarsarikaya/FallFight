@@ -113,18 +113,6 @@ export class WeaponController {
         if (!this.select(this.lastSlot)) this.select(this.inventory?.selected === 2 ? 0 : 2);
     }
 
-    cycle(direction) {
-        const inv = this.inventory;
-        if (!inv) return;
-        for (let i = 1; i <= 4; i++) {
-            const slot = (inv.selected + direction * i + 8) % 4;
-            if (inv.hotbar[slot] && (inv.hotbar[slot] !== 'health_potion' || inv.counts.health_potion > 0)) {
-                this.select(slot);
-                return;
-            }
-        }
-    }
-
     onDeployed(sound) {
         const spec = this.spec;
         this.reload = null;

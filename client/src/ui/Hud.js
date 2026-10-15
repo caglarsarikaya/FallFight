@@ -53,7 +53,7 @@ export class Hud {
         };
         this.underwater = el('div.underwater.hidden');
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space jump · Click fire · Right click scope/stab · R reload · 1-4 / Q / wheel weapons · B buy · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-4 / Q weapons · B buy · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';

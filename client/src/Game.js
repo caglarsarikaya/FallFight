@@ -278,7 +278,6 @@ export class Game {
             switch (action) {
                 case 'buy': return this.toggleBuyMenu();
                 case 'slot': return this.local.alive && w.select(value);
-                case 'cycle': return this.local.alive && w.cycle(value);
                 case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.toggleCamera();
                 case 'scoreboard': return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
@@ -954,7 +953,7 @@ export class Game {
         const move = canMove ? this.input.movement : { forward: 0, strafe: 0 };
         this.local.update(dt, {
             ...move,
-            jump: canMove && this.input.jump,
+            jump: this.input.consumeJump() && canMove,
             crouch: active && this.input.crouch,
             walk: active && this.input.walk
         }, this.arena, this.weapons.speedMul);

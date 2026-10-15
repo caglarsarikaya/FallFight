@@ -150,6 +150,45 @@ test('physics: walk speed, jump height, falling through a hole', () => {
     assert.ok(body.y < -1);
 });
 
+test('bunny hop: a jump on landing keeps speed, air strafing gains a little, capped', () => {
+    const arena = new Arena();
+    const start = arena.tileCenter(22, 22);
+    const fly = (body, input) => {
+        do stepMovement(body, input(body), arena, 1 / 60);
+        while (!body.onGround);
+    };
+    const speedOf = body => Math.hypot(body.vx, body.vz);
+
+    // No keys in the air: momentum is kept until landing
+    const body = { x: start.x, y: 0, z: start.z, vx: PLAYER.walkSpeed, vy: 0, vz: 0, onGround: true };
+    stepMovement(body, { moveX: 1, moveZ: 0, jump: true }, arena, 1 / 60);
+    fly(body, () => ({ moveX: 0, moveZ: 0, jump: false }));
+    assert.ok(Math.abs(speedOf(body) - PLAYER.walkSpeed) < 1e-9, `kept ${speedOf(body)}`);
+
+    // Holding A/D while turning (wish always sideways to the velocity) speeds you up
+    const strafe = b => {
+        const s = speedOf(b);
+        return { moveX: -b.vz / s, moveZ: b.vx / s, jump: false };
+    };
+    Object.assign(body, { x: start.x, z: start.z, vx: PLAYER.walkSpeed, vz: 0 });
+    stepMovement(body, { moveX: 1, moveZ: 0, jump: true }, arena, 1 / 60);
+    fly(body, strafe);
+    const landed = speedOf(body);
+    assert.ok(landed > PLAYER.walkSpeed * 1.02, `strafed to ${landed}`);
+
+    // Jumping on the landing tick skips ground friction; staying on the ground loses the extra
+    const hop = { ...body };
+    stepMovement(hop, { moveX: 0, moveZ: 0, jump: true }, arena, 1 / 60);
+    assert.ok(Math.abs(speedOf(hop) - landed) < 1e-9);
+    for (let i = 0; i < 10; i++) stepMovement(body, { moveX: 0, moveZ: 0, jump: false }, arena, 1 / 60);
+    assert.ok(speedOf(body) < PLAYER.walkSpeed * 0.5);
+
+    // Too fast: the jump caps the speed
+    Object.assign(body, { x: start.x, z: start.z, vx: PLAYER.walkSpeed * 3, vz: 0, vy: 0, onGround: true });
+    stepMovement(body, { moveX: 0, moveZ: 0, jump: true }, arena, 1 / 60);
+    assert.ok(speedOf(body) <= PLAYER.walkSpeed * PLAYER.bhopCap + 1e-9);
+});
+
 test('arena raycast finds the tile under the crosshair', () => {
     const arena = new Arena();
     const c = arena.tileCenter(22, 22);

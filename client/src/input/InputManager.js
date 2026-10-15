@@ -1,8 +1,10 @@
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
-// ('primary', down) ('secondary') ('reload') ('last') ('pause') ('cycle', +1/-1).
-// Crouch is C or Ctrl, walk is Shift, like CS. Ctrl+W can't be blocked by a web page, so the game
-// asks before the tab closes (see Game); other Ctrl shortcuts are swallowed while playing.
+// ('primary', down) ('secondary') ('reload') ('last') ('pause').
+// Crouch is C or Ctrl, walk is Shift, like CS. Jump is Space or the mouse wheel (either way), one
+// jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page, so the game
+// asks before the tab closes (see Game); other Ctrl shortcuts (and Ctrl+wheel zoom) are swallowed
+// while playing.
 export class InputManager {
     constructor(element) {
         this.element = element;
@@ -13,6 +15,7 @@ export class InputManager {
         this.onAction = () => {};
         this.onLockChange = () => {};
         this.lockLostAt = -Infinity;
+        this.jumpPressed = false;
 
         document.addEventListener('keydown', e => this.handleKey(e, true));
         document.addEventListener('keyup', e => this.handleKey(e, false));
@@ -42,14 +45,17 @@ export class InputManager {
             }
         });
         document.addEventListener('wheel', e => {
-            if (this.enabled && this.locked) this.onAction('cycle', Math.sign(e.deltaY));
-        }, { passive: true });
+            if (!this.enabled || !this.locked) return;
+            e.preventDefault();
+            if (e.deltaY !== 0) this.jumpPressed = true;
+        }, { passive: false });
         document.addEventListener('pointerlockchange', () => {
             const wasLocked = this.locked;
             this.locked = document.pointerLockElement === this.element;
             if (wasLocked && !this.locked) this.lockLostAt = performance.now();
             if (!this.locked) {
                 this.keys.clear();
+                this.jumpPressed = false;
                 if (this.primaryDown) {
                     this.primaryDown = false;
                     this.onAction('primary', false);
@@ -74,11 +80,14 @@ export class InputManager {
         if (!this.enabled) return;
         const code = e.code;
         if (['Tab', 'Space', 'F5', 'ArrowUp', 'ArrowDown'].includes(code)) e.preventDefault();
-        // Crouching (Ctrl) while pressing other keys must not trigger browser shortcuts
-        if (this.locked && (e.ctrlKey || e.metaKey)) e.preventDefault();
+        // Crouching (Ctrl) while pressing other keys must not trigger browser shortcuts (Ctrl+D
+        // bookmarks...), also with the mouse released (buy menu); text fields keep theirs
+        const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName);
+        if ((e.ctrlKey || e.metaKey) && !typing) e.preventDefault();
         if (down) {
             if (e.repeat) return;
             this.keys.add(code);
+            if (code === 'Space') this.jumpPressed = true;
             if (code.startsWith('Digit')) this.onAction('slot', Number(code.slice(5)) - 1);
             if (code === 'KeyV' || code === 'F5') this.onAction('camera');
             if (code === 'KeyR') this.onAction('reload');
@@ -101,8 +110,11 @@ export class InputManager {
         return { forward, strafe };
     }
 
-    get jump() {
-        return this.keys.has('Space');
+    // True once per Space press or wheel tick since the last call
+    consumeJump() {
+        const pressed = this.jumpPressed;
+        this.jumpPressed = false;
+        return pressed;
     }
 
     get crouch() {
