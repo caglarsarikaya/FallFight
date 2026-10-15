@@ -11,6 +11,8 @@ export default {
     landmarks: LANDMARKS,
     // A one-shot RPG appears on one of these tower tops (see RPG in shared/constants.js)
     rpgSpots: RPG_SPOTS,
+    // Zombies: a long jump module appears on the plaza in the middle (see LONG_JUMP)
+    longJumpSpot: { ix: LANDMARKS.plaza.ix, iz: LANDMARKS.plaza.iz, y: 1 },
     // Tile rectangles (inclusive): team bases on the west and east edges, zombies from north and south
     spawns: {
         t: [{ x0: 1, x1: 4, z0: 24, z1: 35 }],

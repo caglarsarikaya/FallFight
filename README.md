@@ -90,6 +90,7 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | Sound | Footsteps give away anyone running; walking (Shift) and crouching are silent |
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
 | 🚀 RPG | Lava Arena: 30 s into a match an RPG appears on top of a random sniper tower, marked by a searchlight beam the whole map can see. One at a time; 45 s after it's fired or lost (its carrier dies) the next one appears |
+| 🦘 Long Jump | Zombies on Lava Arena: every 3 min a long jump module appears on the plaza in the middle, under a searchlight beam. Whoever grabs it can crouch + jump while running to leap about 10 blocks (Half-Life style), until they die |
 | 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy and Zombies: $200 in the buy menu. Zombies also drop them |
 | Pickups | Deathmatch: every 15 s an ammo box (a magazine for every gun you carry), every 60 s a health potion. Gun Game: ammo boxes |
 | Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |

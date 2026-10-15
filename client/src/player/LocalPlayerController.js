@@ -18,7 +18,8 @@ export class LocalPlayerController {
         this.eyeHeight = PLAYER.eyeHeight;
         this.taggedUntil = 0;
         this.jumpUntil = 0;        // a jump press waits this long for the ground (bunny hop timing)
-        this.events = { jumped: false, landed: false, fallSpeed: 0 };
+        this.longJump = false;     // carrying the long jump module (Zombies; set from snapshots)
+        this.events = { jumped: false, longJumped: false, landed: false, fallSpeed: 0 };
     }
 
     teleport(x, y, z, yaw = this.yaw) {
@@ -49,6 +50,7 @@ export class LocalPlayerController {
     // input: { forward, strafe, jump (pressed this frame), crouch, walk }; speedMul from the weapon in hand
     update(dt, { forward, strafe, jump, crouch = false, walk = false }, arena, speedMul = 1) {
         this.events.jumped = false;
+        this.events.longJumped = false;
         this.events.landed = false;
         this.walking = walk;
         const now = performance.now() / 1000;
@@ -60,11 +62,12 @@ export class LocalPlayerController {
             const wasOnGround = this.body.onGround;
             const vy = this.body.vy;
             const input = this.alive
-                ? { ...wishDirection(forward, strafe, this.yaw), jump: now < this.jumpUntil, crouch, walk, speedMul, slow }
+                ? { ...wishDirection(forward, strafe, this.yaw), jump: now < this.jumpUntil, crouch, walk, speedMul, slow, longJump: this.longJump }
                 : { moveX: 0, moveZ: 0, jump: false };
             stepMovement(this.body, input, arena, STEP);
             if (wasOnGround && !this.body.onGround && this.body.vy > 0) {
                 this.events.jumped = true;
+                if (this.body.longJumped) this.events.longJumped = true;
                 this.jumpUntil = 0; // one press, one jump
             }
             if (!wasOnGround && this.body.onGround) {

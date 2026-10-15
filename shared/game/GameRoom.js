@@ -808,13 +808,15 @@ export class GameRoom {
         for (const pickup of this.pickups.expire(this.time)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         }
-        for (const { pickup, player } of this.pickups.collect(this.players.values(), p => this.mode.canPickUp(p))) {
+        for (const { pickup, player } of this.pickups.collect(this.players.values(), (p, pickup) => this.mode.canPickUp(p, pickup))) {
             if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount * 2);
             else if (pickup.type === 'armor') {
                 player.armor = 100;
                 player.helmet = true;
             } else if (pickup.type === 'rpg') {
                 this.select(player, player.inventory.give('rpg'));
+            } else if (pickup.type === 'longjump') {
+                player.longJump = true;
             } else if (pickup.type === 'weapon') {
                 const hadPrimary = !!player.inventory.hotbar[0];
                 const slot = player.inventory.give(pickup.weapon);

@@ -36,6 +36,12 @@ const PATCHES = {
         s.noise({ out, delay: 0.05, duration: 0.3, type: 'bandpass', freq: 1500, q: 1, gain: 0.25 });
     },
     jump: (s, out) => s.noise({ out, duration: 0.09, type: 'bandpass', freq: 650, gain: 0.15 }),
+    // Long jump module: a servo whine and a thruster whoosh
+    longJump: (s, out) => {
+        s.tone({ out, type: 'sawtooth', freq: 220, freqEnd: 660, duration: 0.18, gain: 0.06 });
+        s.noise({ out, duration: 0.45, type: 'bandpass', freq: 400, freqEnd: 2200, q: 1.2, gain: 0.35 });
+        s.noise({ out, duration: 0.3, type: 'lowpass', freq: 600, freqEnd: 200, gain: 0.25 });
+    },
     land: (s, out) => {
         s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.35 });
         s.tone({ out, type: 'sine', freq: 90, freqEnd: 45, duration: 0.08, gain: 0.25 });

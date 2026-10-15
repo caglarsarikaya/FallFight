@@ -1,4 +1,4 @@
-import { PLAYER } from './constants.js';
+import { LONG_JUMP, PLAYER } from './constants.js';
 import { bodyHeight } from './game/BodyZones.js';
 
 const SKIN = 1e-4;
@@ -24,7 +24,8 @@ export function moveSpeed({ speedMul = 1, crouching = false, walk = false, slow 
 // One movement step for a player body, shared by client prediction and server-side bots.
 // body:  { x, y, z, vx, vy, vz, onGround, crouching } (mutated); y is the feet height
 // input: { moveX, moveZ } world-space wish direction (length <= 1), { jump, crouch, walk }
-//        booleans, { speedMul } from the held weapon, { slow } while tagged
+//        booleans, { speedMul } from the held weapon, { slow } while tagged, { longJump } with the
+//        long jump module (crouch + jump while moving leaps far; sets body.longJumped that tick)
 // In the air you keep your momentum and steer GoldSrc-style, so strafing while turning gains a
 // little speed; jumping on the tick you land skips ground friction (bunny hop, capped).
 // Collision is box-vs-voxel, one axis at a time; there is no auto step-up, so 1-high blocks
@@ -43,15 +44,25 @@ export function stepMovement(body, input, arena, dt) {
     // The jump tick is an air tick (GoldSrc: the jump comes before friction), so a hop timed on
     // landing keeps its speed. The cap goes by the standing speed, so duck-hops don't lose it.
     let grounded = body.onGround;
+    body.longJumped = false;
     if (input.jump && body.onGround && !inWater) {
-        body.vy = PLAYER.jumpSpeed;
         body.onGround = false;
         grounded = false;
         const hs = Math.hypot(body.vx, body.vz);
-        const cap = PLAYER.bhopCap * moveSpeed({ ...input, crouching: false, walk: false });
-        if (hs > cap) {
-            body.vx *= cap / hs;
-            body.vz *= cap / hs;
+        const wish = Math.hypot(input.moveX, input.moveZ);
+        if (input.longJump && body.crouching && wish > 1e-6 && hs > LONG_JUMP.minSpeed) {
+            // Long jump module (Half-Life): a leap along the keys
+            body.vx = (input.moveX / wish) * LONG_JUMP.speed;
+            body.vz = (input.moveZ / wish) * LONG_JUMP.speed;
+            body.vy = LONG_JUMP.up;
+            body.longJumped = true;
+        } else {
+            body.vy = PLAYER.jumpSpeed;
+            const cap = PLAYER.bhopCap * moveSpeed({ ...input, crouching: false, walk: false });
+            if (hs > cap) {
+                body.vx *= cap / hs;
+                body.vz *= cap / hs;
+            }
         }
     }
 

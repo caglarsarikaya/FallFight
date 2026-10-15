@@ -62,7 +62,7 @@ export class Hud {
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · N rebuy · E revive (Zombies) · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · N rebuy · E revive · Ctrl+Space long jump (Zombies) · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';

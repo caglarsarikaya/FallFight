@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f' };
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a' };
 const SPOTLIGHT_HEIGHT = 70;
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
@@ -26,7 +26,7 @@ export class PickupView {
         this.ring = ring;
         this.group.add(ring);
 
-        if (data.type === 'rpg') {
+        if (data.type === 'rpg' || data.type === 'longjump') {
             this.createSpotlight(color);
         } else {
             const beam = new THREE.Mesh(
@@ -84,6 +84,7 @@ export class PickupView {
             return holder;
         }
         if (data.type === 'armor') return this.createVest();
+        if (data.type === 'longjump') return this.createLongJump();
         if (data.type === 'weapon') {
             const holder = new THREE.Group();
             const gun = getItemView(data.weapon)?.createModel();
@@ -116,6 +117,29 @@ export class PickupView {
         group.traverse(o => {
             if (o.isMesh) o.castShadow = true;
         });
+        return group;
+    }
+
+    // The long jump module: a grey backpack with two thrusters and a green light strip
+    createLongJump() {
+        const group = new THREE.Group();
+        const grey = new THREE.MeshLambertMaterial({ color: '#7a828c' });
+        const dark = new THREE.MeshLambertMaterial({ color: '#33383f' });
+        const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.18), grey);
+        group.add(pack);
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.01),
+            new THREE.MeshBasicMaterial({ color: '#6dff6a' }));
+        strip.position.set(0, 0.02, 0.095);
+        group.add(strip);
+        for (const side of [-1, 1]) {
+            const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.26, 10), dark);
+            thruster.position.set(side * 0.12, -0.2, -0.12);
+            group.add(thruster);
+        }
+        group.traverse(o => {
+            if (o.isMesh) o.castShadow = true;
+        });
+        group.scale.setScalar(1.3);
         return group;
     }
 

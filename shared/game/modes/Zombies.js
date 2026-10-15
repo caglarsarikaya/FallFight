@@ -1,4 +1,5 @@
 import { GUN_GAME, ZOMBIES } from '../../config/modes.js';
+import { LONG_JUMP } from '../../constants.js';
 import { S2C } from '../../protocol.js';
 import { FlowField } from '../../ai/FlowField.js';
 import { ZombieBrain } from '../../ai/ZombieBrain.js';
@@ -17,6 +18,8 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // Players who die come back between waves, or sooner if a teammate holds E over the body for a
 // few seconds (ZOMBIES.revive). When everyone is down, the run is over.
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
+// On maps with a longJumpSpot (Lava Arena), a long jump module appears there every few minutes:
+// whoever takes it can crouch-jump far until they die (LONG_JUMP).
 export class Zombies extends GameMode {
     get id() {
         return 'zombies';
@@ -45,6 +48,8 @@ export class Zombies extends GameMode {
         this.bestWave = this.bestWave ?? 0;
         this.nextZombieId = this.nextZombieId ?? 1;
         this.revives = new Map();    // reviver id -> { targetId, until }
+        this.longJumpTimer = LONG_JUMP.interval;
+        for (const pickup of this.room.pickups.removeType('longjump')) this.room.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         // Clear any zombies left over from the last run
         for (const p of [...this.room.players.values()]) if (p.isZombie) this.room.removePlayer(p.id);
     }
@@ -52,6 +57,7 @@ export class Zombies extends GameMode {
     resetPlayer(player) {
         super.resetPlayer(player);
         player.money = ZOMBIES.startMoney;
+        player.longJump = false;
     }
 
     onJoin(player) {
@@ -85,8 +91,9 @@ export class Zombies extends GameMode {
         return player.isZombie ? spawns?.zombie : spawns?.ct;
     }
 
-    canPickUp(player) {
-        return !player.isZombie;
+    // Zombies take nothing; a long jump carrier doesn't need a second one
+    canPickUp(player, pickup) {
+        return !player.isZombie && !(pickup?.type === 'longjump' && player.longJump);
     }
 
     // Dead players wait for the end of the wave; dead zombies are cleared away
@@ -251,6 +258,7 @@ export class Zombies extends GameMode {
             if (p.isZombie && !p.alive && now - p.diedAt > CORPSE_TIME) room.removePlayer(p.id);
         }
 
+        this.updateLongJump(dt);
         const census = this.census();
         if (this.phase === 'break') {
             if (now >= this.phaseEndsAt && census.humans) this.startWave();
@@ -275,6 +283,21 @@ export class Zombies extends GameMode {
             }
             if (this.toSpawn + this.giantsToSpawn === 0 && alive === 0) this.endWave();
         }
+    }
+
+    // One long jump module at a time on the map's spot, every LONG_JUMP.interval seconds
+    updateLongJump(dt) {
+        const room = this.room;
+        const spot = room.map.longJumpSpot;
+        if (!spot || room.pickups.has('longjump')) return;
+        this.longJumpTimer -= dt;
+        if (this.longJumpTimer > 0) return;
+        if (!room.arena.isStandable(spot.ix, spot.y, spot.iz)) {
+            this.longJumpTimer = 1; // the plaza is blown away right now: try again soon
+            return;
+        }
+        this.longJumpTimer = LONG_JUMP.interval;
+        room.emit(null, S2C.PICKUP_SPAWNED, room.pickups.place('longjump', room.arena, spot, room.time));
     }
 
     // ---- revive -----------------------------------------------------------------------------
@@ -327,6 +350,7 @@ export class Zombies extends GameMode {
 
     onKill(victim, killer) {
         this.dirty = true;
+        victim.longJump = false;     // kept until you die, even if a teammate revives you
         if (victim.isZombie) {
             victim.diedAt = this.room.time;
             this.kills++;
@@ -383,7 +407,7 @@ export class Zombies extends GameMode {
     }
 
     playerJSON(player) {
-        if (!player.isZombie) return { money: player.money ?? 0 };
+        if (!player.isZombie) return { money: player.money ?? 0, longJump: !!player.longJump };
         return player.isGiant ? { isZombie: true, maxHealth: player.maxHealth, scale: player.scale } : { isZombie: true, maxHealth: player.maxHealth };
     }
 

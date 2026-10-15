@@ -30,7 +30,7 @@ import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet' };
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump' };
 const STATS_INTERVAL_MS = 500;
 const BASE_FOV = 75;
 const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
@@ -837,6 +837,11 @@ export class Game {
                 this.hud.toast(`An RPG appeared on the ${data.spot || ''} tower!`);
                 return;
             }
+            if (data.type === 'longjump') {
+                this.sound.play('rpgSpawn');
+                this.hud.toast('A Long Jump module appeared in the middle!');
+                return;
+            }
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
@@ -852,6 +857,12 @@ export class Game {
                 if (by === this.selfId) this.sound.play('deploy');
                 this.hud.toast(by === this.selfId ? 'You have the RPG! One shot, make it count'
                     : `${this.players.get(by)?.name || 'Someone'} has the RPG!`);
+                return;
+            }
+            if (type === 'longjump' && by) {
+                if (by === this.selfId) this.sound.play('armorUp');
+                this.hud.toast(by === this.selfId ? 'Long Jump! Crouch + jump while running'
+                    : `${this.players.get(by)?.name || 'Someone'} has the Long Jump!`);
                 return;
             }
             if (by && by === this.selfId) {
@@ -938,6 +949,7 @@ export class Game {
             info.health = p.health;
             for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
             if (p.id === this.selfId) {
+                this.local.longJump = !!p.longJump;
                 this.hud.setHealth(p.health);
                 if (p.money !== undefined) {
                     this.hud.setMoney(p.money);
@@ -1217,7 +1229,7 @@ export class Game {
                 this.sound.play(this.stepSound(body), { pitch: 0.85 + Math.random() * 0.3, volume: 0.7 });
             }
         }
-        if (this.local.events.jumped) this.sound.play('jump');
+        if (this.local.events.jumped) this.sound.play(this.local.events.longJumped ? 'longJump' : 'jump');
         if (this.local.events.landed) this.sound.play('land', { volume: Math.min(1, 0.3 + this.local.events.fallSpeed / 14) });
         // Into the water: splash; head under: everything goes blue
         if (body.inWater !== this.wasInWater) {

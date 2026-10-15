@@ -130,6 +130,11 @@ export const RPG = {
     cooldown: 45
 };
 
+// Zombies on maps with a longJumpSpot: a Half-Life long jump module appears there every `interval`
+// seconds (if none is lying there). The carrier keeps it until they die. Crouch + jump while
+// moving faster than minSpeed: a leap along the keys at `speed`, `up` upwards (~10 blocks, HL-style).
+export const LONG_JUMP = { interval: 180, speed: 14, up: 8.5, minSpeed: 0.8 };
+
 // Who gets credit when someone falls: whoever hurt them or broke their floor this recently
 export const KILL_CREDIT_WINDOW = 10;
 

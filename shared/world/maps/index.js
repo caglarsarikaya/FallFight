@@ -7,6 +7,7 @@ import poolday from './poolday.js';
 // layout: boxes of blocks (see layout.js); spawns: tile rectangles per team ('t', 'ct', 'zombie');
 // landmarks.sniperPerches: tower tops bots like to snipe from.
 // rpgSpots (optional): standing spots { ix, iz, y, name } where the RPG power weapon appears.
+// longJumpSpot (optional): { ix, iz, y } where the Zombies long jump module appears.
 const ALL = [classic, iceworld, dust, poolday];
 
 export const MAPS = Object.freeze(Object.fromEntries(ALL.map(map => [map.id, map])));
