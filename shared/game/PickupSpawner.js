@@ -44,6 +44,35 @@ export class PickupSpawner {
         return pickup;
     }
 
+    // Loot dropped where something died (Zombies). extra: e.g. { weapon } for gun drops.
+    drop(type, arena, pos, now, life, extra = {}) {
+        const { ix, iz } = arena.tileAt(pos.x, pos.z);
+        const y = arena.levelNear(ix, iz, Math.round(pos.y)) ?? arena.spawnLevel(ix, iz);
+        if (y === null) return null;
+        const { x, z } = arena.tileCenter(ix, iz);
+        const pickup = {
+            id: this.nextId++, type, amount: 1,
+            x, y: y + 0.6, z, baseY: y,
+            ix, iy: y, iz,
+            spawnedAt: now, expiresAt: now + life,
+            ...extra
+        };
+        this.pickups.set(pickup.id, pickup);
+        return pickup;
+    }
+
+    // Dropped loot left lying too long disappears. Returns the removed pickups.
+    expire(now) {
+        const removed = [];
+        for (const pickup of this.pickups.values()) {
+            if (pickup.expiresAt !== undefined && now >= pickup.expiresAt) {
+                this.pickups.delete(pickup.id);
+                removed.push(pickup);
+            }
+        }
+        return removed;
+    }
+
     // First living player overlapping a pickup takes it. Returns [{ pickup, player }]
     collect(players) {
         const list = [...players]; // may be a one-shot iterator, and we loop over it once per pickup

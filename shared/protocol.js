@@ -46,5 +46,7 @@ export const S2C = {
     ROUND_START: 'roundStart',         // { round, freezeTime } Team Buy
     ROUND_END: 'roundEnd',             // { winner: 't' | 'ct' | null, reason, score, round }
     BUY_RESULT: 'buyResult',           // { ok, item, error? } to the buyer
+    WAVE_START: 'waveStart',           // { wave, count } Zombies
+    WAVE_END: 'waveEnd',               // { wave, next, breakTime }
     SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

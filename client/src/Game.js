@@ -29,7 +29,7 @@ import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion' };
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet' };
 const STATS_INTERVAL_MS = 500;
 const BASE_FOV = 75;
 const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
@@ -40,7 +40,7 @@ const IMPACT_SOUND = { grass: 'impactDirt', sand: 'impactDirt', snow: 'impactDir
 const STEP_SOUND = { grass: 'step', sand: 'stepSand', snow: 'stepSnow', stone: 'stepStone', ice: 'stepIce', wood: 'stepWood' };
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
-const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie'];
+const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth'];
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 
 // Client game: renders the arena, predicts the local player and its gunfire, sends inputs and
@@ -474,7 +474,8 @@ export class Game {
             if (!info) return;
             info.avatar.playAction(action);
             const at = info.avatar.group.position;
-            if (action === 'swing') this.sound.play('knifeSlash', { at });
+            if (item === 'claws') this.sound.play('zombieAttack', { at, range: 25 });
+            else if (action === 'swing') this.sound.play('knifeSlash', { at });
             if (action === 'stab') this.sound.play('knifeStab', { at });
             if (action === 'drink') this.sound.play('drink', { at });
             if (action === 'reload') this.sound.play(weaponSpec(item)?.reloadStyle === 'shell' ? 'pump' : 'clipout', { at, range: 25 });
@@ -523,6 +524,8 @@ export class Game {
             this.modePanel.render(state, this.players, this.selfId);
         });
         on(S2C.MATCH_END, data => {
+            this.respawnOverlay.hide();
+            this.buyMenu.hide();
             this.matchEnd.show(data, this.selfId, SCORE_LABEL[this.modeId]);
             this.sound.play(data.winnerId === this.selfId || (data.winnerTeam && data.winnerTeam === this.self?.team) ? 'win' : 'lose');
         });
@@ -530,6 +533,15 @@ export class Game {
             this.matchEnd.hide();
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
             this.hud.toast('New match!');
+        });
+        on(S2C.WAVE_START, ({ wave, count }) => {
+            this.hud.showBanner(`Wave ${wave} · ${count} zombies`, 'wave', 3000);
+            this.sound.play('roundStart');
+            setTimeout(() => this.sound.play('zombieGroan', { volume: 0.8, pitch: 0.8 }), 400);
+        });
+        on(S2C.WAVE_END, ({ wave, breakTime }) => {
+            this.hud.showBanner(`Wave ${wave} cleared! Next in ${breakTime}s`, 'team-ct', 3500);
+            this.sound.play('win');
         });
         on(S2C.ROUND_START, ({ round }) => {
             this.hud.showBanner(`Round ${round} · Buy now (B)`, 'round', 2500);
@@ -560,7 +572,7 @@ export class Game {
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
-        on(S2C.PICKUP_TAKEN, ({ id, by, type, amount }) => {
+        on(S2C.PICKUP_TAKEN, ({ id, by, type, amount, weapon }) => {
             const view = this.pickups.get(id);
             if (view) {
                 const p = view.group.position;
@@ -569,8 +581,9 @@ export class Game {
                 this.pickups.delete(id);
             }
             if (by && by === this.selfId) {
-                this.sound.play(type === 'ammo' ? 'ammoPickup' : 'pickup');
-                this.hud.toast(type === 'ammo' ? `+${amount} magazine${amount === 1 ? '' : 's'}` : `+${amount} ${PICKUP_NAMES[type] || type}`);
+                this.sound.play(type === 'ammo' ? 'ammoPickup' : type === 'armor' ? 'armorUp' : type === 'weapon' ? 'deploy' : 'pickup');
+                this.hud.toast(type === 'ammo' ? 'Ammo!' : type === 'weapon' ? `Picked up the ${weaponSpec(weapon)?.name || weapon}`
+                    : `+${amount} ${PICKUP_NAMES[type] || type}`);
             }
         });
     }
@@ -793,6 +806,16 @@ export class Game {
         if (!victim) return;
         victim.alive = false;
         victim.avatar.die();
+        if (victim.isZombie) {
+            // Zombie deaths stay out of the kill feed unless they're yours
+            const pos = victim.avatar.group.position;
+            this.sound.play('zombieDeath', { at: { x: pos.x, y: pos.y + 1, z: pos.z }, range: 30 });
+            if (killerId === this.selfId) {
+                this.hud.hit(!!headshot, true);
+                this.sound.play('kill');
+            }
+            return;
+        }
         this.hud.kill({
             killer: killer?.name,
             victim: victim.name,
@@ -814,7 +837,8 @@ export class Game {
                 ? (cause === 'fall' ? `${killer.name} made you fall`
                     : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
                 : (cause === 'fall' ? 'You fell into the void' : 'You died');
-            this.respawnOverlay.show(reason, this.modeId === 'teambuy' ? null : PLAYER.respawnDelay);
+            this.respawnOverlay.waitText = this.modeId === 'zombies' ? 'Back when this wave is cleared...' : null;
+            this.respawnOverlay.show(reason, this.modeId === 'teambuy' || this.modeId === 'zombies' ? null : PLAYER.respawnDelay);
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play('kill');
@@ -956,11 +980,21 @@ export class Game {
         return STEP_SOUND[under ? blockProps(this.arena.kindAt(under.ix, under.iy, under.iz)).surface : 'grass'] || 'step';
     }
 
-    // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch
+    // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch.
+    // Zombies moan now and then instead.
     updateRemoteFootsteps(dt) {
         for (const info of this.players.values()) {
             if (info.id === this.selfId || !info.alive) continue;
             const avatar = info.avatar;
+            if (info.isZombie) {
+                info.groanTimer = (info.groanTimer ?? 2 + Math.random() * 6) - dt;
+                if (info.groanTimer <= 0) {
+                    info.groanTimer = 4 + Math.random() * 7;
+                    const p = avatar.group.position;
+                    this.sound.play('zombieGroan', { at: { x: p.x, y: p.y + 1.5, z: p.z }, range: 26, pitch: 0.8 + Math.random() * 0.4 });
+                }
+                continue;
+            }
             if (!avatar.onGround || avatar.speed < STEP_SPEED || avatar.crouching) continue;
             info.stepTimer -= dt * avatar.speed;
             if (info.stepTimer > 0) continue;

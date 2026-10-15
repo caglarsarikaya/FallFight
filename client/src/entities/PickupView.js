@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b' };
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff' };
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
 export class PickupView {
@@ -12,8 +12,7 @@ export class PickupView {
         this.group = new THREE.Group();
         this.group.position.set(data.x, data.baseY ?? 0, data.z);
 
-        this.item = data.type === 'ammo' ? this.createAmmoBox() : getItemView('health_potion').createModel();
-        if (data.type !== 'ammo') this.item.scale.setScalar(1.8);
+        this.item = this.createItem(data);
         this.group.add(this.item);
 
         const color = COLORS[data.type] || '#ffffff';
@@ -35,6 +34,44 @@ export class PickupView {
 
         this.scale = 0;
         scene.add(this.group);
+    }
+
+    createItem(data) {
+        if (data.type === 'ammo') return this.createAmmoBox();
+        if (data.type === 'armor') return this.createVest();
+        if (data.type === 'weapon') {
+            const holder = new THREE.Group();
+            const gun = getItemView(data.weapon)?.createModel();
+            if (gun) {
+                gun.scale.setScalar(1.6);
+                gun.rotation.y = Math.PI / 2;
+                holder.add(gun);
+            }
+            return holder;
+        }
+        const potion = getItemView('health_potion').createModel();
+        potion.scale.setScalar(1.8);
+        return potion;
+    }
+
+    // A blue kevlar vest with a helmet on top
+    createVest() {
+        const group = new THREE.Group();
+        const blue = new THREE.MeshLambertMaterial({ color: '#3b6fa8' });
+        const dark = new THREE.MeshLambertMaterial({ color: '#25466b' });
+        const vest = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.16), blue);
+        vest.position.y = -0.1;
+        group.add(vest);
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.17), dark);
+        strap.position.y = -0.2;
+        group.add(strap);
+        const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), dark);
+        helmet.position.y = 0.18;
+        group.add(helmet);
+        group.traverse(o => {
+            if (o.isMesh) o.castShadow = true;
+        });
+        return group;
     }
 
     // Olive ammo can with a yellow stripe and a couple of rounds on top

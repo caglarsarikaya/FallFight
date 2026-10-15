@@ -487,6 +487,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .round-banner.hidden { display: none; }
 .round-banner.team-t { color: #ffb06a; }
 .round-banner.team-ct { color: #8ec9ff; }
+.round-banner.wave { color: #b6e07a; }
 
 .buy-menu {
     position: fixed; left: 24px; top: 50%;

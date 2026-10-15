@@ -1,0 +1,255 @@
+import { GUN_GAME, ZOMBIES } from '../../config/modes.js';
+import { S2C } from '../../protocol.js';
+import { FlowField } from '../../ai/FlowField.js';
+import { ZombieBrain } from '../../ai/ZombieBrain.js';
+import { GameMode } from './GameMode.js';
+
+const FLOW_INTERVAL = 0.5;       // seconds between flow field rebuilds
+const CORPSE_TIME = 2.5;         // a dead zombie lies there this long before it's removed
+const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a wave
+
+// Zombies: 1 to 4 players hold out against endless waves. Each wave sends more, tougher, faster
+// zombies; every few waves some are runners. Killed zombies drop ammo, potions, armor and guns.
+// Players who die come back between waves. When everyone is down, the run is over.
+export class Zombies extends GameMode {
+    get id() {
+        return 'zombies';
+    }
+
+    // The room's seats are for people; zombies come on their own
+    get seatBots() {
+        return false;
+    }
+
+    get pickupTypes() {
+        return [];
+    }
+
+    reset() {
+        super.reset();
+        this.flow ??= new FlowField(this.room.arena);
+        this.flowTimer = 0;
+        this.wave = 0;
+        this.phase = 'break';
+        this.phaseEndsAt = this.room.time + ZOMBIES.firstWaveDelay;
+        this.toSpawn = 0;
+        this.spawnTimer = 0;
+        this.kills = 0;
+        this.bestWave = this.bestWave ?? 0;
+        this.nextZombieId = this.nextZombieId ?? 1;
+        // Clear any zombies left over from the last run
+        for (const p of [...this.room.players.values()]) if (p.isZombie) this.room.removePlayer(p.id);
+    }
+
+    isEnemy(a, b) {
+        return a !== b && !!a.isZombie !== !!b.isZombie;
+    }
+
+    // Humans start with a pistol and the knife, no armor
+    equip(player) {
+        player.inventory.reset({ weapons: ZOMBIES.loadout });
+        player.armor = 0;
+        player.helmet = false;
+    }
+
+    spawnZones(player) {
+        const spawns = this.room.map.spawns;
+        return player.isZombie ? spawns?.zombie : spawns?.ct;
+    }
+
+    canPickUp(player) {
+        return !player.isZombie;
+    }
+
+    // Dead players wait for the end of the wave; dead zombies are cleared away
+    respawnDelay() {
+        return null;
+    }
+
+    get humans() {
+        return [...this.room.players.values()].filter(p => !p.isZombie);
+    }
+
+    get zombies() {
+        return [...this.room.players.values()].filter(p => p.isZombie);
+    }
+
+    nearestHuman(from) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const p of this.room.players.values()) {
+            if (p.isZombie || !p.alive) continue;
+            const d = Math.hypot(p.x - from.x, p.z - from.z) + Math.abs(p.y - from.y) * 2;
+            if (d < bestDist) {
+                best = p;
+                bestDist = d;
+            }
+        }
+        return best;
+    }
+
+    // ---- waves -----------------------------------------------------------------------------
+
+    waveStats(wave) {
+        return {
+            count: ZOMBIES.baseCount + ZOMBIES.perWave * (wave - 1),
+            health: ZOMBIES.health + ZOMBIES.healthPerWave * (wave - 1),
+            speed: Math.min(ZOMBIES.maxSpeed, ZOMBIES.speed + ZOMBIES.speedPerWave * (wave - 1))
+        };
+    }
+
+    startWave() {
+        this.wave++;
+        this.phase = 'wave';
+        this.toSpawn = this.waveStats(this.wave).count;
+        this.spawnTimer = 0;
+        this.dirty = true;
+        this.room.emit(null, S2C.WAVE_START, { wave: this.wave, count: this.toSpawn });
+    }
+
+    endWave() {
+        this.phase = 'break';
+        this.phaseEndsAt = this.room.time + ZOMBIES.waveBreak;
+        this.bestWave = Math.max(this.bestWave, this.wave);
+        // Everyone who fell comes back; survivors get topped up a little
+        for (const p of this.humans) {
+            if (!p.alive) this.room.respawn(p);
+            else p.health = Math.min(p.maxHealth, p.health + 25);
+        }
+        this.dirty = true;
+        this.room.emit(null, S2C.WAVE_END, { wave: this.wave, next: this.wave + 1, breakTime: ZOMBIES.waveBreak });
+    }
+
+    spawnZombie() {
+        const stats = this.waveStats(this.wave);
+        // Every runnerEvery-th wave, a third of the zombies are fast and fragile runners
+        const runner = this.wave % ZOMBIES.runnerEvery === 0 && this.room.rng() < 0.33;
+        const id = `zombie-${this.nextZombieId++}`;
+        const zombie = this.room.addNpc({
+            id,
+            name: runner ? 'Runner' : 'Zombie',
+            characterId: runner ? 'zombie-runner' : 'zombie',
+            setup: p => {
+                p.isZombie = true;
+                p.maxHealth = Math.round(stats.health * (runner ? 0.6 : 1));
+                p.health = p.maxHealth;
+            }
+        });
+        const brain = new ZombieBrain(this, zombie, {
+            speed: stats.speed * (runner ? 1.35 : 1),
+            damage: ZOMBIES.damage,
+            attackInterval: ZOMBIES.attackInterval,
+            reach: ZOMBIES.reach
+        });
+        this.room.npcs.set(id, brain);
+        this.toSpawn--;
+    }
+
+    // A zombie's claws: armor takes some of it
+    zombieAttack(zombie, victim, amount) {
+        let health = amount;
+        if (victim.armor > 0) {
+            health = Math.round(amount * 0.6);
+            victim.armor = Math.max(0, victim.armor - Math.round(amount * 0.5));
+        }
+        const dx = victim.x - zombie.x;
+        const dz = victim.z - zombie.z;
+        this.room.emit(null, S2C.ACTION, { id: zombie.id, action: 'swing', item: 'claws' });
+        this.room.damage(victim, health, zombie, 'claws', { x: dx, z: dz, strength: 2 }, {});
+    }
+
+    tick(dt) {
+        const room = this.room;
+        if (room.matchOver) return;
+        const now = room.time;
+
+        this.flowTimer -= dt;
+        if (this.flowTimer <= 0) {
+            this.flowTimer = FLOW_INTERVAL;
+            this.flow.update(this.humans.filter(p => p.alive));
+        }
+
+        // Remove zombie corpses after a moment
+        for (const p of room.players.values()) {
+            if (p.isZombie && !p.alive && now - p.diedAt > CORPSE_TIME) room.removePlayer(p.id);
+        }
+
+        const humans = this.humans;
+        if (this.phase === 'break') {
+            if (now >= this.phaseEndsAt && humans.length) this.startWave();
+            return;
+        }
+        if (this.phase === 'wave') {
+            if (humans.length && humans.every(p => !p.alive)) {
+                this.phase = 'lost';
+                this.bestWave = Math.max(this.bestWave, this.wave - 1);
+                this.dirty = true;
+                room.endMatch({ title: `Overrun on wave ${this.wave}! ${this.kills} zombies down.` });
+                return;
+            }
+            this.spawnTimer -= dt;
+            let alive = this.zombies.filter(z => z.alive).length;
+            if (this.toSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
+                this.spawnTimer = SPAWN_INTERVAL;
+                this.spawnZombie();
+                alive++;
+            }
+            if (this.toSpawn === 0 && alive === 0) this.endWave();
+        }
+    }
+
+    onKill(victim, killer) {
+        this.dirty = true;
+        if (victim.isZombie) {
+            victim.diedAt = this.room.time;
+            this.kills++;
+            if (killer) {
+                killer.score = killer.kills;
+                this.dropLoot(victim);
+            }
+        }
+    }
+
+    // One roll per kill: maybe ammo, a potion, armor or a better gun on the ground
+    dropLoot(zombie) {
+        const rng = this.room.rng;
+        const roll = rng();
+        let acc = 0;
+        for (const [type, chance] of Object.entries(ZOMBIES.drops)) {
+            acc += chance;
+            if (roll >= acc) continue;
+            let extra = {};
+            if (type === 'weapon') {
+                // Better guns as the waves go on
+                const ladder = GUN_GAME.ladder;
+                const top = Math.min(ladder.length - 1, 2 + this.wave);
+                extra = { weapon: ladder[Math.floor(rng() * (top + 1))] };
+            }
+            const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, ZOMBIES.dropLife, extra);
+            if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);
+            return;
+        }
+    }
+
+    stateJSON() {
+        const zombies = this.zombies;
+        const left = this.toSpawn + zombies.filter(z => z.alive).length;
+        return {
+            mode: this.id,
+            phase: this.phase,
+            wave: this.wave,
+            left,
+            breakLeft: this.phase === 'break' ? Math.max(0, this.phaseEndsAt - this.room.time) : 0,
+            kills: this.kills,
+            bestWave: this.bestWave
+        };
+    }
+
+    playerJSON(player) {
+        return player.isZombie ? { isZombie: true, maxHealth: player.maxHealth } : null;
+    }
+
+    standings() {
+        return super.standings().filter(s => !this.room.players.get(s.id)?.isZombie);
+    }
+}

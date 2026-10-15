@@ -425,8 +425,8 @@ export class BotBrain {
 
     // A tile the bot can step onto from where it stands: stable, not higher, not a deadly drop
     isSafeStep(ix, iz) {
-        const h = this.arena.surfaceHeight(ix, iz);
         const y = this.player.y;
+        const h = this.arena.levelNear(ix, iz, Math.round(y));
         return h !== null && h <= y + 0.5 && h >= y - 3 && this.arena.isStable(ix, h, iz);
     }
 
@@ -441,7 +441,7 @@ export class BotBrain {
         const goal = this.arena.tileAt(x, z);
         const key = `${goal.ix},${goal.iz}`;
         if (key !== this.pathKey || this.now >= this.replanAt || !this.path) {
-            this.path = this.pathfinder.find(this.arena.tileAt(bot.x, bot.z), goal);
+            this.path = this.pathfinder.find({ ...this.arena.tileAt(bot.x, bot.z), y: bot.y }, goal);
             this.pathKey = key;
             this.replanAt = this.now + BOT_SETTINGS.replanInterval;
         }

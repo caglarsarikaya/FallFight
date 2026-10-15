@@ -15,8 +15,8 @@ function zoneTiles(arena, zone) {
     const tiles = [];
     for (let iz = zone.z0; iz <= zone.z1; iz++) {
         for (let ix = zone.x0; ix <= zone.x1; ix++) {
-            const y = arena.surfaceHeight(ix, iz);
-            if (y !== null && arena.isStable(ix, y, iz) && reachable(arena, ix, iz)) tiles.push({ ix, iz, y });
+            const y = arena.spawnLevel(ix, iz);
+            if (y !== null) tiles.push({ ix, iz, y });
         }
     }
     return tiles;
@@ -103,4 +103,26 @@ test('fy_iceworld: the rink is slippery', () => {
     const onIce = slide({ ix: 14, iz: 15 });
     const onSnow = slide({ ix: 3, iz: 9 });
     assert.ok(onIce > onSnow * 2, `ice ${onIce.toFixed(2)} vs snow ${onSnow.toFixed(2)}`);
+});
+
+test('fy_pool_day: teams spawn inside their pool houses, not on the roofs', () => {
+    const room = new GameRoom({ mode: 'teambuy', map: 'fy_pool_day', rng: createRng(4) });
+    for (const id of ['a', 'b', 'c', 'd']) room.addPlayer({ id, name: id });
+    room.tick(1 / 30);
+    for (const p of room.players.values()) assert.equal(p.y, 2, `${p.name} (${p.team}) at height ${p.y}`);
+    // ...and the roof is a separate place you reach by the stairs
+    const arena = room.arena;
+    const { sniperPerches } = MAPS.fy_pool_day.landmarks;
+    const path = new Pathfinder(arena).find({ ix: 5, iz: 21, y: 2 }, { ...sniperPerches[0] }, 20000);
+    assert.equal(path.at(-1).y, 7, 'up on the roof');
+});
+
+test('de_dust_mini: bots path through the roofed tunnel', () => {
+    const arena = new Arena(MAPS.de_dust_mini);
+    const { tunnel } = MAPS.de_dust_mini.landmarks;
+    assert.equal(arena.surfaceHeight(tunnel.ix, tunnel.iz), 4, 'the top of the tunnel roof');
+    assert.equal(arena.spawnLevel(tunnel.ix, tunnel.iz), 0, 'the tunnel floor');
+    const path = new Pathfinder(arena).find({ ix: 6, iz: 22, y: 0 }, { ix: 22, iz: 22, y: 0 }, 20000);
+    assert.equal(path.at(-1).ix, 22);
+    assert.ok(path.some(w => w.ix === tunnel.ix && w.y === 0), 'walks through it, not over it');
 });

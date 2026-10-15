@@ -41,7 +41,8 @@ export class GameRoom {
         this.map = resolveMap(mode, map);
         this.arena = new Arena(this.map);
         this.players = new Map();
-        this.bots = new Map();          // id -> BotBrain
+        this.bots = new Map();          // id -> BotBrain (seat bots)
+        this.npcs = new Map();          // id -> brain (monsters a mode brings, e.g. zombies)
         this.projectiles = new Map();
         this.mode = createMode(mode, this);
         this.pickups = new PickupSpawner(rng, this.mode.pickupTypes);
@@ -107,12 +108,26 @@ export class GameRoom {
         return extra ? Object.assign(base, extra) : base;
     }
 
+    // A computer-controlled creature that isn't a seat bot (zombies). setup(player) customises it.
+    addNpc({ id, name, characterId, setup = () => {} }) {
+        const player = new PlayerState({ id, name, characterId, isBot: true });
+        player.inventory.hotbar = [null, null, null, null];
+        player.inventory.selected = 0;
+        setup(player);
+        this.players.set(id, player);
+        this.placeAtSpawn(player);
+        player.protectedUntil = 0;
+        this.emit(null, S2C.PLAYER_JOINED, this.playerJSON(player, true));
+        return player;
+    }
+
     removePlayer(id) {
         const player = this.players.get(id);
         if (!player) return;
         this.players.delete(id);
         if (!player.isBot) this.humans--;
         this.bots.delete(id);
+        this.npcs.delete(id);
         this.lagComp.forget(id);
         this.mode.onLeave(player);
         this.emit(null, S2C.PLAYER_LEFT, { id });
@@ -450,7 +465,7 @@ export class GameRoom {
     }
 
     heal(player, amount) {
-        player.health = Math.min(PLAYER.maxHealth, player.health + amount);
+        player.health = Math.min(player.maxHealth, player.health + amount);
         this.emit(null, S2C.HEAL, { id: player.id, amount, health: player.health });
     }
 
@@ -606,6 +621,14 @@ export class GameRoom {
             stepMovement(bot, this.botMoveInput(bot, input), this.arena, dt);
             this.afterMove(bot);
         }
+        for (const [id, brain] of this.npcs) {
+            const npc = this.players.get(id);
+            const input = brain.update(dt);
+            if (!npc || !npc.alive) continue;
+            input.slow = this.time < npc.taggedUntil ? PLAYER.tagSpeed : 1;
+            stepMovement(npc, input, this.arena, dt);
+            this.afterMove(npc);
+        }
         this.updateReloads();
 
         for (const projectile of this.projectiles.values()) {
@@ -632,11 +655,22 @@ export class GameRoom {
         for (const pickup of this.pickups.update(dt, this.arena, this.time)) {
             this.emit(null, S2C.PICKUP_SPAWNED, pickup);
         }
-        for (const { pickup, player } of this.pickups.collect(this.players.values())) {
-            if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount);
-            else player.inventory.add(pickup.type, pickup.amount);
+        for (const pickup of this.pickups.expire(this.time)) {
+            this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
+        }
+        const collectors = [...this.players.values()].filter(p => this.mode.canPickUp(p));
+        for (const { pickup, player } of this.pickups.collect(collectors)) {
+            if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount * 2);
+            else if (pickup.type === 'armor') {
+                player.armor = 100;
+                player.helmet = true;
+            } else if (pickup.type === 'weapon') {
+                const hadPrimary = !!player.inventory.hotbar[0];
+                const slot = player.inventory.give(pickup.weapon);
+                if (!hadPrimary && slot >= 0) this.select(player, slot);
+            } else player.inventory.add(pickup.type, pickup.amount);
             this.notifyInventory(player);
-            this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: player.id, type: pickup.type, amount: pickup.amount });
+            this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: player.id, type: pickup.type, amount: pickup.amount, weapon: pickup.weapon });
         }
 
         for (const player of this.players.values()) {

@@ -28,7 +28,9 @@ export class PlayerState {
         this.walking = false;
         this.lastGroundBlock = null; // { ix, iy, iz } last block stood on, for fall kill credit
 
+        this.maxHealth = PLAYER.maxHealth;
         this.health = PLAYER.maxHealth;
+        this.isZombie = false;
         this.armor = 0;
         this.helmet = false;
         this.alive = true;

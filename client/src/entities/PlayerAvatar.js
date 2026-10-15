@@ -25,11 +25,13 @@ export class PlayerAvatar {
         this.name = info.name;
         this.heldItemId = null;
         this.team = info.team ?? null;
-        this.nameVisible = true;
+        this.isZombie = !!info.isZombie;
+        this.maxHealth = info.maxHealth ?? PLAYER.maxHealth;
+        this.nameVisible = !this.isZombie;
         this.lastPosition = new THREE.Vector3(info.x || 0, info.y || 0, info.z || 0);
 
         this.nameTag = this.createNameTag();
-        this.nameTag.visible = !isSelf;
+        this.nameTag.visible = !isSelf && this.nameVisible;
         this.group.add(this.nameTag);
         this.setCharacter(info.characterId);
         this.setHeldItem(info.item || 'knife');
@@ -113,7 +115,7 @@ export class PlayerAvatar {
         ctx.textBaseline = 'middle';
         ctx.fillText(this.name, 128, 22, 240);
         // Health bar
-        const ratio = Math.max(0, this.health / PLAYER.maxHealth);
+        const ratio = Math.max(0, Math.min(1, this.health / this.maxHealth));
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(48, 50, 160, 14);
         ctx.fillStyle = ratio > 0.5 ? '#4cd964' : ratio > 0.25 ? '#ffcc00' : '#ff3b30';
@@ -208,7 +210,7 @@ export class PlayerAvatar {
         this.model.revive();
         this.snapTo(x, y, z, yaw);
         this.nameTag.visible = !this.isSelf && this.nameVisible;
-        this.setHealth(PLAYER.maxHealth);
+        this.setHealth(this.maxHealth);
     }
 
     setVisible(visible) {

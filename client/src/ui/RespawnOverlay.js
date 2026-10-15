@@ -15,7 +15,7 @@ export class RespawnOverlay {
         this.root.classList.remove('hidden');
         clearInterval(this.timer);
         if (seconds === null) {
-            this.countdown.textContent = 'Waiting for the next round...';
+            this.countdown.textContent = this.waitText || 'Waiting for the next round...';
             return;
         }
         const until = performance.now() + seconds * 1000;

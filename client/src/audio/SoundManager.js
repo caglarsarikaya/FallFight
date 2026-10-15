@@ -88,6 +88,43 @@ const PATCHES = {
         s.tone({ out, type: 'sine', freq: 6860, duration: 2.2, gain: 0.05 });
     },
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 }),
+    // Zombies: a low, rasping moan with a wobble
+    zombieGroan: (s, out, p) => {
+        const t = s.ctx.currentTime;
+        const osc = s.ctx.createOscillator();
+        const lfo = s.ctx.createOscillator();
+        const lfoGain = s.ctx.createGain();
+        const env = s.ctx.createGain();
+        const filter = s.ctx.createBiquadFilter();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(95 * p, t);
+        osc.frequency.linearRampToValueAtTime(70 * p, t + 0.9);
+        lfo.frequency.value = 7;
+        lfoGain.gain.value = 6;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        filter.type = 'lowpass';
+        filter.frequency.value = 700;
+        env.gain.setValueAtTime(0.0001, t);
+        env.gain.exponentialRampToValueAtTime(0.18, t + 0.15);
+        env.gain.exponentialRampToValueAtTime(0.0001, t + 1);
+        osc.connect(filter);
+        filter.connect(env);
+        env.connect(out);
+        osc.start(t);
+        lfo.start(t);
+        osc.stop(t + 1.05);
+        lfo.stop(t + 1.05);
+        s.noise({ out, duration: 0.9, type: 'bandpass', freq: 500 * p, q: 2, gain: 0.08 });
+    },
+    zombieAttack: (s, out, p) => {
+        s.noise({ out, duration: 0.14, type: 'bandpass', freq: 1200 * p, freqEnd: 500, q: 1.2, gain: 0.4 });
+        s.tone({ out, type: 'sawtooth', freq: 140 * p, freqEnd: 90, duration: 0.25, gain: 0.12 });
+    },
+    zombieDeath: (s, out, p) => {
+        s.tone({ out, type: 'sawtooth', freq: 120 * p, freqEnd: 45, duration: 0.6, gain: 0.16 });
+        s.noise({ out, duration: 0.4, type: 'lowpass', freq: 600, freqEnd: 120, gain: 0.35 });
+    },
     roundStart: (s, out) => {
         s.tone({ out, type: 'square', freq: 660, duration: 0.08, gain: 0.07 });
         s.tone({ out, type: 'square', freq: 990, duration: 0.14, delay: 0.1, gain: 0.07 });

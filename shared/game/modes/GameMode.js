@@ -63,6 +63,11 @@ export class GameMode {
         return a !== b;
     }
 
+    // May this player take pickups? (zombies don't)
+    canPickUp(_player) {
+        return true;
+    }
+
     canDamage(attacker, victim) {
         return attacker === victim || this.isEnemy(attacker, victim);
     }

@@ -6,6 +6,7 @@ export { BLOCK_KIND };
 export const BLOCK_STATE = Object.freeze({ SOLID: 0, CRACKING: 1, BROKEN: 2 });
 
 const EPS = 1e-6;
+export const MAX_DROP = 3;   // the furthest a player (or bot) will step down
 
 // Voxel arena. Cell (ix, iy, iz) covers world x in [ix + min, ix + min + 1), z likewise, and
 // y in [iy - 1, iy): layer 0 is the floor, so players standing on it have their feet at y = 0,
@@ -39,34 +40,46 @@ export class Arena {
         this.reachable = this.computeReachable();
     }
 
-    // Columns a player can get onto from the floor (walking, jumping up 1, dropping down),
-    // e.g. tower tops via their steps but not the tops of 2-high walls
+    // Places a player can get to from the floor (walking, jumping up 1, dropping down), level by
+    // level: the floor inside a house and its roof are different places. Fills reachableLevels
+    // (one flag per standing spot) and returns one flag per column (any level reachable),
+    // e.g. tower tops via their steps but not the tops of 2-high walls.
     computeReachable() {
-        const reachable = new Uint8Array(this.size * this.size);
+        const { size, height } = this;
+        const levels = new Uint8Array(size * size * height);
+        const columns = new Uint8Array(size * size);
         const queue = [];
-        for (let iz = 0; iz < this.size; iz++) {
-            for (let ix = 0; ix < this.size; ix++) {
-                if (this.surfaceHeight(ix, iz) === this.floor) {
-                    reachable[iz * this.size + ix] = 1;
-                    queue.push([ix, iz]);
-                }
+        const visit = (ix, iz, y) => {
+            const i = (iz * size + ix) * height + y;
+            if (levels[i]) return;
+            levels[i] = 1;
+            columns[iz * size + ix] = 1;
+            queue.push(ix, iz, y);
+        };
+        for (let iz = 0; iz < size; iz++) {
+            for (let ix = 0; ix < size; ix++) {
+                if (this.isStandable(ix, this.floor, iz)) visit(ix, iz, this.floor);
             }
         }
         while (queue.length) {
-            const [ix, iz] = queue.pop();
-            const h = this.surfaceHeight(ix, iz);
+            const y = queue.pop();
+            const iz = queue.pop();
+            const ix = queue.pop();
             for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
                 const nx = ix + dx;
                 const nz = iz + dz;
-                if (nx < 0 || nz < 0 || nx >= this.size || nz >= this.size || reachable[nz * this.size + nx]) continue;
-                const nh = this.surfaceHeight(nx, nz);
-                if (nh !== null && nh - h <= 1) {
-                    reachable[nz * this.size + nx] = 1;
-                    queue.push([nx, nz]);
-                }
+                if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
+                const ny = this.levelNear(nx, nz, y);
+                if (ny !== null) visit(nx, nz, ny);
             }
         }
-        return reachable;
+        this.reachableLevels = levels;
+        return columns;
+    }
+
+    isReachable(ix, iz, y) {
+        if (!this.inBounds(ix, y, iz)) return false;
+        return this.reachableLevels[(iz * this.size + ix) * this.height + y] === 1;
     }
 
     // ---- coordinates --------------------------------------------------------------------
@@ -166,7 +179,29 @@ export class Arena {
         return false;
     }
 
-    // Feet height of the walkable surface of a column (top solid block with 2 free blocks above), or null
+    // Can a player stand with their feet on top of block layer iy: solid there, 2 free above
+    isStandable(ix, iy, iz) {
+        return this.isSolid(ix, iy, iz) && !this.isSolid(ix, iy + 1, iz) && !this.isSolid(ix, iy + 2, iz);
+    }
+
+    // Where you end up walking into column (ix, iz) from standing height y: the highest spot at
+    // most 1 above (a jump) and at most maxDrop below. null when it's a wall or a pit.
+    levelNear(ix, iz, y, maxDrop = MAX_DROP) {
+        for (let l = Math.min(y + 1, this.height - 1); l >= Math.max(0, y - maxDrop); l--) {
+            if (this.isStandable(ix, l, iz)) return l;
+        }
+        return null;
+    }
+
+    // Lowest reachable, stable standing height of a column (inside a house rather than its roof)
+    spawnLevel(ix, iz, maxY = Infinity) {
+        for (let l = 0; l < this.height && l <= maxY; l++) {
+            if (this.isStandable(ix, l, iz) && this.isStable(ix, l, iz) && this.isReachable(ix, iz, l)) return l;
+        }
+        return null;
+    }
+
+    // Feet height of the top walkable surface of a column (top solid block with 2 free blocks above), or null
     surfaceHeight(ix, iz) {
         for (let iy = this.height - 1; iy >= 0; iy--) {
             if (!this.isSolid(ix, iy, iz)) continue;
@@ -308,8 +343,8 @@ export class Arena {
                 ix = 1 + Math.floor(rng() * (this.size - 2));
                 iz = 1 + Math.floor(rng() * (this.size - 2));
             }
-            const y = this.surfaceHeight(ix, iz);
-            if (y === null || y > maxY || !this.isStable(ix, y, iz) || !this.reachable[iz * this.size + ix]) continue;
+            const y = this.spawnLevel(ix, iz, maxY);
+            if (y === null) continue;
             const c = this.tileCenter(ix, iz);
             const nearest = avoid.reduce((m, p) => Math.min(m, Math.hypot(p.x - c.x, p.z - c.z)), 99);
             if (nearest > bestScore) {
@@ -320,8 +355,8 @@ export class Arena {
         if (best) return best;
         for (let iz = 0; iz < this.size; iz++) {
             for (let ix = 0; ix < this.size; ix++) {
-                const y = this.surfaceHeight(ix, iz);
-                if (y !== null && y <= maxY && this.isStable(ix, y, iz)) return { ix, iz, y };
+                const y = this.spawnLevel(ix, iz, maxY);
+                if (y !== null) return { ix, iz, y };
             }
         }
         return null;
