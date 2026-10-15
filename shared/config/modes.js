@@ -58,7 +58,7 @@ export const ZOMBIES = Object.freeze({
 export const MODES = Object.freeze([
     {
         id: 'ffa', name: 'Deathmatch', short: 'DM',
-        description: 'Everyone for themselves. A random rifle and pistol every life.',
+        description: 'Everyone for themselves. A random rifle and pistol every life, or press B to pick any gun for free.',
         maps: ['fallfight_classic', 'fy_iceworld', 'de_dust_mini', 'fy_pool_day']
     },
     {

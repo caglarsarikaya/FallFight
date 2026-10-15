@@ -19,7 +19,8 @@ const DEFAULTS = {
     menuTab: 'player',      // last open main menu tab
     sensitivity: 1,
     showStats: true,    // FPS / ping / latency readout in the corner
-    graphics: 'high'    // 'high' (shadows, sharper) or 'low' (for slow computers)
+    graphics: 'high',   // 'high' (shadows, sharper) or 'low' (for slow computers)
+    randomGuns: true    // Deathmatch: random guns every life, or keep the ones picked in the buy menu
 };
 
 // Player choices remembered between visits (browser storage may be unavailable; that's fine)
@@ -56,6 +57,7 @@ export class Profile {
                 sensitivity: this.sensitivity,
                 showStats: this.showStats,
                 graphics: this.graphics,
+                randomGuns: this.randomGuns,
                 roomName: this.roomName,
                 roomMaxPlayers: this.roomMaxPlayers,
                 roomBots: this.roomBots,

@@ -14,6 +14,7 @@ export const C2S = {
     RELOAD: 'reload',      // {}
     SCOPE: 'scope',        // { level } 0 = unscoped
     BUY: 'buy',            // { item } Team Buy: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion', 'ammo'
+    PREFS: 'prefs',        // { randomGuns } Deathmatch: random guns every life, or keep the ones you picked
     PING: 'latencyCheck',  // ack: {} -> {} round-trip timing ('ping' is reserved by socket.io)
 };
 

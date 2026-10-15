@@ -46,7 +46,10 @@ export class ModePanel {
         return {
             title: getModeInfo(state.mode)?.name.toUpperCase() || 'DEATHMATCH',
             main: `${plural(self?.kills ?? 0, 'kill')}`,
-            sub: leader && leader !== self ? `Leader: ${leader.name} (${leader.kills})` : leader ? 'You are in the lead' : ''
+            sub: [
+                leader && leader !== self ? `Leader: ${leader.name} (${leader.kills})` : leader ? 'You are in the lead' : null,
+                state.mode === 'ffa' ? 'B: free guns' : null
+            ].filter(Boolean).join(' · ')
         };
     }
 

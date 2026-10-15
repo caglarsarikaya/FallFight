@@ -168,6 +168,7 @@ export class GameRoom {
             case C2S.RELOAD: return this.reload(player);
             case C2S.SCOPE: return this.setScope(player, data.level);
             case C2S.BUY: return this.buy(player, data.item);
+            case C2S.PREFS: return this.mode.setRandomGuns?.(player, data.randomGuns !== false);
             case C2S.PROFILE: return this.onProfile(player, data);
         }
     }

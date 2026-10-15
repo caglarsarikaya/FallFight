@@ -86,7 +86,11 @@ export class Game {
         this.scoreboard = new Scoreboard(ui);
         this.modePanel = new ModePanel(this.hud.root);
         this.matchEnd = new MatchEndOverlay(ui);
-        this.buyMenu = new BuyMenu(ui, { sound, onBuy: item => this.connection.send(C2S.BUY, { item }) });
+        this.buyMenu = new BuyMenu(ui, {
+            sound,
+            onBuy: item => this.connection.send(C2S.BUY, { item }),
+            onToggleRandom: () => this.setRandomGuns(!this.profile.randomGuns, true)
+        });
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
             profile,
@@ -313,10 +317,10 @@ export class Game {
         return this.canAct && !this.frozen;
     }
 
-    // Team Buy: in buy time. Zombies: any time you're alive.
+    // Team Buy: in buy time. Zombies and Deathmatch: any time you're alive.
     get canBuy() {
         if (!this.local.alive) return false;
-        if (this.modeId === 'zombies') return true;
+        if (this.modeId === 'zombies' || this.modeId === 'ffa') return true;
         const s = this.modeState;
         return this.modeId === 'teambuy' && s && (s.phase === 'freeze' || (s.phase === 'live' && s.buyLeft > 0));
     }
@@ -327,12 +331,22 @@ export class Game {
 
     toggleBuyMenu() {
         if (this.buyMenu.visible) return this.buyMenu.hide();
-        if (this.modeId !== 'teambuy' && this.modeId !== 'zombies') return;
+        if (this.modeId !== 'teambuy' && this.modeId !== 'zombies' && this.modeId !== 'ffa') return;
         if (!this.canBuy) {
             this.hud.toast('Buy time is over');
             return;
         }
-        this.buyMenu.show(this.self?.money ?? 0, this.self?.team);
+        const free = this.modeId === 'ffa';
+        this.buyMenu.show(this.self?.money ?? 0, this.self?.team, { free, randomGuns: free ? this.profile.randomGuns : null });
+    }
+
+    // Deathmatch: random guns every life, or keep the ones picked in the buy menu
+    setRandomGuns(on, announce = false) {
+        this.profile.randomGuns = on;
+        this.profile.save();
+        this.buyMenu.setRandomGuns(on);
+        this.connection.send(C2S.PREFS, { randomGuns: on });
+        if (announce) this.hud.toast(on ? 'Random guns ON: new guns every life' : 'Random guns OFF: you keep your guns');
     }
 
     useConsumable() {
@@ -613,6 +627,8 @@ export class Game {
             this.buyMenu.hide();
         });
         on(S2C.BUY_RESULT, ({ ok, item, error }) => {
+            // Deathmatch: picking a gun turns random guns off (the server did the same)
+            if (ok && this.modeId === 'ffa' && isGun(item) && this.profile.randomGuns) this.setRandomGuns(false, true);
             if (ok) {
                 this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item === 'ammo' ? 'ammoPickup' : item === 'health_potion' ? 'pickup' : 'deploy');
                 return;
@@ -667,6 +683,7 @@ export class Game {
         this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
         for (const pickup of data.pickups) this.pickups.set(pickup.id, new PickupView(this.scene, pickup));
         for (const projectile of data.projectiles) this.projectiles.set(projectile.id, new ProjectileView(this.scene, projectile));
+        if (this.modeId === 'ffa') this.connection.send(C2S.PREFS, { randomGuns: this.profile.randomGuns });
     }
 
     // "GUN GAME · FRIENDS · 2 players + 2 bots"

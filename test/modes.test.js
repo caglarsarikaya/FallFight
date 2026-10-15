@@ -27,6 +27,43 @@ test('deathmatch: a kill is worth a point and a health potion', () => {
     assert.equal(a.inventory.count('health_potion'), 1);
 });
 
+test('deathmatch: the buy menu is free and a bought gun comes back every life', () => {
+    const room = modeRoom('ffa');
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    a.inventory.give('m4a1');
+    assert.equal(room.handleMessage('a', 'buy', { item: 'ak47' }).ok, true);
+    assert.equal(a.inventory.selectedId, 'ak47');
+    assert.equal(a.money ?? 0, 0, 'no money needed');
+    assert.equal(a.randomGuns, false, 'buying a gun turns random guns off');
+    a.inventory.ammo.ak47.reserve = 0;
+    assert.equal(room.buy(a, 'ak47').ok, true, 'buying it again refills it');
+    assert.equal(a.inventory.ammo.ak47.reserve > 0, true);
+    for (let i = 0; i < 5; i++) {
+        room.kill(a, null, 'fall');
+        run(room, 3.5);
+        assert.equal(a.inventory.hotbar[0], 'ak47');
+    }
+    // Random guns back on: spawns roll again
+    room.handleMessage('a', 'prefs', { randomGuns: true });
+    const seen = new Set();
+    for (let i = 0; i < 12; i++) {
+        room.kill(a, null, 'fall');
+        run(room, 3.5);
+        seen.add(a.inventory.hotbar[0]);
+    }
+    assert.ok(seen.size > 1);
+});
+
+test('deathmatch: random guns off before buying keeps the current guns', () => {
+    const room = modeRoom('ffa');
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const guns = a.inventory.hotbar.slice(0, 2);
+    room.handleMessage('a', 'prefs', { randomGuns: false });
+    room.kill(a, null, 'fall');
+    run(room, 3.5);
+    assert.deepEqual(a.inventory.hotbar.slice(0, 2), guns);
+});
+
 test('gun game: start with the first gun, a new gun every few kills, no potions', () => {
     const room = modeRoom('gungame');
     const a = room.addPlayer({ id: 'a', name: 'A' });

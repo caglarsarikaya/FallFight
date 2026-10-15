@@ -15,14 +15,15 @@ const AMMO_FILTERS = {
 };
 
 // Returns { ok, error?, price }. item: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion',
-// 'ammo' (every gun), 'ammo_primary' or 'ammo_secondary'
-export function buyItem(room, player, item) {
+// 'ammo' (every gun), 'ammo_primary' or 'ammo_secondary'. free: Deathmatch, nothing costs money
+// and buying a gun you carry refills it.
+export function buyItem(room, player, item, { free = false } = {}) {
     const inv = player.inventory;
     let price;
     let apply;
     if (isGun(item)) {
         const spec = WEAPONS[item];
-        if (inv.has(item)) return { ok: false, error: 'owned' };
+        if (inv.has(item) && !free) return { ok: false, error: 'owned' };
         price = spec.price;
         apply = () => {
             const slot = inv.give(item);
@@ -58,8 +59,9 @@ export function buyItem(room, player, item) {
     } else {
         return { ok: false, error: 'unknown' };
     }
+    if (free) price = 0;
     if ((player.money ?? 0) < price) return { ok: false, error: 'money' };
-    player.money -= price;
+    if (price) player.money -= price;
     apply();
     room.notifyInventory(player);
     return { ok: true, price };

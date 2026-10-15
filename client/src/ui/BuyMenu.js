@@ -7,6 +7,7 @@ import { el } from './dom.js';
 // B 4 3 the M4A1, B 3 1 the MP5, B 8 2 kevlar + helmet. Slots for guns we don't have yet stay
 // empty (null) so the numbers never shift. Esc / B / 0 closes it (0 goes back from a category).
 // Items you can't afford are greyed out; the server checks everything again.
+// Deathmatch opens it free: no prices, and 9 switches random guns on/off.
 const gun = id => ({ id, name: WEAPONS[id].name, price: WEAPONS[id].price, gun: true });
 
 const CATEGORIES = [
@@ -28,8 +29,9 @@ const CATEGORIES = [
 ];
 
 export class BuyMenu {
-    constructor(root, { onBuy, sound }) {
+    constructor(root, { onBuy, onToggleRandom, sound }) {
         this.onBuy = onBuy;
+        this.onToggleRandom = onToggleRandom;
         this.sound = sound;
         this.title = el('div.buy-title');
         this.list = el('div.buy-list');
@@ -40,16 +42,20 @@ export class BuyMenu {
         this.category = null;
         this.money = 0;
         this.team = null;
+        this.free = false;
+        this.randomGuns = null;    // Deathmatch: shown as category 9
     }
 
     get visible() {
         return this.open;
     }
 
-    show(money, team) {
+    show(money, team, { free = false, randomGuns = null } = {}) {
         this.open = true;
         this.money = money;
         this.team = team;
+        this.free = free;
+        this.randomGuns = randomGuns;
         this.category = null;
         this.render();
         this.root.classList.remove('hidden');
@@ -61,9 +67,16 @@ export class BuyMenu {
         this.root.classList.add('hidden');
     }
 
-    toggle(money, team) {
-        if (this.open) this.hide();
-        else this.show(money, team);
+    setRandomGuns(on) {
+        if (this.randomGuns === null || this.randomGuns === on) return;
+        this.randomGuns = on;
+        if (this.open) this.render();
+    }
+
+    // Top-level rows: the CS categories, plus the random guns switch in Deathmatch
+    get categories() {
+        if (this.randomGuns === null) return CATEGORIES;
+        return [...CATEGORIES, { name: `Random guns: ${this.randomGuns ? 'ON' : 'OFF'}`, toggle: true }];
     }
 
     setMoney(money) {
@@ -84,7 +97,12 @@ export class BuyMenu {
             return true;
         }
         if (this.category === null) {
-            const cat = CATEGORIES[n - 1];
+            const cat = this.categories[n - 1];
+            if (cat?.toggle) {
+                this.onToggleRandom();
+                this.sound.play('click');
+                return true;
+            }
             if (!cat || (!cat.direct && !cat.items.some(Boolean))) return true;
             if (cat.direct) {
                 this.onBuy(cat.direct);
@@ -106,10 +124,11 @@ export class BuyMenu {
 
     render() {
         const money = this.money;
+        const funds = this.free ? 'FREE' : `$${money}`;
         if (this.category === null) {
-            this.title.textContent = `BUY MENU · $${money}`;
-            this.list.replaceChildren(...CATEGORIES.map((cat, i) => {
-                const empty = !cat.direct && !cat.items.some(Boolean);
+            this.title.textContent = `BUY MENU · ${funds}`;
+            this.list.replaceChildren(...this.categories.map((cat, i) => {
+                const empty = !cat.toggle && !cat.direct && !cat.items.some(Boolean);
                 return el(`button.buy-row${empty ? '.empty' : ''}`, { type: 'button', onclick: () => this.key(i + 1) }, [
                     el('span.key', { text: String(i + 1) }), el('span.name', { text: cat.name })
                 ]);
@@ -118,20 +137,20 @@ export class BuyMenu {
             return;
         }
         const cat = CATEGORIES[this.category];
-        this.title.textContent = `${cat.name.toUpperCase()} · $${money}`;
+        this.title.textContent = `${cat.name.toUpperCase()} · ${funds}`;
         this.list.replaceChildren(...cat.items.map((item, i) => {
             if (!item) {
                 return el('div.buy-row.empty', {}, [el('span.key', { text: String(i + 1) }), el('span.name', { text: '—' })]);
             }
             const icon = el('canvas', { width: 64, height: 32 });
             if (item.gun) getItemView(item.id)?.drawIcon(icon.getContext('2d'), 32);
-            const poor = item.price > money;
+            const poor = !this.free && item.price > money;
             const own = item.id === TEAM_BUY.defaultPistol[this.team];
             return el(`button.buy-row${poor ? '.poor' : ''}`, { type: 'button', onclick: () => this.key(i + 1) }, [
                 el('span.key', { text: String(i + 1) }),
                 icon,
                 el('span.name', { text: `${item.name}${own ? ' (default)' : ''}` }),
-                el('span.price', { text: `$${item.price}` })
+                el('span.price', { text: this.free ? 'FREE' : `$${item.price}` })
             ]);
         }));
         this.hint.textContent = '0 back · Esc close';
