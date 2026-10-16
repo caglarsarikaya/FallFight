@@ -145,6 +145,17 @@ const PATCHES = {
         [523, 659, 784, 1046, 1318].forEach((freq, i) => s.tone({ out, type: 'sine', freq, duration: 0.7, delay: i * 0.07, gain: 0.12 }));
         s.tone({ out, type: 'triangle', freq: 2093, duration: 1.2, delay: 0.35, gain: 0.05 });
     },
+    // Zombies revive: a soft shimmer as the light comes down, a full bell chord as the soul goes in
+    reviveStart: (s, out) => {
+        s.tone({ out, type: 'sine', freq: 330, freqEnd: 660, duration: 1.6, gain: 0.08 });
+        s.tone({ out, type: 'sine', freq: 495, freqEnd: 990, duration: 1.6, delay: 0.15, gain: 0.05 });
+        s.tone({ out, type: 'triangle', freq: 1760, duration: 1.2, delay: 0.4, gain: 0.03 });
+    },
+    revived: (s, out) => {
+        s.noise({ out, duration: 0.35, type: 'bandpass', freq: 1800, freqEnd: 600, q: 0.7, gain: 0.12 });
+        [262, 392, 523, 659, 784].forEach((freq, i) => s.tone({ out, type: 'sine', freq, duration: 1.2, delay: 0.05 + i * 0.05, gain: 0.12 }));
+        s.tone({ out, type: 'triangle', freq: 1568, duration: 1.4, delay: 0.3, gain: 0.05 });
+    },
     angelTick: (s, out) => s.tone({ out, type: 'sine', freq: 1568, duration: 0.08, gain: 0.08 }),
     angelEnd: (s, out) => {
         s.tone({ out, type: 'sine', freq: 784, freqEnd: 523, duration: 0.35, gain: 0.12 });

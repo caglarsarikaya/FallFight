@@ -11,6 +11,7 @@ import { getItem } from '../shared/items/ItemRegistry.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { GunEffects } from './effects/GunEffects.js';
+import { ReviveEffects } from './effects/ReviveEffects.js';
 import { INTERPOLATION_DELAY, PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
 import { PickupView } from './entities/PickupView.js';
@@ -103,6 +104,7 @@ export class Game {
         this.world = new WorldRenderer(this.scene);
         this.particles = new Particles(this.scene);
         this.effects = new GunEffects(this.scene);
+        this.reviveFx = new ReviveEffects(this.scene, this.particles);
         this.viewModel = new ViewModel();
         this.cameraController = new CameraController(this.camera, profile.cameraMode);
         // Dead and waiting for the wave or round: watch a living teammate
@@ -521,6 +523,13 @@ export class Game {
     }
 
     onRevive({ reviverId, targetId, until }) {
+        // Everyone sees the light come down and the soul return
+        const body = this.players.get(targetId)?.avatar.group.position;
+        if (until === null) this.reviveFx.stop(targetId);
+        else if (body) {
+            this.reviveFx.start(targetId, body, until);
+            this.sound.play('reviveStart', { at: body, range: 40 });
+        }
         if (reviverId === this.selfId && until === null) this.reviveTarget = null;
         if (reviverId !== this.selfId && targetId !== this.selfId) return;
         if (until === null) {
@@ -769,6 +778,7 @@ export class Game {
             if (!info) return;
             info.avatar.dispose();
             this.players.delete(id);
+            this.reviveFx.remove(id);
             this.updateModeBadge();
             if (!info.isBot) this.hud.toast(`${info.name} left`);
         });
@@ -850,6 +860,9 @@ export class Game {
         on(S2C.DEATH, this.onDeath);
         on(S2C.REVIVE, this.onRevive);
         on(S2C.REVIVED, ({ reviverId, targetId }) => {
+            this.reviveFx.finish(targetId);
+            const body = this.players.get(targetId)?.avatar.group.position;
+            if (body) this.sound.play('revived', { at: body, range: 50 });
             const name = id => this.players.get(id)?.name || 'Someone';
             if (targetId === this.selfId) this.hud.toast(`${name(reviverId)} revived you!`);
             else if (reviverId === this.selfId) this.hud.toast(`You revived ${name(targetId)}`);
@@ -868,6 +881,7 @@ export class Game {
         });
         on(S2C.MATCH_START, () => {
             this.matchEnd.hide();
+            this.reviveFx.clear();
             this.revive = null;
             this.reviveTarget = null;
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
@@ -1324,6 +1338,8 @@ export class Game {
             }
         }
         this.updateJetFlames(dt);
+        this.reviveFx.update(dt, this.serverOffset === null ? null : performance.now() / 1000 + this.serverOffset,
+            id => this.players.get(id)?.avatar.group.position);
         for (const [id, view] of this.projectiles) {
             if (!view.update(dt)) this.projectiles.delete(id);
             else if (view.itemId === 'rpg' && (view.trail += dt) >= 0.02) {
