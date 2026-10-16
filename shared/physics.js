@@ -1,4 +1,4 @@
-import { LONG_JUMP, PLAYER } from './constants.js';
+import { JETPACK, LONG_JUMP, PLAYER } from './constants.js';
 import { bodyHeight } from './game/BodyZones.js';
 
 const SKIN = 1e-4;
@@ -25,13 +25,19 @@ export function moveSpeed({ speedMul = 1, crouching = false, walk = false, slow 
 // body:  { x, y, z, vx, vy, vz, onGround, crouching } (mutated); y is the feet height
 // input: { moveX, moveZ } world-space wish direction (length <= 1), { jump, crouch, walk }
 //        booleans, { speedMul } from the held weapon, { slow } while tagged, { longJump } with the
-//        long jump module (crouch + jump while moving leaps far; sets body.longJumped that tick)
+//        long jump module (crouch + jump while moving leaps far; sets body.longJumped that tick),
+//        { jetpack: { up, down } } while carrying the jetpack (see flyStep)
 // In the air you keep your momentum and steer GoldSrc-style, so strafing while turning gains a
 // little speed; jumping on the tick you land skips ground friction (bunny hop, capped).
 // Collision is box-vs-voxel, one axis at a time; there is no auto step-up, so 1-high blocks
 // need a jump and 2-high blocks are walls. Standing up needs headroom. In water, swimming into a
 // ledge at the surface with Space held pops you out onto it.
 export function stepMovement(body, input, arena, dt) {
+    const jet = input.jetpack;
+    if (jet?.up) body.flying = true;
+    else if (!jet) body.flying = false;
+    if (body.flying) return flyStep(body, input, jet, arena, dt);
+
     if (input.crouch) body.crouching = true;
     else if (body.crouching && !collides(arena, body.x, body.y, body.z, PLAYER.height)) body.crouching = false;
 
@@ -100,6 +106,31 @@ export function stepMovement(body, input, arena, dt) {
     moveHorizontal(body, arena, 'x', body.vx * dt);
     moveHorizontal(body, arena, 'z', body.vz * dt);
     moveVertical(body, arena, body.vy * dt);
+    return body;
+}
+
+// Jetpack flight (GTA San Andreas): no gravity, the keys set where the velocity heads. Up climbs,
+// down sinks, neither hovers; WASD flies level. Ctrl only sinks, so you stand up in the air if
+// there's room. Touching down without holding up ends the flight.
+function flyStep(body, input, jet, arena, dt) {
+    if (body.crouching && !collides(arena, body.x, body.y, body.z, PLAYER.height)) body.crouching = false;
+    body.inWater = arena.isWaterAt(body.x, body.y + 0.4, body.z);
+    body.longJumped = false;
+    const blend = 1 - Math.exp(-JETPACK.accel * dt);
+    const climb = jet.up ? JETPACK.up : jet.down ? -JETPACK.down : 0;
+    body.vx += (input.moveX * JETPACK.speed - body.vx) * blend;
+    body.vz += (input.moveZ * JETPACK.speed - body.vz) * blend;
+    body.vy += (climb - body.vy) * blend;
+
+    moveHorizontal(body, arena, 'x', body.vx * dt);
+    moveHorizontal(body, arena, 'z', body.vz * dt);
+    moveVertical(body, arena, body.vy * dt);
+    const top = arena.height + JETPACK.ceiling;
+    if (body.y > top) {
+        body.y = top;
+        body.vy = Math.min(0, body.vy);
+    }
+    if (body.onGround && !jet.up) body.flying = false;
     return body;
 }
 

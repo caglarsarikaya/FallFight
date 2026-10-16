@@ -75,6 +75,58 @@ export class PlayerAvatar {
             this.god = false;
             this.setGod(true);
         }
+        if (this.jetpack) {
+            this.jetpack = null;
+            this.setJetpack(true);
+        }
+    }
+
+    // Zombies jetpack (GTA San Andreas): a grey pack on the back with two rocket tanks; the
+    // flames come out of nozzles() as particles (Game) while jetting
+    setJetpack(on) {
+        if (on === !!this.jetpack) return;
+        if (!on) {
+            this.jetpack.parent?.remove(this.jetpack);
+            this.jetpack.traverse(o => o.isMesh && o.geometry.dispose());
+            this.jetpack = this.nozzleAnchors = null;
+            this.jetting = false;
+            return;
+        }
+        const { torsoH, torsoD } = this.model.dims;
+        const grey = new THREE.MeshLambertMaterial({ color: '#8a9099' });
+        const dark = new THREE.MeshLambertMaterial({ color: '#3a3f46' });
+        const red = new THREE.MeshLambertMaterial({ color: '#c8322a' });
+        const box = (w, h, d, material, x, y, z, parent) => {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            parent.add(mesh);
+            return mesh;
+        };
+        const pack = new THREE.Group();
+        pack.position.set(0, torsoH * 0.55, torsoD / 2 + 0.07);
+        box(0.36, 0.46, 0.12, dark, 0, 0, 0, pack);
+        this.nozzleAnchors = [-1, 1].map(side => {
+            const x = side * 0.17;
+            box(0.15, 0.5, 0.15, grey, x, 0.02, 0.1, pack);
+            box(0.16, 0.1, 0.16, red, x, 0.3, 0.1, pack);        // nose cap
+            box(0.11, 0.08, 0.11, dark, x, -0.27, 0.1, pack);    // nozzle
+            const anchor = new THREE.Object3D();
+            anchor.position.set(x, -0.33, 0.1);
+            pack.add(anchor);
+            return anchor;
+        });
+        this.model.body.add(pack);
+        this.jetpack = pack;
+    }
+
+    // World positions of the two jetpack nozzles, written into out (two Vector3s)
+    nozzles(out) {
+        if (!this.nozzleAnchors) return false;
+        this.group.updateWorldMatrix(true, true);
+        this.nozzleAnchors[0].getWorldPosition(out[0]);
+        this.nozzleAnchors[1].getWorldPosition(out[1]);
+        return true;
     }
 
     // Zombies angel: blocky white wings on the back, a gold halo and a golden shine while it lasts
@@ -256,8 +308,8 @@ export class PlayerAvatar {
         this.model.playAction(action);
     }
 
-    hurt() {
-        this.model.hurt();
+    hurt(strength, headshot) {
+        this.model.hurt(strength, headshot);
     }
 
     die() {

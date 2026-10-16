@@ -21,7 +21,8 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // On maps with a longJumpSpot (Lava Arena), a long jump module appears there every few minutes:
 // whoever takes it can crouch-jump far until they die (LONG_JUMP).
 // Rarely (ZOMBIES.drops.godmode) a zombie drops an angel: kept in slot 8 until used, it makes you
-// untouchable by zombies for GOD_MODE.duration seconds.
+// untouchable by zombies for GOD_MODE.duration seconds. Just as rarely one drops a jetpack (GTA
+// San Andreas style): fly with Shift up and Ctrl down until you die (JETPACK).
 export class Zombies extends GameMode {
     get id() {
         return 'zombies';
@@ -60,6 +61,7 @@ export class Zombies extends GameMode {
         super.resetPlayer(player);
         player.money = ZOMBIES.startMoney;
         player.longJump = false;
+        player.jetpack = false;
         player.godUntil = 0;
     }
 
@@ -104,10 +106,11 @@ export class Zombies extends GameMode {
         return player.isZombie ? spawns?.zombie : spawns?.ct;
     }
 
-    // Zombies take nothing; a long jump carrier doesn't need a second one, nor an angel carrier
+    // Zombies take nothing; a long jump, jetpack or angel carrier doesn't need a second one
     canPickUp(player, pickup) {
         if (player.isZombie) return false;
         if (pickup?.type === 'longjump') return !player.longJump;
+        if (pickup?.type === 'jetpack') return !player.jetpack;
         if (pickup?.type === 'godmode') return player.inventory.count('godmode') === 0;
         return true;
     }
@@ -368,6 +371,8 @@ export class Zombies extends GameMode {
     onKill(victim, killer) {
         this.dirty = true;
         victim.longJump = false;     // kept until you die, even if a teammate revives you
+        victim.jetpack = false;
+        victim.jetting = false;
         victim.godUntil = 0;
         if (victim.isZombie) {
             victim.diedAt = this.room.time;
@@ -406,8 +411,8 @@ export class Zombies extends GameMode {
             const top = Math.min(ladder.length - 1, 2 + this.wave);
             extra = { weapon: weapon || ladder[Math.floor(rng() * (top + 1))] };
         }
-        // The angel lies there longer: it's rare, and its searchlight shows the way
-        const life = type === 'godmode' ? ZOMBIES.dropLife * 2 : ZOMBIES.dropLife;
+        // The angel and the jetpack lie there longer: they're rare, and their searchlight shows the way
+        const life = type === 'godmode' || type === 'jetpack' ? ZOMBIES.dropLife * 2 : ZOMBIES.dropLife;
         const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, life, extra);
         if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);
     }
@@ -429,7 +434,7 @@ export class Zombies extends GameMode {
     playerJSON(player) {
         if (!player.isZombie) {
             const godLeft = this.isBlessed(player) ? Math.round((player.godUntil - this.room.time) * 10) / 10 : 0;
-            return { money: player.money ?? 0, longJump: !!player.longJump, godLeft };
+            return { money: player.money ?? 0, longJump: !!player.longJump, jetpack: !!player.jetpack, jetting: !!player.jetting, godLeft };
         }
         return player.isGiant ? { isZombie: true, maxHealth: player.maxHealth, scale: player.scale } : { isZombie: true, maxHealth: player.maxHealth };
     }

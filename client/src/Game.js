@@ -30,7 +30,7 @@ import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump', godmode: 'Angel' };
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump', godmode: 'Angel', jetpack: 'Jetpack' };
 const ANGEL_GOLD = ['#fff2a8', '#ffd23f', '#ffffff'];
 const STATS_INTERVAL_MS = 500;
 const BASE_FOV = 75;
@@ -43,8 +43,18 @@ const STEP_SOUND = { grass: 'step', sand: 'stepSand', snow: 'stepSnow', stone: '
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
+const DOWN = { x: 0, y: -1, z: 0 };
+const SPARKS = ['#fff6d0', '#ffd27a', '#ffffff'];
+const HARD_SURFACES = ['stone', 'ice'];
+// Per-shot camera kick by weapon kind (0..1): a short shake and FOV punch, on top of the recoil
+const SHOT_KICK = { pistol: 0.35, smg: 0.3, rifle: 0.5, mg: 0.5, shotgun: 0.9, sniper: 1, launcher: 1 };
+const HEAVY_PISTOLS = ['deagle'];
+const SHOT_FOV = 3.5;         // degrees of FOV punch at full kick
+const SHOT_ROLL = 0.012;      // radians of camera roll and tilt jitter at full kick
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
-const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth', 'godLeft'];
+const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth', 'godLeft', 'jetpack', 'jetting'];
+const JET_PUFF = 0.03;        // seconds between jetpack flame puffs
+const JET_SOUND = 0.085;      // seconds between overlapping thruster sounds
 const SPECTATE_DELAY = 2;   // seconds of the death cam before following a teammate
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 const REBUY_NAMES = { ammo: 'ammo', kevlar_helmet: 'kevlar + helmet', kevlar: 'kevlar', health_potion: 'potion', hegrenade: 'HE', smokegrenade: 'smoke' };
@@ -170,6 +180,7 @@ export class Game {
         this.helmet = false;
         this.look = { dx: 0, dy: 0 };
         this.shake = 0;                 // explosion camera shake, in blocks
+        this.shotKick = 0;              // our own shot's camera kick, 0..1 (see SHOT_KICK)
         this.reviveTarget = null;       // Zombies: the fallen teammate we're holding E on
         this.revive = null;             // { label, until } a revive we're part of (server time)
         this.tmpVec = new THREE.Vector3();
@@ -558,8 +569,9 @@ export class Game {
         this.protectedUntil = 0;
         if (spec.kind === WEAPON_KIND.LAUNCHER) return this.onLocalRocket(spec);
         this.sound.playShot(spec.id, null, { self: true });
-        this.viewModel.fire({ shell: spec.kind !== WEAPON_KIND.SHOTGUN });
+        this.viewModel.fire({ shell: spec.kind !== WEAPON_KIND.SHOTGUN, kick: this.kickOf(spec) });
         this.self?.avatar.playAction('shoot');
+        this.kickCamera(spec);
         const eye = this.local.eye;
         const yaw = this.local.yaw;
         const forward = directionFromAngles(yaw, this.local.pitch);
@@ -570,6 +582,10 @@ export class Game {
             z: eye.z + forward.z * 0.7 - Math.sin(yaw) * 0.14
         };
         this.effects.lightAt(muzzle);
+        // Gun smoke curling off the barrel, thicker once a spray gets going
+        this.sprayShots = performance.now() - (this.lastShotAt || 0) < 250 ? (this.sprayShots || 0) + 1 : 1;
+        this.lastShotAt = performance.now();
+        this.particles.burst(muzzle, { count: this.sprayShots >= 4 ? 3 : 1, colors: SMOKE, speed: 0.3, up: 0.6, gravity: -1, life: 0.8, size: 0.09, spread: 0.04, dir: forward, dirSpeed: 0.8 });
         const tracerEvery = spec.pellets > 1 ? 3 : 1;
         dirs.forEach((dir, i) => {
             const distance = this.traceLocal(eye, dir, spec);
@@ -586,8 +602,9 @@ export class Game {
     // Our own RPG shot: the server spawns the rocket, we show the launch and the backblast
     onLocalRocket(spec) {
         this.sound.playShot(spec.id, null, { self: true });
-        this.viewModel.fire({ shell: false });
+        this.viewModel.fire({ shell: false, kick: 1.6 });
         this.self?.avatar.playAction('shoot');
+        this.kickCamera(spec);
         const eye = this.local.eye;
         const forward = directionFromAngles(this.local.yaw, this.local.pitch);
         const muzzle = { x: eye.x + forward.x * 1.1, y: eye.y + forward.y * 1.1 - 0.1, z: eye.z + forward.z * 1.1 };
@@ -596,6 +613,16 @@ export class Game {
         this.particles.burst({ x: eye.x - forward.x * 0.8, y: eye.y - 0.1, z: eye.z - forward.z * 0.8 },
             { count: 26, colors: SMOKE, speed: 2, up: 1.2, gravity: -0.6, life: 1.4, size: 0.3, spread: 0.4, dir: back, dirSpeed: 6 });
         this.onWeaponChanged();
+    }
+
+    kickOf(spec) {
+        return HEAVY_PISTOLS.includes(spec.id) ? 0.8 : SHOT_KICK[spec.kind] ?? 0.4;
+    }
+
+    // Our shot shakes the camera a little and punches the FOV out (cosmetic: the bullets go by the
+    // view angles, not the camera)
+    kickCamera(spec) {
+        this.shotKick = Math.min(1, this.shotKick + this.kickOf(spec));
     }
 
     // A rocket landed: a big fireball with a lingering glow, smoke, debris, a dust ring along the
@@ -682,11 +709,16 @@ export class Game {
         const normal = ax >= ay && ax >= az ? { x: Math.sign(dx), y: 0, z: 0 }
             : ay >= az ? { x: 0, y: Math.sign(dy), z: 0 } : { x: 0, y: 0, z: Math.sign(dz) };
         this.effects.decal(point, normal, this.arena.index(ix, iy, iz));
-        if (!blockProps(kind).solid) return;
+        const props = blockProps(kind);
+        if (!props.solid) return;
         const colors = DEBRIS_COLORS[kind] || DEBRIS_COLORS[1];
-        this.particles.burst(point, { count: 5, colors, speed: 2.5, up: 2.5, size: 0.06, spread: 0.05, life: 0.5, dir: normal, dirSpeed: 3 });
-        this.particles.burst(point, { count: 2, colors: ['#d9d2c0', '#bdb5a3'], speed: 1, up: 1.2, gravity: 1, size: 0.12, spread: 0.05, life: 0.6, glow: true, dir: normal, dirSpeed: 1 });
-        this.sound.play(IMPACT_SOUND[blockProps(kind).surface] || 'impactStone', { at: point, range: 40, volume: 0.8 });
+        // Chips fly out of the face, a puff of dust hangs there, hard surfaces spark
+        this.particles.burst(point, { count: 7, colors, speed: 3, up: 2.8, size: 0.06, spread: 0.05, life: 0.55, dir: normal, dirSpeed: 5 });
+        this.particles.burst(point, { count: 3, colors: ['#d9d2c0', '#bdb5a3', '#a39c8c'], speed: 0.8, up: 0.8, gravity: 0.6, size: 0.15, spread: 0.08, life: 0.7, dir: normal, dirSpeed: 1.4 });
+        if (HARD_SURFACES.includes(props.surface)) {
+            this.particles.burst(point, { count: 3, colors: SPARKS, speed: 3, up: 2, gravity: 14, size: 0.035, spread: 0.02, life: 0.22, glow: true, dir: normal, dirSpeed: 7 });
+        }
+        this.sound.play(IMPACT_SOUND[props.surface] || 'impactStone', { at: point, range: 40, volume: 0.8, voiceMs: 400 });
     }
 
     // A rocket or a grenade; grenades bounce off our arena and clink as they go
@@ -881,6 +913,11 @@ export class Game {
                 this.hud.toast('A Long Jump module appeared in the middle!');
                 return;
             }
+            if (data.type === 'jetpack') {
+                this.sound.play('rpgSpawn');
+                this.hud.toast('🚀 A zombie dropped a JETPACK! Follow the light');
+                return;
+            }
             if (data.type === 'godmode') {
                 this.sound.play('angel', { at: { x: data.x, y: data.y, z: data.z }, range: 80 });
                 this.hud.toast('😇 A zombie dropped an angel! Follow the light');
@@ -907,6 +944,12 @@ export class Game {
                 if (by === this.selfId) this.sound.play('armorUp');
                 this.hud.toast(by === this.selfId ? '😇 Angel picked up! Press 8 and click when you need it'
                     : `${this.players.get(by)?.name || 'Someone'} has an angel!`);
+                return;
+            }
+            if (type === 'jetpack' && by) {
+                if (by === this.selfId) this.sound.play('armorUp');
+                this.hud.toast(by === this.selfId ? '🚀 Jetpack! Shift up · Ctrl down · WASD to fly'
+                    : `${this.players.get(by)?.name || 'Someone'} has the jetpack!`);
                 return;
             }
             if (type === 'longjump' && by) {
@@ -999,9 +1042,11 @@ export class Game {
             info.health = p.health;
             for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
             info.avatar.setGod(info.alive !== false && info.godLeft > 0);
+            info.avatar.setJetpack(info.alive !== false && !!info.jetpack);
             if (p.id === this.selfId) {
                 this.updateAngel(info.godLeft || 0);
                 this.local.longJump = !!p.longJump;
+                this.local.jetpack = !!p.jetpack;
                 this.hud.setHealth(p.health);
                 if (p.money !== undefined) {
                     this.hud.setMoney(p.money);
@@ -1043,6 +1088,12 @@ export class Game {
         this.effects.flash(at, spec?.kind === WEAPON_KIND.SHOTGUN || w === 'awp' ? 0.9 : 0.6);
         this.sound.playShot(w, at);
         info?.avatar.playAction('shoot');
+        // A few hot blocky sparks and a wisp of smoke at their barrel
+        if (p.length >= 3) {
+            const fwd = { x: p[0], y: p[1], z: p[2] };
+            this.particles.burst(at, { count: 3, colors: SPARKS, speed: 1.5, up: 0.5, gravity: 6, size: 0.04, spread: 0.05, life: 0.14, glow: true, dir: fwd, dirSpeed: 6 });
+            this.particles.burst(at, { count: 1, colors: SMOKE, speed: 0.3, up: 0.5, gravity: -1, life: 0.7, size: 0.1, spread: 0.05, dir: fwd, dirSpeed: 0.8 });
+        }
 
         const origin = { x: o[0], y: o[1], z: o[2] };
         const head = this.local.alive ? this.local.eye : null;
@@ -1099,7 +1150,7 @@ export class Game {
         if (!victim) return;
         victim.health = health;
         victim.avatar.setHealth(health);
-        victim.avatar.hurt();
+        victim.avatar.hurt(Math.min(1, 0.3 + amount / 60), !!headshot);
         const self = victimId === this.selfId;
         const pos = self ? this.local.body : victim.avatar.group.position;
         const hitPoint = { x: pos.x, y: pos.y + (ZONE_HEIGHT[zone] ?? 1.1) * (victim.avatar.crouching ? 0.72 : 1) * victim.avatar.scale, z: pos.z };
@@ -1107,7 +1158,10 @@ export class Game {
         // Blood sprays away from the shooter (our own would spawn inside the camera)
         if (!self) {
             const away = from ? normalize({ x: pos.x - from.x, y: 0.15, z: pos.z - from.z }) : null;
-            this.particles.burst(hitPoint, { count: 6 + Math.min(14, Math.round(amount / 6)), colors: BLOOD, speed: 1.5, up: 1.5, size: 0.06, spread: 0.15, life: 0.6, dir: away, dirSpeed: 4 });
+            this.particles.burst(hitPoint, { count: 8 + Math.min(16, Math.round(amount / 5)), colors: BLOOD, speed: 1.8, up: 1.6, size: 0.06, spread: 0.15, life: 0.6, dir: away, dirSpeed: 5 });
+            // A hanging red mist: bigger blocks that barely fall
+            this.particles.burst(hitPoint, { count: headshot ? 7 : 3, colors: BLOOD, speed: 0.7, up: 0.5, gravity: 1.5, size: headshot ? 0.16 : 0.11, spread: 0.2, life: 0.45, dir: away, dirSpeed: 1.2 });
+            if (headshot) this.particles.burst(hitPoint, { count: 14, colors: BLOOD, speed: 2.6, up: 2.4, size: 0.07, spread: 0.1, life: 0.7, dir: away, dirSpeed: 6 });
         }
 
         // The hit sound everyone nearby hears: dink for helmets, thud for kevlar, flesh otherwise
@@ -1136,7 +1190,7 @@ export class Game {
         }
         if (attackerId === this.selfId && !self) {
             this.hud.hit();
-            this.sound.play('hitmarker');
+            this.sound.play(headshot ? 'headshotConfirm' : 'hitConfirm', { volume: knife ? 0.6 : 0.9 });
         }
     }
 
@@ -1147,7 +1201,10 @@ export class Game {
         victim.alive = false;
         victim.godLeft = 0;
         victim.avatar.setGod(false);
+        victim.jetpack = victim.jetting = false;
+        victim.avatar.setJetpack(false);
         if (victimId === this.selfId) {
+            this.local.jetpack = false;
             this.angelShown = 0;
             this.hud.setAngel(0);
         }
@@ -1250,6 +1307,7 @@ export class Game {
                 this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 2, colors: ANGEL_GOLD, speed: 0.8, up: 0.6, gravity: -1.5, life: 0.9, size: 0.06, spread: 0.9, glow: true });
             }
         }
+        this.updateJetFlames(dt);
         for (const [id, view] of this.projectiles) {
             if (!view.update(dt)) this.projectiles.delete(id);
             else if (view.itemId === 'rpg' && (view.trail += dt) >= 0.02) {
@@ -1292,12 +1350,28 @@ export class Game {
         if (this.local.alive && body.onGround && speed > STEP_SPEED) {
             this.stepTimer -= dt * speed;
             if (this.stepTimer <= 0) {
+                // Left, right, left: a little to each side
                 this.stepTimer = 2.1;
-                this.sound.play(this.stepSound(body), { pitch: 0.85 + Math.random() * 0.3, volume: 0.7 });
+                this.foot = -(this.foot || 1);
+                this.sound.play(this.stepSound(body), { pitch: 0.9 + Math.random() * 0.2, volume: 0.6, pan: this.foot * 0.18, voiceMs: 300 });
             }
         }
         if (this.local.events.jumped) this.sound.play(this.local.events.longJumped ? 'longJump' : 'jump');
-        if (this.local.events.landed) this.sound.play('land', { volume: Math.min(1, 0.3 + this.local.events.fallSpeed / 14) });
+        if (this.local.events.liftOff) this.sound.play('longJump');
+        // Jetpack thruster: short roars overlapping into one, higher while climbing
+        if (this.local.alive && body.flying) {
+            this.jetSoundTimer = (this.jetSoundTimer || 0) - dt;
+            if (this.jetSoundTimer <= 0) {
+                this.jetSoundTimer = JET_SOUND;
+                const climb = this.local.jet.up ? 1.15 : this.local.jet.down ? 0.85 : 1;
+                this.sound.play('jetThrust', { pitch: climb, volume: 0.5, voiceMs: 300 });
+            }
+        }
+        if (this.local.events.landed) {
+            const hard = Math.min(1, 0.3 + this.local.events.fallSpeed / 14);
+            this.sound.play('land', { volume: hard });
+            this.sound.play(this.stepSound(body), { volume: 0.5 + hard * 0.5, pitch: 0.85, voiceMs: 300 });
+        }
         // Into the water: splash; head under: everything goes blue
         if (body.inWater !== this.wasInWater) {
             if (body.inWater && this.local.alive) this.sound.play('splash');
@@ -1363,6 +1437,35 @@ export class Game {
         return STEP_SOUND[under ? blockProps(this.arena.kindAt(under.ix, under.iy, under.iz)).surface : 'grass'] || 'step';
     }
 
+    // Jetpack flames and smoke out of the nozzles of everyone flying. In first person we can't see
+    // our own pack, so ours come from under our feet, where looking down shows them.
+    updateJetFlames(dt) {
+        this.jetPuff = (this.jetPuff || 0) + dt;
+        if (this.jetPuff < JET_PUFF) return;
+        this.jetPuff = 0;
+        const nozzles = this.nozzles || (this.nozzles = [new THREE.Vector3(), new THREE.Vector3()]);
+        for (const info of this.players.values()) {
+            const self = info.id === this.selfId;
+            const avatar = info.avatar;
+            avatar.jetting = self ? this.local.alive && !!this.local.body.flying : info.alive !== false && !!info.jetting;
+            if (!avatar.jetting) continue;
+            if (self && !this.cameraController.view.showsOwnBody) {
+                const b = this.local.body;
+                nozzles[0].set(b.x + Math.sin(this.local.yaw) * 0.25, b.y + 0.35, b.z + Math.cos(this.local.yaw) * 0.25);
+                this.jetBurst(nozzles[0]);
+                continue;
+            }
+            if (!avatar.nozzles(nozzles)) continue;
+            this.jetBurst(nozzles[0]);
+            this.jetBurst(nozzles[1]);
+        }
+    }
+
+    jetBurst(at) {
+        this.particles.burst(at, { count: 2, colors: FIRE, speed: 0.4, up: 0, gravity: 0, life: 0.16, size: 0.13, spread: 0.03, glow: true, dir: DOWN, dirSpeed: 6 });
+        this.particles.burst(at, { count: 1, colors: SMOKE, speed: 0.6, up: 0, gravity: -0.8, life: 0.9, size: 0.2, spread: 0.05, dir: DOWN, dirSpeed: 3 });
+    }
+
     // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch.
     // Zombies moan now and then instead.
     updateRemoteFootsteps(dt) {
@@ -1379,12 +1482,22 @@ export class Game {
                 }
                 continue;
             }
+            if (info.jetting) {
+                info.jetTimer = (info.jetTimer || 0) - dt;
+                if (info.jetTimer <= 0) {
+                    info.jetTimer = JET_SOUND;
+                    const p = avatar.group.position;
+                    this.sound.play('jetThrust', { at: { x: p.x, y: p.y + 1, z: p.z }, range: 45, voiceMs: 300 });
+                }
+                continue;
+            }
             if (!avatar.onGround || avatar.speed < STEP_SPEED || avatar.crouching) continue;
             info.stepTimer -= dt * avatar.speed;
             if (info.stepTimer > 0) continue;
             info.stepTimer = 2.1;
             const p = avatar.group.position;
-            this.sound.play(this.stepSound(p), { at: { x: p.x, y: p.y, z: p.z }, range: 28, pitch: 0.85 + Math.random() * 0.3 });
+            // Louder and further than our own: hearing them coming is the point
+            this.sound.play(this.stepSound(p), { at: { x: p.x, y: p.y, z: p.z }, range: 32, volume: 1.2, pitch: 0.85 + Math.random() * 0.3, voiceMs: 300 });
         }
     }
 
@@ -1483,6 +1596,16 @@ export class Game {
             this.camera.position.y += (Math.random() - 0.5) * s;
             this.camera.position.z += (Math.random() - 0.5) * s;
             this.shake = Math.max(0, s - dt * 0.6);
+        }
+        if (this.shotKick > 0) {
+            const k = this.shotKick;
+            this.camera.rotateZ((Math.random() - 0.5) * SHOT_ROLL * 2 * k);
+            this.camera.rotateX((Math.random() - 0.3) * SHOT_ROLL * k);
+            this.shotKick = Math.max(0, k - dt * 9);
+            if (this.zoom === 1) {
+                this.camera.fov = BASE_FOV + SHOT_FOV * this.shotKick * this.shotKick;
+                this.camera.updateProjectionMatrix();
+            }
         }
     }
 }

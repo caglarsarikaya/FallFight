@@ -57,7 +57,7 @@ export const ZOMBIES = Object.freeze({
     attackInterval: 0.9,
     reach: 1.4,
     // Loot dropped by killed zombies: chance per kill
-    drops: { ammo: 0.35, health_potion: 0.12, armor: 0.1, weapon: 0.06, godmode: 0.02 },
+    drops: { ammo: 0.35, health_potion: 0.12, armor: 0.1, weapon: 0.06, godmode: 0.02, jetpack: 0.02 },
     dropLife: 25,
     // A teammate holding E next to a fallen player for `time` seconds brings them back there
     revive: { time: 5, reach: 2, health: 50 },

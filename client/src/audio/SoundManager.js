@@ -9,42 +9,68 @@ const HEARING_DISTANCE = 35;       // default audible range in blocks
 const MAX_VOICES = 48;             // hard cap on overlapping sounds
 const RETRIGGER_MS = 12;           // the same sound can't restart faster than this
 const PITCH_JITTER = 0.04;         // +-4% so repeated shots don't sound robotic
+const SPEED_OF_SOUND = 340;        // blocks per second
+
+// A footstep is two hits: the heel (a low thump) and, a moment later, the toe rolling onto the
+// surface (its texture). Each step varies the gap and the texture's pitch, so no two match.
+// heel: how hard the heel lands (soft ground thuds less)
+function footstep(s, out, p, texture, heel = 1) {
+    s.tone({ out, type: 'sine', freq: 100 * p, freqEnd: 50, duration: 0.05, gain: 0.2 * heel });
+    s.noise({ out, duration: 0.045, type: 'lowpass', freq: 340 * p, gain: 0.26 * heel });
+    texture(0.028 + Math.random() * 0.022, 0.85 + Math.random() * 0.3);
+}
 
 // Each patch receives (sound manager, output node, pitch multiplier)
 const PATCHES = {
-    step: (s, out, p) => s.noise({ out, duration: 0.07, type: 'lowpass', freq: 380 * p, gain: 0.22 }),
-    stepStone: (s, out, p) => {
-        s.noise({ out, duration: 0.05, type: 'bandpass', freq: 1500 * p, q: 1.5, gain: 0.25 });
-        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 400, gain: 0.2 });
-    },
-    stepWood: (s, out, p) => {
-        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 900 * p, gain: 0.28 });
-        s.tone({ out, type: 'triangle', freq: 210 * p, freqEnd: 120, duration: 0.05, gain: 0.12 });
-    },
-    stepSnow: (s, out, p) => {
-        // Crunchy: a few tiny crackles
-        for (let i = 0; i < 3; i++) s.noise({ out, delay: i * 0.018, duration: 0.03, type: 'bandpass', freq: (1300 + i * 400) * p, q: 2, gain: 0.18 });
-    },
-    stepSand: (s, out, p) => s.noise({ out, duration: 0.1, type: 'bandpass', freq: 2200 * p, freqEnd: 1200, q: 0.8, gain: 0.16 }),
-    stepIce: (s, out, p) => {
-        s.noise({ out, duration: 0.03, type: 'highpass', freq: 3000 * p, gain: 0.16 });
-        s.tone({ out, type: 'sine', freq: 1800 * p, duration: 0.03, gain: 0.03 });
-    },
+    step: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        s.noise({ out, delay, duration: 0.07, type: 'bandpass', freq: 850 * p * v, q: 0.8, gain: 0.15 });
+    }),
+    stepStone: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        s.noise({ out, delay, duration: 0.035, type: 'bandpass', freq: 2300 * p * v, q: 2, gain: 0.24 });
+        s.noise({ out, delay, duration: 0.012, type: 'highpass', freq: 4500, gain: 0.1 });
+    }),
+    stepWood: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        s.tone({ out, delay, type: 'triangle', freq: 190 * p * v, freqEnd: 110, duration: 0.07, gain: 0.18 });
+        s.noise({ out, delay, duration: 0.05, type: 'lowpass', freq: 1200 * p, gain: 0.2 });
+    }),
+    // Crunchy: a few tiny crackles
+    stepSnow: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        for (let i = 0; i < 3; i++) s.noise({ out, delay: delay + i * 0.018, duration: 0.03, type: 'bandpass', freq: (1300 + i * 400) * p * v, q: 2, gain: 0.17 });
+    }, 0.6),
+    stepSand: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        s.noise({ out, delay, duration: 0.1, type: 'bandpass', freq: 2300 * p * v, freqEnd: 1200, q: 0.8, gain: 0.16 });
+    }, 0.6),
+    stepIce: (s, out, p) => footstep(s, out, p, (delay, v) => {
+        s.noise({ out, delay, duration: 0.025, type: 'highpass', freq: 3400 * p * v, gain: 0.17 });
+        s.tone({ out, delay, type: 'sine', freq: 1900 * p * v, duration: 0.03, gain: 0.03 });
+    }),
     swim: (s, out, p) => s.noise({ out, duration: 0.25, type: 'lowpass', freq: 900 * p, freqEnd: 300, gain: 0.18 }),
     splash: (s, out) => {
         s.noise({ out, duration: 0.45, type: 'lowpass', freq: 2500, freqEnd: 300, gain: 0.5 });
         s.noise({ out, delay: 0.05, duration: 0.3, type: 'bandpass', freq: 1500, q: 1, gain: 0.25 });
     },
-    jump: (s, out) => s.noise({ out, duration: 0.09, type: 'bandpass', freq: 650, gain: 0.15 }),
+    // Push-off thump and a cloth/gear rustle
+    jump: (s, out) => {
+        s.noise({ out, duration: 0.06, type: 'lowpass', freq: 300, gain: 0.22 });
+        s.noise({ out, delay: 0.02, duration: 0.13, type: 'bandpass', freq: 1100, freqEnd: 600, q: 0.7, gain: 0.12 });
+    },
     // Long jump module: a servo whine and a thruster whoosh
     longJump: (s, out) => {
         s.tone({ out, type: 'sawtooth', freq: 220, freqEnd: 660, duration: 0.18, gain: 0.06 });
         s.noise({ out, duration: 0.45, type: 'bandpass', freq: 400, freqEnd: 2200, q: 1.2, gain: 0.35 });
         s.noise({ out, duration: 0.3, type: 'lowpass', freq: 600, freqEnd: 200, gain: 0.25 });
     },
+    // Jetpack thruster: a short low roar with a crackle on top; played every ~85 ms while flying,
+    // the overlaps blend into one steady burn
+    jetThrust: (s, out, p) => {
+        s.noise({ out, duration: 0.2, type: 'lowpass', freq: 520 * p, freqEnd: 300, gain: 0.5 });
+        s.noise({ out, duration: 0.14, type: 'bandpass', freq: 1500 * p, q: 0.9, gain: 0.16 });
+        s.tone({ out, type: 'sawtooth', freq: 58 * p, freqEnd: 50, duration: 0.18, gain: 0.05 });
+    },
     land: (s, out) => {
-        s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.35 });
-        s.tone({ out, type: 'sine', freq: 90, freqEnd: 45, duration: 0.08, gain: 0.25 });
+        s.noise({ out, duration: 0.1, type: 'lowpass', freq: 300, gain: 0.4 });
+        s.tone({ out, type: 'sine', freq: 90, freqEnd: 40, duration: 0.1, gain: 0.32 });
+        s.noise({ out, delay: 0.03, duration: 0.1, type: 'bandpass', freq: 900, freqEnd: 500, q: 0.7, gain: 0.1 });
     },
     swing: (s, out, p) => s.noise({ out, duration: 0.18, type: 'bandpass', freq: 700 * p, freqEnd: 2600 * p, q: 1.5, gain: 0.3 }),
     hit: (s, out) => {
@@ -67,9 +93,25 @@ const PATCHES = {
         s.noise({ out, duration: 0.35, type: 'lowpass', freq: 600, freqEnd: 100, gain: 0.5 });
         s.tone({ out, type: 'sine', freq: 110, freqEnd: 35, duration: 0.4, gain: 0.4 });
     },
+    // Our kill: a heavy thump under a quick rising two-note
     kill: (s, out) => {
-        s.tone({ out, type: 'square', freq: 880, duration: 0.06, gain: 0.07 });
-        s.tone({ out, type: 'square', freq: 1320, duration: 0.12, delay: 0.06, gain: 0.07 });
+        s.tone({ out, type: 'sine', freq: 130, freqEnd: 45, duration: 0.16, gain: 0.4 });
+        s.noise({ out, duration: 0.05, type: 'bandpass', freq: 1600, q: 1, gain: 0.25 });
+        s.tone({ out, type: 'square', freq: 880, duration: 0.06, delay: 0.02, gain: 0.07 });
+        s.tone({ out, type: 'square', freq: 1320, duration: 0.14, delay: 0.08, gain: 0.08 });
+    },
+    // What the shooter hears on a hit, however far away the target is: a crisp body thwack...
+    hitConfirm: (s, out, p) => {
+        s.noise({ out, duration: 0.05, type: 'bandpass', freq: 1800 * p, q: 1.2, gain: 0.32 });
+        s.tone({ out, type: 'sine', freq: 230 * p, freqEnd: 90, duration: 0.06, gain: 0.24 });
+        s.tone({ out, type: 'square', freq: 2400 * p, duration: 0.02, gain: 0.035 });
+    },
+    // ...and on a headshot a sharp crack with a ringing dink
+    headshotConfirm: (s, out, p) => {
+        s.noise({ out, duration: 0.03, type: 'highpass', freq: 3500, gain: 0.45 });
+        s.tone({ out, type: 'sine', freq: 150, freqEnd: 60, duration: 0.08, gain: 0.3 });
+        s.tone({ out, type: 'sine', freq: 2600 * p, freqEnd: 2500 * p, duration: 0.25, gain: 0.13 });
+        s.tone({ out, type: 'sine', freq: 3900 * p, duration: 0.14, gain: 0.06 });
     },
     // Our headshot kill: a wet crack, a heavy thump, then a bright two-note "ding" you want to hear again
     headshotKill: (s, out) => {
@@ -121,7 +163,7 @@ const PATCHES = {
     click: (s, out) => s.tone({ out, type: 'square', freq: 900, duration: 0.04, gain: 0.08 }),
     // Zombies: a low, rasping moan with a wobble
     zombieGroan: (s, out, p) => {
-        const t = s.ctx.currentTime;
+        const t = s.ctx.currentTime + s.baseDelay;
         const osc = s.ctx.createOscillator();
         const lfo = s.ctx.createOscillator();
         const lfoGain = s.ctx.createGain();
@@ -179,6 +221,7 @@ export class SoundManager {
         this.listener = { x: 0, y: 0, z: 0, yaw: 0 };
         this.voices = 0;
         this.lastPlayed = new Map();
+        this.baseDelay = 0;
     }
 
     // Browsers only allow audio after a user gesture; call from click/key handlers
@@ -219,8 +262,10 @@ export class SoundManager {
         return !!PATCHES[name] || !!this.samples?.has(name);
     }
 
-    // options: { at: {x,y,z} for positional sounds, volume, pitch, range (blocks), reverb (0..1) }
-    play(name, { at = null, volume = 1, pitch = 1, range = HEARING_DISTANCE, reverb = 0.15 } = {}) {
+    // options: { at: {x,y,z} for positional sounds, volume, pitch, range (blocks), reverb (0..1),
+    // delay (seconds), voiceMs (how long it counts against MAX_VOICES: short sounds pass less),
+    // pan (-1..1, for sounds without a position) }
+    play(name, { at = null, volume = 1, pitch = 1, range = HEARING_DISTANCE, reverb = 0.15, delay = 0, voiceMs = 1200, pan = 0 } = {}) {
         if (!this.ctx || this.ctx.state !== 'running' || this.voices >= MAX_VOICES) return;
         const sample = this.samples.has(name);
         if (!sample && !PATCHES[name]) return;
@@ -229,22 +274,32 @@ export class SoundManager {
         if (now - (this.lastPlayed.get(key) || 0) < RETRIGGER_MS) return;
         this.lastPlayed.set(key, now);
 
-        const out = this.createOutput(at, volume, range, reverb);
+        const out = this.createOutput(at, volume, range, reverb, pan);
         if (!out) return;
         const p = pitch * (1 + (Math.random() * 2 - 1) * PITCH_JITTER);
+        // Patches schedule from ctx.currentTime; baseDelay shifts the whole patch later
+        this.baseDelay = delay;
         if (sample) this.playBuffer(this.samples.pick(name), out, p);
         else PATCHES[name](this, out, p);
+        this.baseDelay = 0;
         this.voices++;
-        setTimeout(() => this.voices--, 1200);
+        setTimeout(() => this.voices--, voiceMs + delay * 1000);
     }
 
-    // Gunshot with a distant variant past 35% of its range (as heard from far away)
+    // Gunshot with a distant variant past 30% of its range (as heard from far away). Far shots
+    // arrive late, at the speed of sound (blocks are metres). Our own shots use the heavier _self
+    // patch (action clack, more low end) unless a recorded sample is installed.
     playShot(weaponId, at, { self = false } = {}) {
         const range = 160;
         const d = at ? this.distanceTo(at) : 0;
         const far = !self && d > range * 0.3;
-        const name = `shot_${weaponId}${far ? '_far' : ''}`;
-        this.play(name, { at: self ? null : at, range, volume: self ? 0.9 : 1, reverb: self ? 0.18 : 0.3 + Math.min(0.5, d / range) });
+        let name = `shot_${weaponId}${far ? '_far' : ''}`;
+        if (self && !this.samples?.has(name) && PATCHES[`${name}_self`]) name += '_self';
+        this.play(name, {
+            at: self ? null : at, range, volume: self ? 0.9 : 1,
+            reverb: self ? 0.2 : 0.3 + Math.min(0.5, d / range),
+            delay: self ? 0 : Math.min(0.4, d / SPEED_OF_SOUND)
+        });
     }
 
     distanceTo(at) {
@@ -252,11 +307,10 @@ export class SoundManager {
         return Math.hypot(at.x - l.x, at.y - l.y, at.z - l.z);
     }
 
-    createOutput(at, volume, range, reverb) {
+    createOutput(at, volume, range, reverb, pan = 0) {
         const ctx = this.ctx;
         const gain = ctx.createGain();
         let level = volume;
-        let pan = 0;
         let muffle = 1;
         if (at) {
             const dx = at.x - this.listener.x;
@@ -304,7 +358,7 @@ export class SoundManager {
         src.buffer = buffer;
         src.playbackRate.value = pitch;
         src.connect(out);
-        src.start();
+        src.start(this.ctx.currentTime + this.baseDelay);
     }
 
     createNoiseBuffer() {
@@ -340,7 +394,7 @@ export class SoundManager {
     }
 
     tone({ out, type = 'sine', freq, freqEnd = freq, duration, delay = 0, gain = 0.2 }) {
-        const t = this.ctx.currentTime + delay;
+        const t = this.ctx.currentTime + this.baseDelay + delay;
         const osc = this.ctx.createOscillator();
         const env = this.ctx.createGain();
         osc.type = type;
@@ -356,7 +410,7 @@ export class SoundManager {
     }
 
     noise({ out, duration, delay = 0, type = 'lowpass', freq = 1000, freqEnd = freq, q = 1, gain = 0.2 }) {
-        const t = this.ctx.currentTime + delay;
+        const t = this.ctx.currentTime + this.baseDelay + delay;
         const src = this.ctx.createBufferSource();
         src.buffer = this.noiseBuffer;
         const filter = this.ctx.createBiquadFilter();

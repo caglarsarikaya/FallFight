@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a', godmode: '#fff2a8' };
-const SPOTLIT = ['rpg', 'longjump', 'godmode'];
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a', godmode: '#fff2a8', jetpack: '#ff8a2a' };
+const SPOTLIT = ['rpg', 'longjump', 'godmode', 'jetpack'];
+// GTA-style power-ups turn faster and bob higher than plain loot
+const SPIN = { jetpack: 3.2 };
 const SPOTLIGHT_HEIGHT = 70;
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
@@ -87,6 +89,7 @@ export class PickupView {
         if (data.type === 'armor') return this.createVest();
         if (data.type === 'longjump') return this.createLongJump();
         if (data.type === 'godmode') return this.createAngel();
+        if (data.type === 'jetpack') return this.createJetpack();
         if (data.type === 'weapon') {
             const holder = new THREE.Group();
             const gun = getItemView(data.weapon)?.createModel();
@@ -145,6 +148,33 @@ export class PickupView {
         return group;
     }
 
+    // The Zombies jetpack: a dark pack between two grey rocket tanks with red noses and fins
+    createJetpack() {
+        const group = new THREE.Group();
+        const grey = new THREE.MeshLambertMaterial({ color: '#8a9099' });
+        const dark = new THREE.MeshLambertMaterial({ color: '#3a3f46' });
+        const red = new THREE.MeshLambertMaterial({ color: '#c8322a' });
+        const box = (w, h, d, material, x, y, z) => {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+            mesh.position.set(x, y, z);
+            group.add(mesh);
+        };
+        box(0.3, 0.4, 0.12, dark, 0, 0, 0);
+        for (const side of [-1, 1]) {
+            const x = side * 0.17;
+            box(0.14, 0.46, 0.14, grey, x, 0, 0.08);
+            box(0.15, 0.09, 0.15, red, x, 0.27, 0.08);
+            box(0.1, 0.07, 0.1, dark, x, -0.26, 0.08);
+            box(0.04, 0.14, 0.12, red, x + side * 0.09, -0.16, 0.08);   // fin
+        }
+        box(0.06, 0.18, 0.01, new THREE.MeshBasicMaterial({ color: '#ff8a2a' }), 0, 0.04, -0.065);
+        group.traverse(o => {
+            if (o.isMesh) o.castShadow = true;
+        });
+        group.scale.setScalar(1.5);
+        return group;
+    }
+
     // The Zombies angel: a gold halo over two small blocky white wings
     createAngel() {
         const group = new THREE.Group();
@@ -196,8 +226,9 @@ export class PickupView {
     update(dt) {
         this.time += dt;
         this.scale = Math.min(1, this.scale + dt * 3);
-        this.item.position.y = 0.75 + Math.sin(this.time * 2.5) * 0.12;
-        this.item.rotation.y += dt * 1.8;
+        const spin = SPIN[this.data.type];
+        this.item.position.y = (spin ? 0.95 : 0.75) + Math.sin(this.time * 2.5) * (spin ? 0.18 : 0.12);
+        this.item.rotation.y += dt * (spin || 1.8);
         this.ring.material.opacity = 0.45 + Math.sin(this.time * 4) * 0.25;
         this.group.scale.setScalar(this.scale);
         if (this.beam) {

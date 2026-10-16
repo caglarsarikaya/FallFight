@@ -138,6 +138,12 @@ export const LONG_JUMP = { interval: 180, speed: 14, up: 8.5, minSpeed: 0.8 };
 // Zombies: the angel (a 2% zombie drop, kept in slot 8): this many seconds safe from zombies
 export const GOD_MODE = { duration: 15 };
 
+// Zombies: the jetpack (a 2% zombie drop, GTA San Andreas style), kept until you die. Shift lifts
+// off and climbs at `up`, Ctrl sinks at `down`, no keys hovers; WASD flies at `speed`. Velocity
+// blends toward that at `accel` per second. You can't climb more than `ceiling` blocks over the
+// map's top layer. Carriers take no fall damage.
+export const JETPACK = { up: 6, down: 4.5, speed: 7.5, accel: 5, ceiling: 14 };
+
 // Landing from more than `safe` blocks up costs `perBlock` HP per block beyond it (armor doesn't help):
 // a jump or a long jump never hurts, a 5-block drop costs 10, 14 blocks is deadly
 export const FALL_DAMAGE = { safe: 4, perBlock: 10 };

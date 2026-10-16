@@ -64,7 +64,7 @@ export class Hud {
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · 8 angel (Zombies) · B buy · N ammo · M kevlar · H potions · G grenades · E revive · Ctrl+Space long jump (Zombies) · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · 8 angel (Zombies) · B buy · N ammo · M kevlar · H potions · G grenades · E revive · Ctrl+Space long jump (Zombies) · Shift up / Ctrl down with the jetpack (Zombies) · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
@@ -296,13 +296,16 @@ export class Hud {
         this.hitUntil = performance.now() / 1000 + this.hitLength;
     }
 
-    // Per frame: fade the hit marker; always ends at 0, whatever happened in between
+    // Per frame: fade the hit marker, which pops in a little big and shrinks back; always ends at
+    // 0, whatever happened in between
     update(now = performance.now() / 1000) {
         const left = this.hitUntil - now;
-        const opacity = left > 0 ? Math.min(0.95, (left / this.hitLength) * 1.6) : 0;
+        const k = left > 0 ? left / this.hitLength : 0;
+        const opacity = Math.min(0.95, k * 1.6);
         if (opacity === this.hitOpacity) return;
         this.hitOpacity = opacity;
         this.hitmarker.style.opacity = opacity.toFixed(2);
+        this.hitmarker.style.transform = `translate(-50%, -50%) rotate(45deg) scale(${(1 + 0.4 * k * k).toFixed(3)})`;
     }
 
     // Zombies angel: whole seconds left (0 = none), as a badge over the health and a soft gold edge

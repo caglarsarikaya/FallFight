@@ -200,6 +200,7 @@ export class GameRoom {
         player.onGround = !!data.onGround;
         player.crouching = !!data.crouching;
         player.walking = !!data.walking;
+        player.jetting = !!data.jetting && !!player.jetpack;
         this.afterMove(player);
     }
 
@@ -604,7 +605,8 @@ export class GameRoom {
     // Landing hard hurts: FALL_DAMAGE.perBlock for every block dropped beyond FALL_DAMAGE.safe.
     // Measured by the speed coming down at the last state in the air (as the height a free fall
     // needs for it) plus what was left to fall from there, so running down stairs, one small hop
-    // per step, never counts as one big fall. Water breaks the fall; zombies don't care.
+    // per step, never counts as one big fall. Water breaks the fall; zombies and jetpack carriers
+    // don't care.
     checkFallDamage(player) {
         if (!player.onGround) {
             player.fallSpeed = this.arena.isWaterAt(player.x, player.y + 0.4, player.z) ? 0 : Math.max(0, -player.vy);
@@ -615,7 +617,7 @@ export class GameRoom {
         player.fallSpeed = 0;
         if (!speed) return;
         const drop = (speed * speed) / (2 * PLAYER.gravity) + Math.max(0, player.fallFromY - player.y);
-        if (!player.alive || player.isZombie || drop <= FALL_DAMAGE.safe) return;
+        if (!player.alive || player.isZombie || player.jetpack || drop <= FALL_DAMAGE.safe) return;
         const credit = this.fallCredit(player);
         this.damage(player, Math.round((drop - FALL_DAMAGE.safe) * FALL_DAMAGE.perBlock),
             credit && this.mode.isEnemy(credit, player) ? credit : null, 'landing');
@@ -846,6 +848,8 @@ export class GameRoom {
                 this.select(player, player.inventory.give('rpg'));
             } else if (pickup.type === 'longjump') {
                 player.longJump = true;
+            } else if (pickup.type === 'jetpack') {
+                player.jetpack = true;
             } else if (pickup.type === 'weapon') {
                 const hadPrimary = !!player.inventory.hotbar[0];
                 const slot = player.inventory.give(pickup.weapon);

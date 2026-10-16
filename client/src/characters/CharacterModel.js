@@ -28,6 +28,8 @@ export class CharacterModel {
         this.time = 0;
         this.action = null;      // { name, t, duration }
         this.hurtTimer = 0;
+        this.flinch = 0;            // 0..1: thrown back by a hit, springs back fast
+        this.flinchHead = false;    // a headshot snaps the head back
         this.glow = false;       // Zombies angel: a pulsing golden shine (setGlow)
         this.deathTimer = null;
         this.crouch = 0;
@@ -160,8 +162,11 @@ export class CharacterModel {
         this.action = { name, t: 0, duration: durations[name] || 0.3 };
     }
 
-    hurt() {
+    // strength 0..1 (how hard the hit was)
+    hurt(strength = 0.4, headshot = false) {
         this.hurtTimer = HURT_TIME;
+        this.flinch = Math.min(1, Math.max(this.flinch, strength));
+        this.flinchHead = headshot;
     }
 
     die() {
@@ -245,6 +250,14 @@ export class CharacterModel {
                 this.head.rotation.x = -0.4 * Math.sin(t * Math.PI);
             }
             if (this.action.t >= 1) this.action = null;
+        }
+
+        // Hit flinch: the torso rocks back, a headshot snaps the head back
+        if (this.flinch > 0) {
+            const f = this.flinch * this.flinch;
+            this.body.rotation.x += 0.28 * f;
+            this.head.rotation.x -= (this.flinchHead ? 0.6 : 0.15) * f;
+            this.flinch = Math.max(0, this.flinch - dt * 5);
         }
 
         this.animateExtras(dt, state);

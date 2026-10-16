@@ -5,23 +5,31 @@
 //   boom   the low thump you feel in the chest (pitched-down sine)
 //   tail   the echo off the surroundings (long, dark noise)
 // Far away, the crack and most of the body are gone: a muffled thump and a long rolling tail.
+// Our own shots (shot_<gun>_self) add what you only hear holding the gun: a sharper snap, a second
+// body layer, a deeper sub thump and the action cycling (bolt or slide clack) right after.
 
 const SHOTS = {
-    glock: { crack: 4400, body: 2600, bodyLen: 0.08, boom: 160, boomLen: 0.07, tail: 0.35, gain: 0.55 },
-    usp: { crack: 3600, body: 1900, bodyLen: 0.1, boom: 125, boomLen: 0.1, tail: 0.4, gain: 0.6 },
-    deagle: { crack: 3400, body: 1500, bodyLen: 0.2, boom: 85, boomLen: 0.24, tail: 0.95, gain: 0.85 },
-    mp5: { crack: 5200, body: 2700, bodyLen: 0.065, boom: 165, boomLen: 0.06, tail: 0.3, gain: 0.5 },
-    p90: { crack: 5600, body: 3000, bodyLen: 0.06, boom: 175, boomLen: 0.05, tail: 0.28, gain: 0.48 },
+    glock: { crack: 4400, body: 2600, bodyLen: 0.08, boom: 160, boomLen: 0.07, tail: 0.35, gain: 0.55, action: 0.045 },
+    usp: { crack: 3600, body: 1900, bodyLen: 0.1, boom: 125, boomLen: 0.1, tail: 0.4, gain: 0.6, action: 0.05 },
+    deagle: { crack: 3400, body: 1500, bodyLen: 0.2, boom: 85, boomLen: 0.24, tail: 0.95, gain: 0.85, action: 0.06 },
+    mp5: { crack: 5200, body: 2700, bodyLen: 0.065, boom: 165, boomLen: 0.06, tail: 0.3, gain: 0.5, action: 0.035 },
+    p90: { crack: 5600, body: 3000, bodyLen: 0.06, boom: 175, boomLen: 0.05, tail: 0.28, gain: 0.48, action: 0.03 },
     m3: { crack: 2600, body: 1000, bodyLen: 0.3, boom: 70, boomLen: 0.3, tail: 1.1, gain: 0.95 },
-    ak47: { crack: 3800, body: 1700, bodyLen: 0.14, boom: 100, boomLen: 0.16, tail: 0.8, gain: 0.75 },
-    m4a1: { crack: 4600, body: 2200, bodyLen: 0.11, boom: 118, boomLen: 0.12, tail: 0.6, gain: 0.68 },
+    ak47: { crack: 3800, body: 1700, bodyLen: 0.14, boom: 100, boomLen: 0.16, tail: 0.8, gain: 0.75, action: 0.04 },
+    m4a1: { crack: 4600, body: 2200, bodyLen: 0.11, boom: 118, boomLen: 0.12, tail: 0.6, gain: 0.68, action: 0.035 },
     scout: { crack: 5000, body: 2000, bodyLen: 0.15, boom: 105, boomLen: 0.16, tail: 1.0, gain: 0.8 },
-    m249: { crack: 3500, body: 1500, bodyLen: 0.15, boom: 92, boomLen: 0.17, tail: 0.85, gain: 0.78 },
+    m249: { crack: 3500, body: 1500, bodyLen: 0.15, boom: 92, boomLen: 0.17, tail: 0.85, gain: 0.78, action: 0.04 },
     awp: { crack: 3000, body: 1150, bodyLen: 0.36, boom: 58, boomLen: 0.42, tail: 1.6, gain: 1.0 }
 };
 
-function gunshot(s, out, p, spec, far) {
+function gunshot(s, out, p, spec, far, self = false) {
     const g = spec.gain;
+    if (self) {
+        s.noise({ out, duration: 0.008, type: 'highpass', freq: 8000, gain: 0.7 * g });
+        s.noise({ out, duration: spec.bodyLen * 0.7, type: 'bandpass', freq: spec.body * 1.4 * p, freqEnd: 600, q: 0.7, gain: 0.45 * g });
+        s.tone({ out, type: 'sine', freq: spec.boom * 0.9 * p, freqEnd: 28, duration: spec.boomLen * 1.8, gain: 0.75 * g });
+        if (spec.action) click(s, out, { delay: spec.action, freq: 2300 * p, gain: 0.22, q: 4 });
+    }
     if (!far) {
         s.noise({ out, duration: 0.03, type: 'bandpass', freq: spec.crack * p, q: 0.8, gain: 1.1 * g });
         s.noise({ out, duration: 0.012, type: 'highpass', freq: 6000, gain: 0.6 * g });
@@ -193,4 +201,5 @@ export const GUN_PATCHES = {
 for (const [id, spec] of Object.entries(SHOTS)) {
     GUN_PATCHES[`shot_${id}`] = (s, out, p) => gunshot(s, out, p, spec, false);
     GUN_PATCHES[`shot_${id}_far`] = (s, out, p) => gunshot(s, out, p, spec, true);
+    GUN_PATCHES[`shot_${id}_self`] = (s, out, p) => gunshot(s, out, p, spec, false, true);
 }

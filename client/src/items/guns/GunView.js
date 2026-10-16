@@ -97,14 +97,16 @@ export class GunView extends ItemView {
     }
 
     // state: { action, t, kick, reload (0..1 or null), pump (0..1 or null) }
-    applyFirstPersonAnimation(model, { kick = 0, reload = null, bolt = null }) {
+    // kick: the recoil spring (ViewModel), past 0 on the overshoot; roll: this shot's twist, -1..1
+    applyFirstPersonAnimation(model, { kick = 0, roll = 0, reload = null, bolt = null }) {
         const tags = model.userData.tags;
-        // Recoil: back and up, more for heavy guns
+        // Recoil: back, up and a little twist, more for heavy guns
         const heavy = this.spec.damage / 40;
-        model.position.z += kick * 0.05 * (0.6 + heavy * 0.6);
-        model.position.y += kick * 0.012;
-        model.rotation.x += kick * 0.09 * (0.5 + heavy * 0.7);
-        if (tags.bolt) tags.bolt.position.z = tags.bolt.userData.rest.z + Math.min(1, kick * 2) * 0.04;
+        model.position.z += kick * 0.06 * (0.6 + heavy * 0.6);
+        model.position.y += kick * 0.016;
+        model.rotation.x += kick * 0.11 * (0.5 + heavy * 0.7);
+        model.rotation.z += kick * 0.05 * roll;
+        if (tags.bolt) tags.bolt.position.z = tags.bolt.userData.rest.z + Math.max(0, Math.min(1, kick * 2)) * 0.04;
 
         if (reload !== null) {
             this.animateReload(model, tags, reload);

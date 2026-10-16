@@ -4,6 +4,10 @@ import { getItemView } from '../items/registry.js';
 const SWITCH_TIME = 0.22;
 const ACTION_TIMES = { swing: 0.42, stab: 0.85, drink: 0.6, throw: 0.5, angel: 0.7 };
 const MAX_SHELLS = 12;
+// Recoil is a spring: each shot kicks it, it snaps back with a slight overshoot (underdamped)
+const KICK_STIFFNESS = 340;
+const KICK_DAMPING = 2 * Math.sqrt(KICK_STIFFNESS) * 0.55;
+const KICK_IMPULSE = 28;    // a rifle shot peaks near 0.8
 
 // The item held in first person, with bob, sway, switch, recoil and reload animations. It lives in
 // its own scene, rendered after the world with a cleared depth buffer, so it never clips into blocks.
@@ -27,6 +31,8 @@ export class ViewModel {
         this.action = null;
         this.switchT = 1;
         this.kickAmount = 0;
+        this.kickVelocity = 0;
+        this.kickRoll = 0;      // which way this shot twists the gun, -1..1
         this.reload = null;
         this.bolt = null;
         this.bobPhase = 0;
@@ -60,21 +66,26 @@ export class ViewModel {
         this.reload = null;
         this.bolt = null;
         this.kickAmount = 0;
+        this.kickVelocity = 0;
     }
 
     play(action) {
         this.action = { name: action, t: 0 };
     }
 
-    // One shot: kick, flash, casing
-    fire({ shell = true } = {}) {
-        this.kickAmount = Math.min(1.6, this.kickAmount + 1);
+    // One shot: kick (strength 0..1.6, see Game.kickOf), flash, casing
+    fire({ shell = true, kick = 0.5 } = {}) {
+        this.kickVelocity += KICK_IMPULSE * (0.6 + kick * 0.8);
+        this.kickRoll = Math.random() * 2 - 1;
         const flash = this.holder?.userData.flash;
         if (flash) {
+            // Bigger and longer for heavier guns, never quite the same twice
+            flash.userData.baseScale ??= flash.scale.x;
+            flash.scale.setScalar(flash.userData.baseScale * (0.8 + kick * 0.35) * (0.85 + Math.random() * 0.3));
             flash.visible = true;
             flash.material.rotation = Math.random() * Math.PI;
-            this.flashTime = 0.04;
-            this.flashLight.intensity = 3;
+            this.flashTime = 0.04 + kick * 0.015;
+            this.flashLight.intensity = 3 + kick * 1.5;
         }
         if (shell) this.ejectShell();
     }
@@ -134,11 +145,17 @@ export class ViewModel {
             this.action.t += dt / (ACTION_TIMES[this.action.name] || 0.3);
             t = Math.min(1, this.action.t);
         }
-        // Recoil kick springs back quickly
-        this.kickAmount = Math.max(0, this.kickAmount - dt * (6 + this.kickAmount * 8));
+        // Recoil spring (semi-implicit Euler, in small steps so a long frame stays stable)
+        for (let left = Math.min(dt, 0.1); left > 0; left -= 1 / 120) {
+            const h = Math.min(left, 1 / 120);
+            this.kickVelocity += (-KICK_STIFFNESS * this.kickAmount - KICK_DAMPING * this.kickVelocity) * h;
+            this.kickAmount += this.kickVelocity * h;
+        }
+        this.kickAmount = Math.max(-0.4, Math.min(1.4, this.kickAmount));
         this.view.animateFirstPerson(this.holder, {
             action: this.action?.name || null, t,
-            kick: Math.min(1, this.kickAmount),
+            kick: this.kickAmount,
+            roll: this.kickRoll,
             reload: this.reload,
             bolt: this.bolt
         });
