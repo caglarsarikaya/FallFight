@@ -51,7 +51,7 @@ test('angel: used from slot 8, zombies can not hurt you for its duration, then t
     assert.equal(a.health, 100);
     assert.equal(a.armor, 50, 'claws do not even scratch the armor');
     assert.equal(room.damage(a, 30, z, 'glock'), false, 'zombie gunners miss too');
-    assert.ok(room.damage(a, 10, null, 'landing'), 'still mortal otherwise');
+    assert.equal(room.damage(a, 10, null, 'landing'), false, 'falls do not hurt either');
 
     room.time += GOD_MODE.duration + 0.1;
     assert.equal(room.mode.playerJSON(a).godLeft, 0);
@@ -71,4 +71,69 @@ test('angel: zombies drop it rarely, under the drop table', () => {
     const angels = drops.filter(p => p.type === 'godmode').length;
     assert.ok(angels > 0, 'it does drop');
     assert.ok(angels < drops.length / 10, `rare: ${angels} of ${drops.length} drops`);
+});
+
+test('angel: a hit that would kill you brings it out by itself, and the hit never lands', () => {
+    const room = zombieRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const z = room.addPlayer({ id: 'z', name: 'Z' });
+    z.isZombie = true;
+    a.protectedUntil = 0;
+    a.health = 5;
+    a.armor = 40;
+    a.inventory.add('godmode', 1);
+
+    room.mode.zombieAttack(z, a, 30);
+    assert.ok(a.alive);
+    assert.equal(a.health, 5);
+    assert.equal(a.armor, 40, 'armor kept too');
+    assert.equal(a.inventory.count('godmode'), 0, 'used up');
+    assert.ok(room.mode.playerJSON(a).godLeft > GOD_MODE.duration - 0.1);
+    const action = room.eventsOf('action').at(-1);
+    assert.equal(action.action, 'angel');
+    assert.equal(action.auto, true);
+
+    // Untouchable while it lasts
+    room.mode.zombieAttack(z, a, 30);
+    assert.equal(room.damage(a, 50, z, 'glock'), false);
+    assert.ok(a.alive);
+    assert.equal(a.health, 5);
+
+    // Then mortal again, and with no angel left the next deadly hit kills
+    room.time += GOD_MODE.duration + 0.1;
+    room.mode.zombieAttack(z, a, 30);
+    assert.equal(a.alive, false);
+});
+
+test('angel: saves you from a deadly bullet or fall too, but only when the hit would kill', () => {
+    for (const [amount, attacker, weapon] of [[50, 'z', 'glock'], [40, null, 'landing']]) {
+        const room = zombieRoom();
+        const a = room.addPlayer({ id: 'a', name: 'A' });
+        const z = room.addPlayer({ id: 'z', name: 'Z' });
+        z.isZombie = true;
+        a.protectedUntil = 0;
+        a.inventory.add('godmode', 1);
+
+        assert.ok(room.damage(a, 20, attacker && z, weapon), 'a hit you survive lands');
+        assert.equal(a.health, 80);
+        assert.equal(a.inventory.count('godmode'), 1, 'and keeps the angel');
+
+        a.health = 20;
+        assert.equal(room.damage(a, amount, attacker && z, weapon), false, `${weapon}: saved`);
+        assert.ok(a.alive);
+        assert.equal(a.inventory.count('godmode'), 0);
+    }
+});
+
+test('angel: without one a deadly hit kills, and nothing saves you from the void', () => {
+    const room = zombieRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const b = room.addPlayer({ id: 'b', name: 'B' });
+    a.protectedUntil = b.protectedUntil = 0;
+    room.damage(a, 200, null, 'landing');
+    assert.equal(a.alive, false);
+
+    b.inventory.add('godmode', 1);
+    room.fall(b);
+    assert.equal(b.alive, false);
 });

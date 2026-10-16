@@ -433,7 +433,21 @@ export class Game {
         this.sound.play('drink');
     }
 
-    // Zombies angel (slot 8): GOD_MODE.duration seconds that zombies can't hurt you
+    // The angel saved someone from a hit that would have killed them
+    onAngelSave(id) {
+        if (id !== this.selfId) {
+            const name = this.players.get(id)?.name;
+            if (name) this.hud.toast(`😇 ${name} was saved by an angel!`);
+            return;
+        }
+        this.viewModel.play('angel');
+        this.self?.avatar.playAction('angel');
+        this.sound.play('angel');
+        this.hud.flash('heal');
+        this.hud.toast(`😇 The angel saved you! ${GOD_MODE.duration} s untouchable`);
+    }
+
+    // Zombies angel (slot 8): GOD_MODE.duration seconds that nothing can hurt you
     useAngel(now) {
         this.nextUseAt = now + 600;
         if (!(this.weapons.inventory.counts.godmode > 0)) return;
@@ -766,7 +780,9 @@ export class Game {
             info.avatar.setCharacter(characterId);
         });
         on(S2C.INVENTORY, this.onInventory);
-        on(S2C.ACTION, ({ id, action, item }) => {
+        on(S2C.ACTION, ({ id, action, item, auto }) => {
+            // An angel that came out by itself to save someone from a deadly hit
+            if (auto && action === 'angel') this.onAngelSave(id);
             if (id === this.selfId) return; // already played locally
             const info = this.players.get(id);
             if (!info) return;
@@ -942,7 +958,7 @@ export class Game {
             }
             if (type === 'godmode' && by) {
                 if (by === this.selfId) this.sound.play('armorUp');
-                this.hud.toast(by === this.selfId ? '😇 Angel picked up! Press 8 and click when you need it'
+                this.hud.toast(by === this.selfId ? '😇 Angel picked up! It saves you from a deadly hit, or press 8 to use it early'
                     : `${this.players.get(by)?.name || 'Someone'} has an angel!`);
                 return;
             }

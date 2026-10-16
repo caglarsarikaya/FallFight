@@ -436,6 +436,8 @@ export class GameRoom {
     damage(victim, amount, attacker, weapon, knockback, info = {}) {
         if (!victim.alive || victim.isProtected(this.time) || this.matchOver) return false;
         if (attacker && !this.mode.canDamage(attacker, victim)) return false;
+        if (this.mode.shielded(victim)) return false;
+        if (amount >= victim.health && this.mode.saveFromDeath(victim)) return false;
         victim.health = Math.max(0, victim.health - amount);
         victim.lastDamage = { by: attacker?.id ?? null, weapon, time: this.time };
         victim.taggedUntil = this.time + PLAYER.tagTime;

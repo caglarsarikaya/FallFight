@@ -1,5 +1,5 @@
 import { GUN_GAME, ZOMBIES } from '../../config/modes.js';
-import { LONG_JUMP } from '../../constants.js';
+import { GOD_MODE, LONG_JUMP } from '../../constants.js';
 import { S2C } from '../../protocol.js';
 import { FlowField } from '../../ai/FlowField.js';
 import { ZombieBrain } from '../../ai/ZombieBrain.js';
@@ -20,8 +20,9 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
 // On maps with a longJumpSpot (Lava Arena), a long jump module appears there every few minutes:
 // whoever takes it can crouch-jump far until they die (LONG_JUMP).
-// Rarely (ZOMBIES.drops.godmode) a zombie drops an angel: kept in slot 8 until used, it makes you
-// untouchable by zombies for GOD_MODE.duration seconds. Just as rarely one drops a jetpack (GTA
+// Rarely (ZOMBIES.drops.godmode) a zombie drops an angel: kept in slot 8, it makes you untouchable
+// (by anything) for GOD_MODE.duration seconds. Use it early by hand, or it saves you by itself when
+// a hit would kill you. Just as rarely one drops a jetpack (GTA
 // San Andreas style): fly with Shift up and Ctrl down until you die (JETPACK).
 export class Zombies extends GameMode {
     get id() {
@@ -84,14 +85,23 @@ export class Zombies extends GameMode {
         return a !== b && !!a.isZombie !== !!b.isZombie;
     }
 
-    // An angel (god mode) is out of the zombies' reach: claws and zombie gunners do nothing
-    canDamage(attacker, victim) {
-        if (attacker?.isZombie && this.isBlessed(victim)) return false;
-        return super.canDamage(attacker, victim);
+    // Under an angel nothing hurts: claws, zombie gunners, falls, your own grenades
+    shielded(player) {
+        return this.isBlessed(player);
     }
 
     isBlessed(player) {
         return player.godUntil > this.room.time;
+    }
+
+    // A deadly hit on someone carrying an angel: it comes out on its own and the hit never lands
+    saveFromDeath(player) {
+        if (player.isZombie || !player.alive || !player.inventory.consume('godmode')) return false;
+        player.godUntil = this.room.time + GOD_MODE.duration;
+        this.room.notifyInventory(player);
+        this.room.emit(null, S2C.ACTION, { id: player.id, action: 'angel', item: 'godmode', auto: true });
+        this.dirty = true;
+        return true;
     }
 
     // Humans start with a pistol and the knife, no armor
@@ -251,11 +261,10 @@ export class Zombies extends GameMode {
     // A zombie's claws: armor takes some of it
     zombieAttack(zombie, victim, amount) {
         if (this.isBlessed(victim)) return;
-        let health = amount;
-        if (victim.armor > 0) {
-            health = Math.round(amount * 0.6);
-            victim.armor = Math.max(0, victim.armor - Math.round(amount * 0.5));
-        }
+        const health = victim.armor > 0 ? Math.round(amount * 0.6) : amount;
+        // An angel saving you keeps your armor intact too
+        if (health >= victim.health && this.saveFromDeath(victim)) return;
+        if (victim.armor > 0) victim.armor = Math.max(0, victim.armor - Math.round(amount * 0.5));
         const dx = victim.x - zombie.x;
         const dz = victim.z - zombie.z;
         this.room.emit(null, S2C.ACTION, { id: zombie.id, action: 'swing', item: 'claws' });

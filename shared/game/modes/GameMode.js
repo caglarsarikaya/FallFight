@@ -72,6 +72,17 @@ export class GameMode {
         return attacker === victim || this.isEnemy(attacker, victim);
     }
 
+    // Is this player out of harm's way altogether right now (the Zombies angel)?
+    shielded(_player) {
+        return false;
+    }
+
+    // A hit is about to kill this player: may something save them at the last moment? Returns
+    // true if it did (the hit is then cancelled)
+    saveFromDeath(_player) {
+        return false;
+    }
+
     // May this player shoot (and use items) right now?
     canFire(_player) {
         return !this.room.matchOver;
