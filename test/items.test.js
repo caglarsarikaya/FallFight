@@ -9,6 +9,8 @@ import { Consumable } from '../shared/items/Consumable.js';
 import { Inventory } from '../shared/inventory/Inventory.js';
 import { GUN_IDS, KNIFE, WEAPONS } from '../shared/config/weapons.js';
 import { PLAYER, POTION } from '../shared/constants.js';
+import { GameRoom } from '../shared/game/GameRoom.js';
+import { createRng } from '../shared/math.js';
 import { createRoom, drawKnife, place } from './helpers.js';
 
 test('item hierarchy: every gun in the table is registered', () => {
@@ -22,7 +24,7 @@ test('item hierarchy: every gun in the table is registered', () => {
 
 test('inventory: CS slots, guns replace guns of the same slot, ammo per gun', () => {
     const inv = new Inventory({ weapons: ['ak47', 'usp'] });
-    assert.deepEqual(inv.hotbar, ['ak47', 'usp', 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade']);
+    assert.deepEqual(inv.hotbar, ['ak47', 'usp', 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null]);
     assert.equal(inv.selectedId, 'ak47');
     assert.deepEqual(inv.ammo.ak47, { mag: 30, reserve: 90 });
 
@@ -37,7 +39,7 @@ test('inventory: CS slots, guns replace guns of the same slot, ammo per gun', ()
     assert.ok(!inv.select(7));
 
     const empty = new Inventory();
-    assert.deepEqual(empty.hotbar, [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade']);
+    assert.deepEqual(empty.hotbar, [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null]);
     assert.equal(empty.selectedId, 'knife');
     assert.ok(!empty.select(0), 'no primary to select');
 });
@@ -118,6 +120,28 @@ test('health potion heals 20, capped at max, and is consumed', () => {
     assert.ok(room.useItem(a, 3, { x: 0, y: 0, z: -1 }));
     assert.equal(a.health, PLAYER.maxHealth);
     assert.equal(a.inventory.count('health_potion'), 0);
+});
+
+test('health potion works at 99 HP (filling up to 100), and in Team Buy freeze time', () => {
+    const room = createRoom();
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    a.inventory.add('health_potion', 1);
+    a.health = 99;
+    assert.ok(room.useItem(a, 3, { x: 0, y: 0, z: -1 }));
+    assert.equal(a.health, PLAYER.maxHealth);
+    assert.equal(a.inventory.count('health_potion'), 0);
+
+    const team = new GameRoom({ mode: 'teambuy', map: 'fy_pool_day', rng: createRng(5), emit: () => {} });
+    const b = team.addPlayer({ id: 'b', name: 'B' });
+    team.addPlayer({ id: 'c', name: 'C' });
+    team.tick(1 / 30);
+    assert.equal(team.mode.phase, 'freeze');
+    b.inventory.add('health_potion', 1);
+    b.health = 60;
+    assert.ok(team.useItem(b, 3, { x: 0, y: 0, z: -1 }), 'drinking is fine while frozen');
+    assert.equal(b.health, 60 + POTION.heal);
+    b.inventory.add('hegrenade', 1);
+    assert.ok(!team.useItem(b, 5, { x: 0, y: 0, z: -1 }), 'throwing is not');
 });
 
 test('guns cannot be fired through useItem, potions cannot be fired', () => {

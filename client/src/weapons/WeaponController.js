@@ -7,6 +7,7 @@ const DEG = Math.PI / 180;
 const BOLT_TIME = 0.55;      // bolt / pump animation after a sniper or shotgun shot
 const HIT_PUNCH = 2.6;       // degrees the view flinches when we get shot
 const GRENADES = { hegrenade: 'HE grenades', smokegrenade: 'smoke grenades' };
+const CONSUMABLES = ['health_potion', 'godmode'];
 
 // The local player's weapon handling, predicted on the client so shooting feels instant:
 // rate of fire, magazine and reload, deploy time, recoil (view punch), spread and scopes.
@@ -184,15 +185,20 @@ export class WeaponController {
 
     // ---- firing -------------------------------------------------------------------------
 
+    // Potions (and god mode) can be used in freeze time too; everything else waits for the round
+    get holdingConsumable() {
+        return CONSUMABLES.includes(this.id);
+    }
+
     tryFire() {
         const id = this.id;
-        if (!id || !this.game.canShoot) return;
+        if (!id || !(this.holdingConsumable ? this.game.canAct : this.game.canShoot)) return;
         if (id === KNIFE.id) return this.knife(false);
-        if (id === 'health_potion' || GRENADES[id]) {
+        if (this.holdingConsumable || GRENADES[id]) {
             if (!this.triggerUsed) {
                 this.triggerUsed = true;
                 if (GRENADES[id]) this.game.throwGrenade(id);
-                else this.game.useConsumable();
+                else this.game.useConsumable(id);
             }
             return;
         }

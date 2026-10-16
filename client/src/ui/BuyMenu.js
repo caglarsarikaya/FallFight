@@ -136,7 +136,7 @@ export class BuyMenu {
                     el('span.key', { text: String(i + 1) }), el('span.name', { text: cat.name })
                 ]);
             }));
-            this.hint.textContent = '0 / B / Esc to close · N rebuys ammo, armor, potions, grenades';
+            this.hint.textContent = '0 / B / Esc to close · quick buy: N ammo · M kevlar · H potions · G grenades';
             return;
         }
         const cat = CATEGORIES[this.category];

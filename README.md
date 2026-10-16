@@ -49,6 +49,8 @@ Inside each map's outer wall, everything can be shot down or knifed through.
 | R | Reload |
 | 1 / 2 / 3 / 4, Q, mouse wheel | Rifle / Pistol / Knife / Health potion · Q = last weapon |
 | B | Buy menu (Team Buy, Zombies), numbered like classic CS: 1 pistols, 2 shotguns, 3 SMGs, 4 rifles, 6/7 primary/secondary ammo, 8 equipment. B 4 1 = AK-47, B 4 3 = M4A1, B 3 1 = MP5, B 8 2 = kevlar + helmet. Empty slots are guns still to come |
+| N / M / H / G | Quick buy: N ammo for every gun, M kevlar + helmet, H two health potions, G an HE and a smoke |
+| 8 | Zombies: the angel (if you picked one up), then click to use it |
 | V (or F5) | Switch between first and third person |
 | Tab | Scoreboard |
 | Esc | Closes the buy menu first; otherwise opens (and closes) the game menu: change character or nickname, camera, sound, mouse sensitivity, graphics (LOW for slow computers: no shadows) |
@@ -91,9 +93,10 @@ Numbers follow Counter-Strike 1.6 (all tuning is in `shared/config/weapons.js`):
 | 🏰 Sniper towers | Four 8-high stone towers near the corners. Climb the plank stairs to a top with a parapet. Knife the stairs to cut a sniper off |
 | 🚀 RPG | Lava Arena: 30 s into a match an RPG appears on top of a random sniper tower, marked by a searchlight beam the whole map can see. One at a time; 45 s after it's fired or lost (its carrier dies) the next one appears |
 | 🦘 Long Jump | Zombies on Lava Arena: every 3 min a long jump module appears on the plaza in the middle, under a searchlight beam. Whoever grabs it can crouch + jump while running to leap about 10 blocks (Half-Life style), until they die |
-| 🧪 Health potion | Heals 20 HP, one use. Deathmatch: every kill rewards one. Team Buy and Zombies: $200 in the buy menu. Zombies also drop them |
+| 😇 Angel | Zombies: killed zombies rarely (2%) drop an angel, marked by a searchlight beam. Grab it, keep it in slot 8 and use it when you need it: 15 s of angel wings, a golden shine and no damage from zombies |
+| 🧪 Health potion | Heals 20 HP (up to 100), one use, even in freeze time. Deathmatch: every kill rewards one. Team Buy and Zombies: $200 in the buy menu. Zombies also drop them |
 | Pickups | Deathmatch: every 15 s an ammo box (a magazine for every gun you carry), every 60 s a health potion. Gun Game: ammo boxes |
-| Falling | Fall into the void and you die. Whoever hit you or broke your block in the last 10 s gets the kill |
+| Falling | Fall into the void and you die. Landing hurts too: 10 HP for every block dropped beyond 4 (water breaks the fall). Whoever hit you or broke your block in the last 10 s gets the kill |
 
 ## Architecture
 
@@ -118,7 +121,8 @@ test/     node:test unit tests and bot simulations
   Item ─┬─ Weapon ─┬─ Gun (one per entry in shared/config/weapons.js)
         │          ├─ MeleeWeapon ── Knife
         │          └─ RangedWeapon (projectiles, for future grenades)
-        └─ Consumable ── HealthPotion
+        └─ Consumable ─┬─ HealthPotion
+                       └─ GodMode (the Zombies angel)
   ```
 
   Each item has a matching `ItemView` on the client (`client/src/items/`): its 3D model,

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
 const SWITCH_TIME = 0.22;
-const ACTION_TIMES = { swing: 0.42, stab: 0.85, drink: 0.6, throw: 0.5 };
+const ACTION_TIMES = { swing: 0.42, stab: 0.85, drink: 0.6, throw: 0.5, angel: 0.7 };
 const MAX_SHELLS = 12;
 
 // The item held in first person, with bob, sway, switch, recoil and reload animations. It lives in

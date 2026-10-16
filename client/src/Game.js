@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GUN, NET, PLAYER } from '../shared/constants.js';
+import { GOD_MODE, GUN, NET, PLAYER } from '../shared/constants.js';
 import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.js';
 import { ZOMBIES, getModeInfo } from '../shared/config/modes.js';
 import { C2S, S2C } from '../shared/protocol.js';
@@ -30,7 +30,8 @@ import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump' };
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump', godmode: 'Angel' };
+const ANGEL_GOLD = ['#fff2a8', '#ffd23f', '#ffffff'];
 const STATS_INTERVAL_MS = 500;
 const BASE_FOV = 75;
 const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
@@ -43,10 +44,16 @@ const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
 // Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
-const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth'];
+const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth', 'godLeft'];
 const SPECTATE_DELAY = 2;   // seconds of the death cam before following a teammate
 const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 const REBUY_NAMES = { ammo: 'ammo', kevlar_helmet: 'kevlar + helmet', kevlar: 'kevlar', health_potion: 'potion', hegrenade: 'HE', smokegrenade: 'smoke' };
+
+// What a quick buy key says when there was nothing to buy
+const QUICK_FULL = {
+    rebuy_ammo: 'Ammo already full', rebuy_armor: 'Already wearing kevlar + helmet',
+    rebuy_potion: 'Already carrying 2 potions', rebuy_grenades: 'Already carrying grenades', rebuy: 'Already fully stocked'
+};
 
 // ['ammo', 'kevlar', 'health_potion', 'health_potion'] -> "ammo, kevlar, 2 potions"
 function rebuyText(bought = []) {
@@ -301,7 +308,7 @@ export class Game {
             if (action === 'slot' && this.buyMenu.visible) return this.buyMenu.key(value + 1);
             switch (action) {
                 case 'buy': return this.toggleBuyMenu();
-                case 'rebuy': return this.rebuy();
+                case 'quickbuy': return this.quickBuy(value);
                 case 'slot': return this.local.alive && w.select(value);
                 case 'last': return this.local.alive && w.selectLast();
                 case 'camera': return this.spectating ? this.toggleSpectateView() : this.toggleCamera();
@@ -311,7 +318,7 @@ export class Game {
                     return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
                 case 'primary':
                     if (value && this.spectating) return this.cycleSpectate(1);
-                    return w.setTrigger(value && !!this.canShoot);
+                    return w.setTrigger(value && !!(w.holdingConsumable ? this.canAct : this.canShoot));
                 case 'secondary':
                     if (this.spectating) return this.cycleSpectate(-1);
                     return this.canAct && w.secondary();
@@ -369,14 +376,14 @@ export class Game {
         this.buyMenu.show(this.self?.money ?? 0, this.self?.team, { free, randomGuns: free ? this.profile.randomGuns : null });
     }
 
-    // N: ammo, armor, potions and grenades in one go (the server buys what the money allows)
-    rebuy() {
+    // N ammo, M armor, H potions, G grenades: one key buys that kind (the server buys what the money allows)
+    quickBuy(kind) {
         if (!this.hasShop) return;
         if (!this.canBuy) {
             this.hud.toast(this.local.alive ? 'Buy time is over' : 'You can buy once you are back');
             return;
         }
-        this.connection.send(C2S.BUY, { item: 'rebuy' });
+        this.connection.send(C2S.BUY, { item: `rebuy_${kind}` });
     }
 
     get hasShop() {
@@ -392,17 +399,18 @@ export class Game {
         if (announce) this.hud.toast(on ? 'Random guns ON: new guns every life' : 'Random guns OFF: you keep your guns');
     }
 
-    useConsumable() {
+    useConsumable(id = 'health_potion') {
         const now = performance.now();
         if (now < this.nextUseAt) return;
         const inv = this.weapons.inventory;
+        if (id === 'godmode') return this.useAngel(now);
         if (!(inv.counts.health_potion > 0)) {
             this.sound.play('empty');
             this.hud.toast('No potions! Get a kill or find one');
             this.nextUseAt = now + 600;
             return;
         }
-        if (this.self.health >= PLAYER.maxHealth) {
+        if (Math.ceil(this.self.health) >= (this.self.maxHealth ?? PLAYER.maxHealth)) {
             this.hud.toast('Already at full health');
             this.nextUseAt = now + 600;
             return;
@@ -412,6 +420,35 @@ export class Game {
         this.viewModel.play('drink');
         this.self.avatar.playAction('drink');
         this.sound.play('drink');
+    }
+
+    // Zombies angel (slot 8): GOD_MODE.duration seconds that zombies can't hurt you
+    useAngel(now) {
+        this.nextUseAt = now + 600;
+        if (!(this.weapons.inventory.counts.godmode > 0)) return;
+        if (this.self.godLeft > 0) {
+            this.hud.toast('The angel is already with you');
+            return;
+        }
+        this.connection.send(C2S.USE, { slot: this.weapons.inventory.selected, dir: this.aimDirection() });
+        this.viewModel.play('angel');
+        this.self.avatar.playAction('angel');
+        this.sound.play('angel');
+        this.hud.toast(`😇 Angel! ${GOD_MODE.duration}s safe from zombies`);
+    }
+
+    // Our own angel time from the snapshots: the HUD badge, a tick for each of the last seconds,
+    // and a sound when it wears off
+    updateAngel(left) {
+        const shown = left > 0 ? Math.ceil(left) : 0;
+        if (shown === this.angelShown) return;
+        if (shown > 0 && shown <= 3 && shown < this.angelShown) this.sound.play('angelTick');
+        if (!shown && this.angelShown && this.local.alive) {
+            this.sound.play('angelEnd');
+            this.hud.toast('The angel is gone: zombies can hurt you again');
+        }
+        this.angelShown = shown;
+        this.hud.setAngel(shown);
     }
 
     // Click with a grenade out: throw it, then back to the gun we had before (the server switches too)
@@ -707,6 +744,7 @@ export class Game {
             else if (action === 'swing') this.sound.play('knifeSlash', { at });
             if (action === 'stab') this.sound.play('knifeStab', { at });
             if (action === 'drink') this.sound.play('drink', { at });
+            if (action === 'angel') this.sound.play('angel', { at, range: 40 });
             if (action === 'throw') this.sound.play('throw', { at, range: 30 });
             if (action === 'reload') this.sound.play(weaponSpec(item)?.reloadStyle === 'shell' ? 'pump' : 'clipout', { at, range: 25 });
         });
@@ -808,8 +846,9 @@ export class Game {
             this.buyMenu.hide();
         });
         on(S2C.BUY_RESULT, ({ ok, item, error, bought }) => {
-            if (ok && item === 'rebuy') {
-                this.sound.play('ammoPickup');
+            const quick = item.startsWith('rebuy');
+            if (ok && quick) {
+                this.sound.play(item === 'rebuy_armor' ? 'armorUp' : item === 'rebuy_ammo' ? 'ammoPickup' : 'pickup');
                 this.hud.toast(`Bought: ${rebuyText(bought)}`);
                 return;
             }
@@ -821,7 +860,7 @@ export class Game {
                 return;
             }
             this.sound.play('empty');
-            const owned = item === 'rebuy' ? 'Already fully stocked' : 'You already have that';
+            const owned = QUICK_FULL[item] || 'You already have that';
             this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? owned
                 : error === 'not-now' ? 'Buy in your base during buy time' : 'Can\'t buy that');
         });
@@ -842,6 +881,11 @@ export class Game {
                 this.hud.toast('A Long Jump module appeared in the middle!');
                 return;
             }
+            if (data.type === 'godmode') {
+                this.sound.play('angel', { at: { x: data.x, y: data.y, z: data.z }, range: 80 });
+                this.hud.toast('😇 A zombie dropped an angel! Follow the light');
+                return;
+            }
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
@@ -857,6 +901,12 @@ export class Game {
                 if (by === this.selfId) this.sound.play('deploy');
                 this.hud.toast(by === this.selfId ? 'You have the RPG! One shot, make it count'
                     : `${this.players.get(by)?.name || 'Someone'} has the RPG!`);
+                return;
+            }
+            if (type === 'godmode' && by) {
+                if (by === this.selfId) this.sound.play('armorUp');
+                this.hud.toast(by === this.selfId ? '😇 Angel picked up! Press 8 and click when you need it'
+                    : `${this.players.get(by)?.name || 'Someone'} has an angel!`);
                 return;
             }
             if (type === 'longjump' && by) {
@@ -948,7 +998,9 @@ export class Game {
             info.deaths = p.deaths;
             info.health = p.health;
             for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
+            info.avatar.setGod(info.alive !== false && info.godLeft > 0);
             if (p.id === this.selfId) {
+                this.updateAngel(info.godLeft || 0);
                 this.local.longJump = !!p.longJump;
                 this.hud.setHealth(p.health);
                 if (p.money !== undefined) {
@@ -1083,7 +1135,7 @@ export class Game {
             }
         }
         if (attackerId === this.selfId && !self) {
-            this.hud.hit(zone === 'head', health <= 0);
+            this.hud.hit();
             this.sound.play('hitmarker');
         }
     }
@@ -1093,6 +1145,12 @@ export class Game {
         const killer = this.players.get(killerId);
         if (!victim) return;
         victim.alive = false;
+        victim.godLeft = 0;
+        victim.avatar.setGod(false);
+        if (victimId === this.selfId) {
+            this.angelShown = 0;
+            this.hud.setAngel(0);
+        }
         victim.avatar.die();
         if (cause !== 'fall') this.bleed(victimId === this.selfId ? this.local.body : victim.avatar.group.position, victim, headshot);
         if (victim.isZombie) {
@@ -1101,7 +1159,6 @@ export class Game {
             const giant = victim.avatar.scale > 1;
             this.sound.play('zombieDeath', { at: { x: pos.x, y: pos.y + 1, z: pos.z }, range: giant ? 60 : 30, pitch: giant ? 0.55 : 1, volume: giant ? 1.4 : 1 });
             if (killerId === this.selfId) {
-                this.hud.hit(!!headshot, true);
                 this.sound.play(headshot ? 'headshotKill' : 'kill');
                 if (giant) this.hud.toast(`Giant down! +$${ZOMBIES.giant.killMoney}`);
             }
@@ -1125,9 +1182,9 @@ export class Game {
             this.buyMenu.hide();
             const gun = weaponSpec(cause)?.name;
             const reason = killer
-                ? (cause === 'fall' ? `${killer.name} made you fall`
+                ? (cause === 'fall' || cause === 'landing' ? `${killer.name} made you fall`
                     : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
-                : (cause === 'fall' ? 'You fell into the void' : 'You died');
+                : (cause === 'fall' ? 'You fell into the void' : cause === 'landing' ? 'You fell to your death' : 'You died');
             this.respawnOverlay.waitText = this.modeId === 'zombies' ? 'Back when this wave is cleared...' : null;
             const waiting = this.modeId === 'teambuy' || this.modeId === 'zombies';
             this.respawnOverlay.show(reason, waiting ? null : PLAYER.respawnDelay);
@@ -1135,7 +1192,6 @@ export class Game {
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play(headshot ? 'headshotKill' : 'kill');
-            this.hud.hit(!!headshot, true);
             this.hud.toast(`${headshot ? '◎ HEADSHOT · ' : ''}You killed ${victim.name}${this.modeId === 'ffa' ? ' · +1 Health Potion' : ''}`);
         }
     }
@@ -1183,6 +1239,17 @@ export class Game {
         }
 
         for (const info of this.players.values()) info.avatar.update(dt, now);
+        this.angelSparkle = (this.angelSparkle || 0) + dt;
+        if (this.angelSparkle >= 0.08) {
+            this.angelSparkle = 0;
+            for (const info of this.players.values()) {
+                if (!info.avatar.god || !info.alive) continue;
+                // Our own sparkles would fill the screen in first person
+                if (info.id === this.selfId && !this.cameraController.view.showsOwnBody) continue;
+                const pos = info.avatar.group.position;
+                this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 2, colors: ANGEL_GOLD, speed: 0.8, up: 0.6, gravity: -1.5, life: 0.9, size: 0.06, spread: 0.9, glow: true });
+            }
+        }
         for (const [id, view] of this.projectiles) {
             if (!view.update(dt)) this.projectiles.delete(id);
             else if (view.itemId === 'rpg' && (view.trail += dt) >= 0.02) {
@@ -1271,7 +1338,7 @@ export class Game {
         this.updateRevive();
         if (this.weapons.inventory) {
             const w = this.weapons;
-            this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : ''), w.reloading);
+            this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : w.id === 'godmode' ? 'Angel' : ''), w.reloading);
         }
 
         // Crosshair opens up with the current inaccuracy

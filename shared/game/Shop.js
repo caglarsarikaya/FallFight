@@ -18,11 +18,12 @@ const AMMO_FILTERS = {
 const GRENADE_PRICES = { hegrenade: GRENADE.he.price, smokegrenade: GRENADE.smoke.price };
 
 // Returns { ok, error?, price }. item: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion',
-// 'hegrenade', 'smokegrenade', 'ammo' (every gun), 'ammo_primary', 'ammo_secondary' or 'rebuy'
-// (see rebuy below). free: Deathmatch, nothing costs money and buying a gun you carry refills it.
+// 'hegrenade', 'smokegrenade', 'ammo' (every gun), 'ammo_primary', 'ammo_secondary', 'rebuy' or one
+// of the quick buys 'rebuy_ammo', 'rebuy_armor', 'rebuy_potion', 'rebuy_grenades' (see rebuy below).
+// free: Deathmatch, nothing costs money and buying a gun you carry refills it.
 // notify: false leaves telling the client to the caller (rebuy sends one update for everything).
 export function buyItem(room, player, item, { free = false, notify = true } = {}) {
-    if (item === 'rebuy') return rebuy(room, player, { free });
+    if (Object.hasOwn(QUICK_BUYS, item)) return rebuy(room, player, { free, order: QUICK_BUYS[item] });
     const inv = player.inventory;
     let price;
     let apply;
@@ -54,11 +55,11 @@ export function buyItem(room, player, item, { free = false, notify = true } = {}
         if (inv.count('health_potion') >= 2) return { ok: false, error: 'owned' };
         price = TEAM_BUY.potion;
         apply = () => inv.add('health_potion', 1);
-    } else if (GRENADE_PRICES[item]) {
+    } else if (Object.hasOwn(GRENADE_PRICES, item)) {
         if (inv.count(item) >= GRENADE.max) return { ok: false, error: 'owned' };
         price = GRENADE_PRICES[item];
         apply = () => inv.add(item, 1);
-    } else if (AMMO_FILTERS[item]) {
+    } else if (Object.hasOwn(AMMO_FILTERS, item)) {
         const wanted = AMMO_FILTERS[item];
         const needs = Object.entries(inv.ammo).filter(([id, a]) => !WEAPONS[id].special && wanted(WEAPONS[id]) && a.reserve < WEAPONS[id].reserve);
         if (!needs.length) return { ok: false, error: 'owned' };
@@ -77,17 +78,24 @@ export function buyItem(room, player, item, { free = false, notify = true } = {}
     return { ok: true, price };
 }
 
-// Rebuy (N): top everything up in one go. When money is short the order decides what you get: ammo for
-// every gun, then kevlar (with the helmet if it can be paid for), then two potions, then an HE,
-// then a smoke. Things already full or too dear are skipped.
+// Quick buys (N ammo, M armor, H potions, G grenades) and 'rebuy' (all of them): top up in one go.
+// When money is short the order decides what you get: ammo for every gun, then kevlar (with the
+// helmet if it can be paid for), then two potions, then an HE, then a smoke. Things already full
+// or too dear are skipped. Each step is a list of alternatives, the first that can be bought wins.
 // Returns { ok, bought: [item...], price } or { ok: false, error: 'money' | 'owned' }.
-const REBUY_ORDER = [['ammo'], ['kevlar_helmet', 'kevlar'], ['health_potion'], ['health_potion'], ['hegrenade'], ['smokegrenade']];
+const QUICK_ORDERS = {
+    rebuy_ammo: [['ammo']],
+    rebuy_armor: [['kevlar_helmet', 'kevlar']],
+    rebuy_potion: [['health_potion'], ['health_potion']],
+    rebuy_grenades: [['hegrenade'], ['smokegrenade']]
+};
+export const QUICK_BUYS = { ...QUICK_ORDERS, rebuy: Object.values(QUICK_ORDERS).flat() };
 
-export function rebuy(room, player, { free = false } = {}) {
+export function rebuy(room, player, { free = false, order = QUICK_BUYS.rebuy } = {}) {
     const bought = [];
     let price = 0;
     let short = false;
-    for (const choices of REBUY_ORDER) {
+    for (const choices of order) {
         for (const item of choices) {
             const result = buyItem(room, player, item, { free, notify: false });
             if (result.ok) {

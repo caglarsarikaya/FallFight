@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a' };
+const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a', godmode: '#fff2a8' };
+const SPOTLIT = ['rpg', 'longjump', 'godmode'];
 const SPOTLIGHT_HEIGHT = 70;
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
@@ -26,7 +27,7 @@ export class PickupView {
         this.ring = ring;
         this.group.add(ring);
 
-        if (data.type === 'rpg' || data.type === 'longjump') {
+        if (SPOTLIT.includes(data.type)) {
             this.createSpotlight(color);
         } else {
             const beam = new THREE.Mesh(
@@ -85,6 +86,7 @@ export class PickupView {
         }
         if (data.type === 'armor') return this.createVest();
         if (data.type === 'longjump') return this.createLongJump();
+        if (data.type === 'godmode') return this.createAngel();
         if (data.type === 'weapon') {
             const holder = new THREE.Group();
             const gun = getItemView(data.weapon)?.createModel();
@@ -139,6 +141,27 @@ export class PickupView {
         group.traverse(o => {
             if (o.isMesh) o.castShadow = true;
         });
+        group.scale.setScalar(1.3);
+        return group;
+    }
+
+    // The Zombies angel: a gold halo over two small blocky white wings
+    createAngel() {
+        const group = new THREE.Group();
+        const white = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+        const gold = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
+        for (const side of [-1, 1]) {
+            for (let i = 0; i < 3; i++) {
+                const feather = new THREE.Mesh(new THREE.BoxGeometry(0.34 - i * 0.08, 0.08, 0.04), white);
+                feather.position.set(side * (0.2 + (0.34 - i * 0.08) / 2), 0.08 - i * 0.09, 0);
+                group.add(feather);
+            }
+        }
+        for (const [w, d, x, z] of [[0.32, 0.05, 0, 0.13], [0.32, 0.05, 0, -0.13], [0.05, 0.22, 0.13, 0], [0.05, 0.22, -0.13, 0]]) {
+            const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, d), gold);
+            bar.position.set(x, 0.32, z);
+            group.add(bar);
+        }
         group.scale.setScalar(1.3);
         return group;
     }

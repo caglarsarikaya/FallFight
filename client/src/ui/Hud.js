@@ -49,6 +49,8 @@ export class Hud {
         this.latencyText = el('span');
         this.netStats = el('div.net-stats', {}, [this.fpsText, this.pingText, this.latencyText]);
         this.protection = el('div.protection.hidden', { text: 'SPAWN PROTECTION' });
+        this.angelBadge = el('div.angel-badge.hidden');
+        this.angelGlow = el('div.vignette.angel');
         this.useHint = el('div.use-hint.hidden');
         this.reviveFill = el('div.revive-fill');
         this.reviveLabel = el('span');
@@ -62,7 +64,7 @@ export class Hud {
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
         this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · B buy · N rebuy · E revive · Ctrl+Space long jump (Zombies) · V camera · Tab scores · Esc menu'
+            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · 8 angel (Zombies) · B buy · N ammo · M kevlar · H potions · G grenades · E revive · Ctrl+Space long jump (Zombies) · V camera · Tab scores · Esc menu'
         });
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
@@ -71,8 +73,8 @@ export class Hud {
         this.root = el('div.hud', {}, [
             this.underwater, this.smoke, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             this.useHint, this.reviveBar,
-            ...Object.values(this.vignettes),
-            el('div.hud-left', {}, [this.health, this.armor]),
+            ...Object.values(this.vignettes), this.angelGlow,
+            el('div.hud-left', {}, [this.angelBadge, this.health, this.armor]),
             this.ammoBox, this.slotList, this.banner,
             this.netStats, this.killfeed, this.toasts, this.modeBadge, this.helpHint
         ]);
@@ -288,12 +290,9 @@ export class Hud {
         this.reviveFill.style.width = `${(Math.min(1, status.progress) * 100).toFixed(1)}%`;
     }
 
-    // Hit confirmation: shown at full strength, then faded by update() every frame
-    hit(head = false, kill = false) {
-        // hm- prefix: plain 'kill' is the kill feed row class (with its own fade animation)
-        this.hitmarker.classList.toggle('hm-head', head);
-        this.hitmarker.classList.toggle('hm-kill', kill);
-        this.hitLength = kill ? (head ? 0.75 : 0.45) : head ? 0.32 : 0.2;
+    // Hit confirmation: a small white X, shown at full strength, then faded by update() every frame
+    hit() {
+        this.hitLength = 0.2;
         this.hitUntil = performance.now() / 1000 + this.hitLength;
     }
 
@@ -304,6 +303,14 @@ export class Hud {
         if (opacity === this.hitOpacity) return;
         this.hitOpacity = opacity;
         this.hitmarker.style.opacity = opacity.toFixed(2);
+    }
+
+    // Zombies angel: whole seconds left (0 = none), as a badge over the health and a soft gold edge
+    setAngel(seconds) {
+        this.angelBadge.classList.toggle('hidden', !seconds);
+        this.angelGlow.classList.toggle('on', !!seconds);
+        this.angelBadge.classList.toggle('ending', seconds > 0 && seconds <= 3);
+        if (seconds) this.angelBadge.textContent = `😇 ANGEL ${seconds}s`;
     }
 
     flash(kind) {
@@ -327,7 +334,7 @@ export class Hud {
 
     // entry: { killer, victim, weapon, headshot, mine }
     kill({ killer, victim, weapon, headshot, mine }) {
-        const label = weapon === 'fall' ? 'FELL' : weaponSpec(weapon)?.short || getItem(weapon)?.short || weapon?.toUpperCase() || '';
+        const label = weapon === 'fall' || weapon === 'landing' ? 'FELL' : weaponSpec(weapon)?.short || getItem(weapon)?.short || weapon?.toUpperCase() || '';
         const tag = el('span.weapon', {}, [label, headshot ? el('span.hs', { text: ' ◎' }) : null]);
         const node = el(`div.kill${mine ? '.mine' : ''}`, {}, killer
             ? [el('span.killer', { text: killer }), tag, el('span.victim', { text: victim })]

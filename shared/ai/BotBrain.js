@@ -461,7 +461,9 @@ export class BotBrain {
         }
         if (!this.path) return this.moveDirect(x, z);
 
-        while (this.path.length) {
+        // Only on the ground: turning for the next waypoint in mid-jump can carry the bot past
+        // the edge it was jumping onto (and a fall hurts)
+        while (this.path.length && bot.onGround) {
             const c = this.arena.tileCenter(this.path[0].ix, this.path[0].iz);
             if (Math.hypot(c.x - bot.x, c.z - bot.z) < 0.3 && Math.abs(this.path[0].y - bot.y) < 0.6) this.path.shift();
             else break;
@@ -473,7 +475,11 @@ export class BotBrain {
         const dx = c.x - bot.x;
         const dz = c.z - bot.z;
         const d = Math.hypot(dx, dz) || 1;
-        const jump = bot.onGround && waypoint.y > bot.y + 0.3 && d < 1.3;
+        // Jump up only once moving towards the step: jumping with the run still carrying us the
+        // other way (round a corner at the top of the stairs) flies past it and down the side
+        const speed = Math.hypot(bot.vx, bot.vz);
+        const heading = speed > 1 ? (bot.vx * dx + bot.vz * dz) / (speed * d) : 1;
+        const jump = bot.onGround && waypoint.y > bot.y + 0.3 && d < 1.3 && heading > 0.8;
         return { moveX: dx / d, moveZ: dz / d, jump };
     }
 

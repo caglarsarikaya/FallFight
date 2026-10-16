@@ -1,4 +1,4 @@
-import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER, RPG } from '../constants.js';
+import { ARENA, ARMOR, FALL_DAMAGE, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER, RPG } from '../constants.js';
 import { C2S, S2C } from '../protocol.js';
 import { normalize } from '../math.js';
 import { Arena } from '../world/Arena.js';
@@ -221,12 +221,13 @@ export class GameRoom {
         return true;
     }
 
-    // Consumables (health potion)
+    // Consumables: potions and the angel any time you're alive (freeze time too), grenades in play
     useItem(player, slot, dir) {
-        if (!player.alive || !this.mode.canFire(player)) return false;
+        if (!player.alive || this.matchOver) return false;
         if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
         const item = player.inventory.selectedItem;
         if (!item || item.isGun || item.isKnife || !dir || ![dir.x, dir.y, dir.z].every(Number.isFinite)) return false;
+        if (!item.usableWhenFrozen && !this.mode.canFire(player)) return false;
 
         const used = item.tryUse({ room: this, player, origin: player.eye, dir: normalize(dir), now: this.time });
         if (used) this.emit(null, S2C.ACTION, { id: player.id, action: item.action, item: item.id });
@@ -596,15 +597,41 @@ export class GameRoom {
             const block = this.arena.supportBlock(player.x, player.y, player.z, PLAYER.radius);
             if (block) player.lastGroundBlock = block;
         }
-        if (player.alive && player.y < ARENA.voidY) this.fall(player);
+        if (player.alive && player.y < ARENA.voidY) return this.fall(player);
+        this.checkFallDamage(player);
     }
 
-    fall(victim) {
+    // Landing hard hurts: FALL_DAMAGE.perBlock for every block dropped beyond FALL_DAMAGE.safe.
+    // Measured by the speed coming down at the last state in the air (as the height a free fall
+    // needs for it) plus what was left to fall from there, so running down stairs, one small hop
+    // per step, never counts as one big fall. Water breaks the fall; zombies don't care.
+    checkFallDamage(player) {
+        if (!player.onGround) {
+            player.fallSpeed = this.arena.isWaterAt(player.x, player.y + 0.4, player.z) ? 0 : Math.max(0, -player.vy);
+            player.fallFromY = player.y;
+            return;
+        }
+        const speed = player.fallSpeed || 0;
+        player.fallSpeed = 0;
+        if (!speed) return;
+        const drop = (speed * speed) / (2 * PLAYER.gravity) + Math.max(0, player.fallFromY - player.y);
+        if (!player.alive || player.isZombie || drop <= FALL_DAMAGE.safe) return;
+        const credit = this.fallCredit(player);
+        this.damage(player, Math.round((drop - FALL_DAMAGE.safe) * FALL_DAMAGE.perBlock),
+            credit && this.mode.isEnemy(credit, player) ? credit : null, 'landing');
+    }
+
+    // Who made this player fall: whoever hurt them or broke their floor recently
+    fallCredit(victim) {
         const recent = victim.lastDamage && this.time - victim.lastDamage.time <= KILL_CREDIT_WINDOW
             ? victim.lastDamage.by : null;
         const breaker = this.arena.breakerOf(victim.lastGroundBlock, this.time, KILL_CREDIT_WINDOW);
         const creditId = recent || (breaker !== victim.id ? breaker : null);
-        this.kill(victim, this.players.get(creditId) || null, 'fall');
+        return this.players.get(creditId) || null;
+    }
+
+    fall(victim) {
+        this.kill(victim, this.fallCredit(victim), 'fall');
     }
 
     kill(victim, killer, cause, headshot = false) {
@@ -654,6 +681,7 @@ export class GameRoom {
         const spot = this.arena.findSpawn(this.rng, others, zones ? { zones } : { maxY: this.arena.floor });
         const center = spot ? this.arena.tileCenter(spot.ix, spot.iz) : { x: 0, z: 0 };
         Object.assign(player, { x: center.x, y: spot ? spot.y : this.arena.floor, z: center.z, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false });
+        player.fallSpeed = 0;
         // Face the middle of the map
         player.yaw = Math.atan2(player.x, player.z);
         player.pitch = 0;
@@ -678,6 +706,7 @@ export class GameRoom {
         player.alive = true;
         player.health = Math.min(player.maxHealth, health);
         player.vx = player.vy = player.vz = 0;
+        player.fallSpeed = 0;
         player.protectedUntil = this.time + PLAYER.spawnProtection;
         player.lastDamage = null;
         this.lagComp.reset(player.id);

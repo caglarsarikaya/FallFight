@@ -10,13 +10,13 @@ export class Consumable extends Item {
         return 'drink';
     }
 
-    canConsume(_player) {
+    canConsume(_player, _now) {
         return true;
     }
 
     use(ctx) {
         const { player } = ctx;
-        if (!this.canConsume(player) || !player.inventory.consume(this.id)) return false;
+        if (!this.canConsume(player, ctx.now) || !player.inventory.consume(this.id)) return false;
         this.applyEffect(ctx);
         ctx.room.notifyInventory(player);
         return true;

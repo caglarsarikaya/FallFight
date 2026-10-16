@@ -159,6 +159,21 @@ test('rebuy: short of money, ammo comes first, then kevlar, then potions', () =>
     assert.equal(room.buy(a, 'rebuy').error, 'money');
 });
 
+test('quick buys: N ammo, M kevlar + helmet, H two potions, G both grenades, each on its own', () => {
+    const { room, a } = teamRoom();
+    a.money = 16000;
+    assert.deepEqual(room.buy(a, 'rebuy_armor').bought, ['kevlar_helmet']);
+    assert.equal(a.inventory.count('health_potion'), 0, 'armor key buys armor only');
+    assert.deepEqual(room.buy(a, 'rebuy_potion').bought, ['health_potion', 'health_potion']);
+    assert.deepEqual(room.buy(a, 'rebuy_grenades').bought, ['hegrenade', 'smokegrenade']);
+    assert.deepEqual(room.buy(a, 'rebuy_ammo').bought, ['ammo']);
+    for (const item of ['rebuy_ammo', 'rebuy_armor', 'rebuy_potion', 'rebuy_grenades']) {
+        assert.equal(room.buy(a, item).error, 'owned', item);
+    }
+    assert.equal(room.buy(a, 'constructor').error, 'unknown');
+    assert.ok(!Object.hasOwn(a.inventory.counts, 'constructor'), 'nothing odd added to the inventory');
+});
+
 // ---- zombie gunners ------------------------------------------------------------------------
 
 function gunnerRoom() {

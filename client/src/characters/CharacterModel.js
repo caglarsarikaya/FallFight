@@ -28,6 +28,7 @@ export class CharacterModel {
         this.time = 0;
         this.action = null;      // { name, t, duration }
         this.hurtTimer = 0;
+        this.glow = false;       // Zombies angel: a pulsing golden shine (setGlow)
         this.deathTimer = null;
         this.crouch = 0;
 
@@ -155,7 +156,7 @@ export class CharacterModel {
     // ---- animation -------------------------------------------------------------------
 
     playAction(name) {
-        const durations = { swing: 0.35, stab: 0.5, shoot: 0.14, drink: 0.6, reload: 1.4, throw: 0.45 };
+        const durations = { swing: 0.35, stab: 0.5, shoot: 0.14, drink: 0.6, reload: 1.4, throw: 0.45, angel: 0.7 };
         this.action = { name, t: 0, duration: durations[name] || 0.3 };
     }
 
@@ -238,6 +239,10 @@ export class CharacterModel {
             } else if (this.action.name === 'drink') {
                 this.rightArm.rotation.set(2.3, 0, 0.6);
                 this.head.rotation.x = 0.45 * Math.sin(t * Math.PI);
+            } else if (this.action.name === 'angel') {
+                // Holds the halo up to the sky
+                this.rightArm.rotation.set(Math.PI * Math.sin(t * Math.PI), 0, 0.15);
+                this.head.rotation.x = -0.4 * Math.sin(t * Math.PI);
             }
             if (this.action.t >= 1) this.action = null;
         }
@@ -247,19 +252,25 @@ export class CharacterModel {
         this.updateDeath(dt);
     }
 
+    setGlow(on) {
+        this.glow = on;
+    }
+
+    // Red flash when hurt, on top of the angel's golden shine while it lasts
     updateHurtFlash(dt) {
-        if (this.hurtTimer <= 0 && !this.flashing) return;
+        if (this.hurtTimer <= 0 && !this.flashing && !this.glow) return;
         this.hurtTimer = Math.max(0, this.hurtTimer - dt);
         const k = this.hurtTimer / HURT_TIME;
-        this.flashing = k > 0;
+        const g = this.glow ? 0.3 + 0.18 * Math.sin(this.time * 6) : 0;
+        this.flashing = k > 0 || g > 0;
         for (const material of this.materials) {
             const base = material.userData.baseEmissive;
             material.emissive.setRGB(
-                base.r + (1 - base.r) * 0.6 * k,
-                base.g * (1 - k),
-                base.b * (1 - k)
+                Math.min(1, base.r + (1 - base.r) * 0.6 * k + g),
+                Math.min(1, base.g * (1 - k) + g * 0.8),
+                Math.min(1, base.b * (1 - k) + g * 0.3)
             );
-            material.emissiveIntensity = k > 0 ? 1 : material.userData.baseEmissiveIntensity;
+            material.emissiveIntensity = this.flashing ? 1 : material.userData.baseEmissiveIntensity;
         }
     }
 

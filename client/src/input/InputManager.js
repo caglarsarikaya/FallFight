@@ -1,10 +1,13 @@
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
-// ('primary', down) ('secondary') ('reload') ('last') ('buy') ('rebuy', N) ('use', down) ('pause').
+// ('primary', down) ('secondary') ('reload') ('last') ('buy') ('quickbuy', kind) ('use', down) ('pause').
 // Crouch is C or Ctrl, walk is Shift, like CS. Jump is Space or the mouse wheel (either way), one
 // jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page, so the game
 // asks before the tab closes (see Game); other Ctrl shortcuts (and Ctrl+wheel zoom) are swallowed
 // while playing.
+// Quick buys: N ammo, M kevlar + helmet, H health potions, G grenades
+const QUICK_BUY_KEYS = { KeyN: 'ammo', KeyM: 'armor', KeyH: 'potion', KeyG: 'grenades' };
+
 export class InputManager {
     constructor(element) {
         this.element = element;
@@ -92,7 +95,7 @@ export class InputManager {
             if (code === 'KeyV' || code === 'F5') this.onAction('camera');
             if (code === 'KeyR') this.onAction('reload');
             if (code === 'KeyB') this.onAction('buy');
-            if (code === 'KeyN') this.onAction('rebuy');
+            if (QUICK_BUY_KEYS[code]) this.onAction('quickbuy', QUICK_BUY_KEYS[code]);
             if (code === 'KeyE') this.onAction('use', true);
             if (code === 'KeyQ') this.onAction('last');
             if (code === 'Tab') this.onAction('scoreboard', true);

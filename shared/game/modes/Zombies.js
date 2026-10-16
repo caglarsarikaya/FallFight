@@ -20,6 +20,8 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
 // On maps with a longJumpSpot (Lava Arena), a long jump module appears there every few minutes:
 // whoever takes it can crouch-jump far until they die (LONG_JUMP).
+// Rarely (ZOMBIES.drops.godmode) a zombie drops an angel: kept in slot 8 until used, it makes you
+// untouchable by zombies for GOD_MODE.duration seconds.
 export class Zombies extends GameMode {
     get id() {
         return 'zombies';
@@ -58,6 +60,7 @@ export class Zombies extends GameMode {
         super.resetPlayer(player);
         player.money = ZOMBIES.startMoney;
         player.longJump = false;
+        player.godUntil = 0;
     }
 
     onJoin(player) {
@@ -79,6 +82,16 @@ export class Zombies extends GameMode {
         return a !== b && !!a.isZombie !== !!b.isZombie;
     }
 
+    // An angel (god mode) is out of the zombies' reach: claws and zombie gunners do nothing
+    canDamage(attacker, victim) {
+        if (attacker?.isZombie && this.isBlessed(victim)) return false;
+        return super.canDamage(attacker, victim);
+    }
+
+    isBlessed(player) {
+        return player.godUntil > this.room.time;
+    }
+
     // Humans start with a pistol and the knife, no armor
     equip(player) {
         player.inventory.reset({ weapons: ZOMBIES.loadout });
@@ -91,9 +104,12 @@ export class Zombies extends GameMode {
         return player.isZombie ? spawns?.zombie : spawns?.ct;
     }
 
-    // Zombies take nothing; a long jump carrier doesn't need a second one
+    // Zombies take nothing; a long jump carrier doesn't need a second one, nor an angel carrier
     canPickUp(player, pickup) {
-        return !player.isZombie && !(pickup?.type === 'longjump' && player.longJump);
+        if (player.isZombie) return false;
+        if (pickup?.type === 'longjump') return !player.longJump;
+        if (pickup?.type === 'godmode') return player.inventory.count('godmode') === 0;
+        return true;
     }
 
     // Dead players wait for the end of the wave; dead zombies are cleared away
@@ -170,7 +186,7 @@ export class Zombies extends GameMode {
         // Everyone who fell comes back; survivors get topped up a little; everyone gets paid
         for (const p of this.humans) {
             if (!p.alive) this.room.respawn(p);
-            else p.health = Math.min(p.maxHealth, p.health + 25);
+            else if (p.health < p.maxHealth) this.room.heal(p, 25);
             this.pay(p, ZOMBIES.waveBonus);
         }
         this.dirty = true;
@@ -231,6 +247,7 @@ export class Zombies extends GameMode {
 
     // A zombie's claws: armor takes some of it
     zombieAttack(zombie, victim, amount) {
+        if (this.isBlessed(victim)) return;
         let health = amount;
         if (victim.armor > 0) {
             health = Math.round(amount * 0.6);
@@ -351,6 +368,7 @@ export class Zombies extends GameMode {
     onKill(victim, killer) {
         this.dirty = true;
         victim.longJump = false;     // kept until you die, even if a teammate revives you
+        victim.godUntil = 0;
         if (victim.isZombie) {
             victim.diedAt = this.room.time;
             this.kills++;
@@ -388,7 +406,9 @@ export class Zombies extends GameMode {
             const top = Math.min(ladder.length - 1, 2 + this.wave);
             extra = { weapon: weapon || ladder[Math.floor(rng() * (top + 1))] };
         }
-        const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, ZOMBIES.dropLife, extra);
+        // The angel lies there longer: it's rare, and its searchlight shows the way
+        const life = type === 'godmode' ? ZOMBIES.dropLife * 2 : ZOMBIES.dropLife;
+        const pickup = this.room.pickups.drop(type, this.room.arena, zombie, this.room.time, life, extra);
         if (pickup) this.room.emit(null, S2C.PICKUP_SPAWNED, pickup);
     }
 
@@ -407,7 +427,10 @@ export class Zombies extends GameMode {
     }
 
     playerJSON(player) {
-        if (!player.isZombie) return { money: player.money ?? 0, longJump: !!player.longJump };
+        if (!player.isZombie) {
+            const godLeft = this.isBlessed(player) ? Math.round((player.godUntil - this.room.time) * 10) / 10 : 0;
+            return { money: player.money ?? 0, longJump: !!player.longJump, godLeft };
+        }
         return player.isGiant ? { isZombie: true, maxHealth: player.maxHealth, scale: player.scale } : { isZombie: true, maxHealth: player.maxHealth };
     }
 

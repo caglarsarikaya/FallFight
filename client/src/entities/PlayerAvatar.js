@@ -71,6 +71,50 @@ export class PlayerAvatar {
         this.heldItemId = null;
         if (held) this.setHeldItem(held);
         if (!this.alive) this.model.die();
+        if (this.god) {
+            this.god = false;
+            this.setGod(true);
+        }
+    }
+
+    // Zombies angel: blocky white wings on the back, a gold halo and a golden shine while it lasts
+    setGod(on) {
+        if (on === !!this.god) return;
+        this.god = on;
+        this.model.setGlow(on);
+        if (!on) {
+            for (const part of [...(this.wings || []), this.halo]) {
+                part?.parent?.remove(part);
+                part?.traverse(o => o.isMesh && o.geometry.dispose());
+            }
+            this.wings = this.halo = null;
+            return;
+        }
+        const { torsoH, torsoD, head } = this.model.dims;
+        const white = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#d6e2ff', emissiveIntensity: 0.5 });
+        const gold = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
+        this.wings = [-1, 1].map(side => {
+            const wing = new THREE.Group();
+            wing.position.set(side * 0.08, torsoH * 0.82, torsoD / 2 + 0.04);
+            wing.userData.side = side;
+            // Feathers in tiers: long on top, shorter below, all sweeping outwards
+            for (let i = 0; i < 4; i++) {
+                const length = 0.62 - i * 0.12;
+                const feather = new THREE.Mesh(new THREE.BoxGeometry(length, 0.1, 0.05), white);
+                feather.position.set(side * (length / 2), 0.08 - i * 0.11, 0);
+                wing.add(feather);
+            }
+            this.model.body.add(wing);
+            return wing;
+        });
+        this.halo = new THREE.Group();
+        for (const [w, d, x, z] of [[0.4, 0.06, 0, 0.17], [0.4, 0.06, 0, -0.17], [0.06, 0.28, 0.17, 0], [0.06, 0.28, -0.17, 0]]) {
+            const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), gold);
+            bar.position.set(x, 0, z);
+            this.halo.add(bar);
+        }
+        this.halo.position.y = head + 0.16;
+        this.model.head.add(this.halo);
     }
 
     setHeldItem(itemId) {
@@ -242,6 +286,12 @@ export class PlayerAvatar {
         this.speed += (instant - this.speed) * Math.min(1, dt * 12);
         this.lastPosition.copy(pos);
 
+        if (this.wings) {
+            // Slow beat, the wings swing back and forth around the spine
+            const beat = Math.sin(now / 1000 * 7);
+            for (const wing of this.wings) wing.rotation.y = wing.userData.side * (-0.5 + beat * 0.35);
+            this.halo.position.y = this.model.dims.head + 0.16 + Math.sin(now / 1000 * 3) * 0.03;
+        }
         this.model.animate(dt, {
             speed: this.alive ? this.speed : 0,
             onGround: this.onGround,

@@ -3,6 +3,7 @@ import { GunView } from './guns/GunView.js';
 import { KnifeView } from './guns/KnifeView.js';
 import { HealthPotionView } from './HealthPotionView.js';
 import { GrenadeView } from './GrenadeView.js';
+import { GodModeView } from './GodModeView.js';
 
 // Item id -> view. Guns get theirs from client/src/items/guns/specs.js automatically.
 const views = new Map([
@@ -10,7 +11,8 @@ const views = new Map([
     new KnifeView(),
     new HealthPotionView(),
     new GrenadeView('hegrenade'),
-    new GrenadeView('smokegrenade')
+    new GrenadeView('smokegrenade'),
+    new GodModeView()
 ].map(v => [v.itemId, v]));
 
 export function getItemView(itemId) {

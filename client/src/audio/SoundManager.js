@@ -98,6 +98,16 @@ const PATCHES = {
         s.tone({ out, type: 'sine', freq: 523, freqEnd: 1046, duration: 0.4, gain: 0.15 });
         s.tone({ out, type: 'triangle', freq: 784, duration: 0.3, delay: 0.1, gain: 0.1 });
     },
+    // Zombies angel: a rising, bell-like major arpeggio; and a soft falling pair when it wears off
+    angel: (s, out) => {
+        [523, 659, 784, 1046, 1318].forEach((freq, i) => s.tone({ out, type: 'sine', freq, duration: 0.7, delay: i * 0.07, gain: 0.12 }));
+        s.tone({ out, type: 'triangle', freq: 2093, duration: 1.2, delay: 0.35, gain: 0.05 });
+    },
+    angelTick: (s, out) => s.tone({ out, type: 'sine', freq: 1568, duration: 0.08, gain: 0.08 }),
+    angelEnd: (s, out) => {
+        s.tone({ out, type: 'sine', freq: 784, freqEnd: 523, duration: 0.35, gain: 0.12 });
+        s.tone({ out, type: 'sine', freq: 523, freqEnd: 330, duration: 0.45, delay: 0.2, gain: 0.1 });
+    },
     respawn: (s, out) => s.tone({ out, type: 'sine', freq: 220, freqEnd: 880, duration: 0.5, gain: 0.18 }),
     select: (s, out) => s.tone({ out, type: 'square', freq: 1200, duration: 0.03, gain: 0.05 }),
     empty: (s, out) => s.tone({ out, type: 'square', freq: 180, duration: 0.06, gain: 0.1 }),

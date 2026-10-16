@@ -12,7 +12,7 @@ const CONTROLS = [
     ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space, wheel', 'Jump'],
     ['Left click', 'Fire / slash'], ['Right click', 'Scope / knife stab'], ['R', 'Reload'],
     ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q', 'Switch weapon'], ['6 / 7', 'HE grenade / smoke grenade (click to throw)'],
-    ['B', 'Buy menu (Deathmatch: free, Team Buy, Zombies)'], ['N', 'Rebuy: ammo, kevlar, 2 potions, grenades'], ['E (hold)', 'Zombies: revive a fallen teammate'],
+    ['B', 'Buy menu (Deathmatch: free, Team Buy, Zombies)'], ['N / M', 'Quick buy: ammo / kevlar + helmet'], ['H / G', 'Quick buy: 2 potions / HE + smoke'], ['8', 'Zombies: angel (15s safe from zombies)'], ['E (hold)', 'Zombies: revive a fallen teammate'],
     ['V', 'First / third person'],
     ['Tab', 'Scoreboard'], ['Esc', 'Close the buy menu, open / close the game menu']
 ];

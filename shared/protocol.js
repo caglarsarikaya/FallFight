@@ -38,7 +38,7 @@ export const S2C = {
     KNOCKBACK: 'knockback',            // { id, knockback: {x,y,z} } a push with no damage (your own rocket)
     DAMAGE: 'damage',                  // { victimId, attackerId, amount, health, armor, weapon, zone, headshot, armorHit, from, knockback }
     HEAL: 'heal',                      // { id, amount, health }
-    DEATH: 'death',                    // { victimId, killerId, cause: weaponId | 'fall', headshot }
+    DEATH: 'death',                    // { victimId, killerId, cause: weaponId | 'fall' (void) | 'landing' (fall damage), headshot }
     RESPAWN: 'respawn',                // { id, x, y, z, health }
     PICKUP_SPAWNED: 'pickupSpawned',   // { id, type, x, y, z, spot? } spot: the tower name of an RPG
     PICKUP_TAKEN: 'pickupTaken',       // { id, by }

@@ -11,6 +11,11 @@ export class Item {
         this.description = description;
     }
 
+    // Usable in freeze time and whenever shooting isn't allowed (drinking a potion, not throwing)
+    get usableWhenFrozen() {
+        return false;
+    }
+
     // Animation name broadcast to other players when used
     get action() {
         return 'use';

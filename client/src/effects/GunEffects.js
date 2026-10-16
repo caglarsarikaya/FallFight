@@ -56,30 +56,37 @@ function flashTexture(size = 128) {
     return texture;
 }
 
-// An uneven splat: a dark core and a few drops around it
-function bloodTexture(size = 128) {
+// A blocky splat drawn as pixel art (16x16 cells, nearest filtering) to match the block world:
+// a ragged core and a few loose square drops around it
+const BLOOD_REDS = ['#6e0606', '#5a0303', '#860a0a'];
+function bloodTexture(cells = 16) {
+    const px = 8;
     const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = size;
+    canvas.width = canvas.height = cells * px;
     const ctx = canvas.getContext('2d');
-    const c = size / 2;
-    const blob = (x, y, r, alpha) => {
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `rgba(110,4,4,${alpha})`);
-        g.addColorStop(0.7, `rgba(90,2,2,${alpha * 0.9})`);
-        g.addColorStop(1, 'rgba(70,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
+    const c = (cells - 1) / 2;
+    // Fixed pseudo-random pattern, the same splat every time
+    let seed = 7;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const cell = (x, y) => {
+        ctx.fillStyle = BLOOD_REDS[Math.floor(rand() * BLOOD_REDS.length)];
+        ctx.fillRect(x * px, y * px, px, px);
     };
-    blob(c, c, c * 0.62, 0.95);
-    for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2 + Math.sin(i * 7.3);
-        const d = c * (0.45 + ((i * 37) % 10) / 22);
-        blob(c + Math.cos(a) * d, c + Math.sin(a) * d, c * (0.08 + ((i * 13) % 7) / 50), 0.9);
+    for (let y = 0; y < cells; y++) {
+        for (let x = 0; x < cells; x++) {
+            const d = Math.hypot(x - c, y - c);
+            if (d < 3.6 || (d < 5.6 && rand() < 0.62)) cell(x, y);
+        }
+    }
+    for (let i = 0; i < 8; i++) {
+        const a = rand() * Math.PI * 2;
+        const d = 5.8 + rand() * 1.6;
+        cell(Math.round(c + Math.cos(a) * d), Math.round(c + Math.sin(a) * d));
     }
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
     return texture;
 }
 
@@ -209,7 +216,7 @@ export class GunEffects {
         this.blood[i] = { block: blockKey, born: this.time };
         const d = this.dummy;
         d.position.set(x, y + 0.01 + i * 0.0002, z);   // a hair apart so overlapping pools don't flicker
-        d.rotation.set(0, Math.random() * Math.PI * 2, 0);
+        d.rotation.set(0, Math.floor(Math.random() * 4) * Math.PI / 2, 0);   // square to the block grid
         d.scale.setScalar(size * (0.85 + Math.random() * 0.3));
         d.updateMatrix();
         this.bloodMesh.setMatrixAt(i, d.matrix);

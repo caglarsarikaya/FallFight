@@ -1,10 +1,13 @@
 import { WEAPON_SLOT, isGun, weaponSpec } from '../config/weapons.js';
 import { getItem } from '../items/ItemRegistry.js';
 
-const SLOT_COUNT = 7;
+const SLOT_COUNT = 8;
+
+// Counted items that only take up their slot while you carry at least one
+const SLOT_WHEN_CARRIED = { godmode: WEAPON_SLOT.ANGEL };
 
 // CS-style slots: 1 primary gun, 2 pistol, 3 knife, 4 health potion, 5 special (the map's RPG),
-// 6 HE grenade, 7 smoke grenade. Each gun carried has its own ammo (rounds in the magazine +
+// 6 HE grenade, 7 smoke grenade, 8 the Zombies angel (only while carried). Each gun carried has its own ammo (rounds in the magazine +
 // reserve); consumables (potions, grenades) are counted in `counts`.
 export class Inventory {
     // loadout: { weapons: [gunId], counts: { health_potion } }
@@ -13,9 +16,10 @@ export class Inventory {
     }
 
     reset({ weapons = [], counts = {} } = {}) {
-        this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade'];
+        this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null];
         this.ammo = {};
-        this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, ...counts };
+        this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, godmode: 0, ...counts };
+        for (const key of Object.keys(SLOT_WHEN_CARRIED)) this.updateCarriedSlot(key);
         for (const id of weapons) this.give(id);
         this.selected = this.bestSlot();
     }
@@ -77,12 +81,21 @@ export class Inventory {
 
     add(key, amount = 1) {
         this.counts[key] = this.count(key) + amount;
+        this.updateCarriedSlot(key);
     }
 
     consume(key, amount = 1) {
         if (this.count(key) < amount) return false;
         this.counts[key] -= amount;
+        this.updateCarriedSlot(key);
         return true;
+    }
+
+    updateCarriedSlot(key) {
+        const slot = SLOT_WHEN_CARRIED[key];
+        if (slot === undefined) return;
+        this.hotbar[slot] = this.count(key) > 0 ? key : null;
+        if (this.selected === slot && !this.hotbar[slot]) this.selected = this.bestSlot();
     }
 
     // Ammo pickup: n magazines into the reserve of every gun carried, up to its maximum.

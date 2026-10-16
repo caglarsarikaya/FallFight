@@ -1,4 +1,4 @@
-import { PLAYER, POTION } from '../constants.js';
+import { POTION } from '../constants.js';
 import { Consumable } from './Consumable.js';
 
 export class HealthPotion extends Consumable {
@@ -13,9 +13,13 @@ export class HealthPotion extends Consumable {
         this.short = 'POTION';
     }
 
-    // Don't waste a potion at full health
+    get usableWhenFrozen() {
+        return true;
+    }
+
+    // Any missing health at all (99 of 100) is worth a potion; only full health refuses
     canConsume(player) {
-        return player.health < PLAYER.maxHealth;
+        return player.health < player.maxHealth;
     }
 
     applyEffect({ room, player }) {
