@@ -9,18 +9,20 @@ const SLOT_COUNT = 8;
 // magazine + reserve) and maybe a sight bought for it (`sights`: gun id -> sight id, see
 // shared/config/sights.js); consumables (potions, grenades...) are counted in `counts`.
 export class Inventory {
-    // loadout: { weapons: [gunId], counts: { health_potion } }
+    // loadout: { weapons: [gunId], counts: { health_potion }, sights: { gunId: sightId } }
     constructor(loadout = {}) {
         this.reset(loadout);
     }
 
-    reset({ weapons = [], counts = {} } = {}) {
+    reset({ weapons = [], counts = {}, sights = {} } = {}) {
         this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null];
         this.ammo = {};
         this.sights = {};
         this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, ...counts };
         for (const key of Object.keys(this.counts)) this.updateCarriedSlot(key);
         for (const id of weapons) this.give(id);
+        // A sight stays on its gun, for the guns that made it in
+        for (const id of weapons) if (sights[id] && this.has(id)) this.sights[id] = sights[id];
         this.selected = this.bestSlot();
     }
 

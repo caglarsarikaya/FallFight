@@ -11,12 +11,13 @@ export class FreeForAll extends GameMode {
     onJoin(player) {
         player.randomGuns ??= true;
         player.dmLoadout ??= null;     // [primary, pistol] for lives with Random Guns off
+        player.dmSights ??= {};        // and the sights on them (gun id -> sight id)
         super.onJoin(player);
     }
 
     equip(player) {
         if (player.randomGuns !== false || !player.dmLoadout?.length) return super.equip(player);
-        player.inventory.reset({ weapons: player.dmLoadout, counts: { health_potion: LOADOUT.health_potion } });
+        player.inventory.reset({ weapons: player.dmLoadout, counts: { health_potion: LOADOUT.health_potion }, sights: player.dmSights });
         player.armor = LOADOUT.armor;
         player.helmet = LOADOUT.helmet;
     }
@@ -39,6 +40,8 @@ export class FreeForAll extends GameMode {
         if (result.ok && isGun(item)) {
             player.randomGuns = false;
             this.saveLoadout(player);
+        } else if (result.ok && item.startsWith('sight_') && player.randomGuns === false) {
+            this.saveLoadout(player);
         }
         return result;
     }
@@ -52,9 +55,10 @@ export class FreeForAll extends GameMode {
         if (!on && !player.dmLoadout?.length) this.saveLoadout(player);
     }
 
-    // The guns carried now become the loadout for the next lives
+    // The guns carried now (and their sights) become the loadout for the next lives
     saveLoadout(player) {
-        const bar = player.inventory.hotbar;
-        player.dmLoadout = [bar[WEAPON_SLOT.PRIMARY], bar[WEAPON_SLOT.SECONDARY]].filter(isGun);
+        const { hotbar, sights } = player.inventory;
+        player.dmLoadout = [hotbar[WEAPON_SLOT.PRIMARY], hotbar[WEAPON_SLOT.SECONDARY]].filter(isGun);
+        player.dmSights = Object.fromEntries(player.dmLoadout.filter(id => sights[id]).map(id => [id, sights[id]]));
     }
 }

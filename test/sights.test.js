@@ -73,6 +73,36 @@ test('the sight goes with the gun: replaced or a new life', () => {
     assert.deepEqual(p.inventory.sights, {});
 });
 
+test('Deathmatch: a picked gun keeps its sight into the next life', () => {
+    const room = new GameRoom({ mode: 'ffa', map: 'fy_pool_day', rng: createRng(3), emit: recorder([]) });
+    const p = room.addPlayer({ id: 'a', name: 'A' });
+    room.tick(1 / 30);
+    const newLife = () => { room.kill(p, null, 'fall'); room.respawn(p); };
+
+    // A sight on a random gun goes with it
+    assert.ok(room.mode.buy(p, sightItem('reddot', WEAPON_SLOT.SECONDARY)).ok);
+    assert.equal(p.randomGuns, true);
+    const randomPistol = p.inventory.hotbar[WEAPON_SLOT.SECONDARY];
+    newLife();
+    if (p.inventory.hotbar[WEAPON_SLOT.SECONDARY] === randomPistol) assert.deepEqual(p.inventory.sights, {});
+
+    // A picked gun keeps its sight
+    assert.ok(room.mode.buy(p, 'ak47').ok);
+    assert.ok(room.mode.buy(p, sightItem('holo', WEAPON_SLOT.PRIMARY)).ok);
+    newLife();
+    assert.equal(p.inventory.hotbar[WEAPON_SLOT.PRIMARY], 'ak47');
+    assert.equal(p.inventory.sights.ak47, 'holo');
+    newLife();
+    assert.equal(p.inventory.sights.ak47, 'holo');
+
+    // Another gun in its place starts bare
+    assert.ok(room.mode.buy(p, 'm4a1').ok);
+    newLife();
+    assert.equal(p.inventory.hotbar[WEAPON_SLOT.PRIMARY], 'm4a1');
+    assert.equal(p.inventory.sights.m4a1, undefined);
+    assert.equal(p.inventory.sights.ak47, undefined);
+});
+
 test('aiming down sights tightens the spread of sight guns only', () => {
     const state = { speed: 0, onGround: true };
     assert.ok(inaccuracy(WEAPONS.ak47, { ...state, aiming: true }) < inaccuracy(WEAPONS.ak47, state));
