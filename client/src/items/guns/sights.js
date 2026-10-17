@@ -17,24 +17,26 @@ function frame(w, h, d, t, y, z, m) {
     ];
 }
 
+// Small (narrower than the receiver), hairline rims, shallow housings and big windows: aimed,
+// the optic is a slim outline around the target, so it doesn't wall off the view.
 export const SIGHT_MODELS = {
-    // A short tube on a low mount
+    // A short, thin-walled tube on a low mount
     reddot: {
-        parts: [P(0.03, 0.012, 0.05, 0, 0.006, 0, 'black'), ...frame(0.052, 0.052, 0.07, 0.007, 0.038, 0, 'dark')],
-        glass: [0.04, 0.04, 0, 0.038, -0.03],
-        eye: 0.038, rear: 0.035
+        parts: [P(0.016, 0.008, 0.024, 0, 0.004, 0, 'black'), ...frame(0.028, 0.026, 0.01, 0.0015, 0.021, 0, 'dark')],
+        glass: [0.025, 0.023, 0, 0.021, -0.004],
+        eye: 0.021, rear: 0.005
     },
-    // A flat plate with one thin open window
+    // A flat plate with one wide open window
     reflex: {
-        parts: [P(0.04, 0.008, 0.07, 0, 0.004, 0, 'black'), ...frame(0.06, 0.044, 0.01, 0.005, 0.03, -0.025, 'black')],
-        glass: [0.05, 0.034, 0, 0.03, -0.025],
-        eye: 0.03, rear: 0.035
+        parts: [P(0.02, 0.005, 0.036, 0, 0.0025, 0, 'black'), ...frame(0.032, 0.024, 0.004, 0.0015, 0.017, -0.012, 'black')],
+        glass: [0.0284, 0.0204, 0, 0.017, -0.012],
+        eye: 0.017, rear: 0.018
     },
-    // EOTech-style: a long base box under a square hood
+    // EOTech-style: a low base box under a slim square hood
     holo: {
-        parts: [P(0.046, 0.022, 0.1, 0, 0.011, 0, 'dark'), ...frame(0.064, 0.05, 0.075, 0.007, 0.047, -0.01, 'black')],
-        glass: [0.05, 0.036, 0, 0.047, -0.04],
-        eye: 0.047, rear: 0.05
+        parts: [P(0.022, 0.006, 0.05, 0, 0.003, 0, 'dark'), ...frame(0.034, 0.026, 0.02, 0.0015, 0.019, -0.012, 'black')],
+        glass: [0.031, 0.023, 0, 0.019, -0.018],
+        eye: 0.019, rear: 0.025
     }
 };
 

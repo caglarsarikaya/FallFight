@@ -23,7 +23,7 @@ const unitBox = new THREE.BoxGeometry(1, 1, 1);
 let glassMaterial = null;   // the optics' window: a faint tint you see through
 
 // Aiming down sights: how far in front of the eye the rear sight (or the back of the optic) sits
-const ADS_EYE = { pistol: 0.24, iron: 0.09, optic: 0.05 };
+const ADS_EYE = { pistol: 0.24, iron: 0.09, optic: 0.07 };
 
 function addBox(group, w, h, d, x, y, z, mat, rx = 0) {
     const mesh = new THREE.Mesh(unitBox, material(mat));
@@ -116,7 +116,7 @@ export class GunView extends ItemView {
             const group = new THREE.Group();
             group.position.set(0, railY, railZ);
             for (const [w, h, d, x, y, z, mat] of optic.parts) addBox(group, w, h, d, x, y, z, mat);
-            glassMaterial ??= new THREE.MeshBasicMaterial({ color: '#9fd8ff', transparent: true, opacity: 0.07, depthWrite: false });
+            glassMaterial ??= new THREE.MeshBasicMaterial({ color: '#bfe6ff', transparent: true, opacity: 0.12, depthWrite: false });
             const [gw, gh, , gy, gz] = optic.glass;
             const glass = new THREE.Mesh(unitBox, glassMaterial);
             glass.scale.set(gw, gh, 0.002);
