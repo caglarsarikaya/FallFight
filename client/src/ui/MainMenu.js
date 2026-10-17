@@ -7,7 +7,7 @@ import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
 import { el, choice } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
-import { canLockKeys } from '../input/fullscreen.js';
+import { canLockKeys } from '../input/keyLock.js';
 import { SHOP_CONTROLS, controlGroups } from './controls.js';
 
 // All the keys, the shop's and every feature's too (ui/controls.js)

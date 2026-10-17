@@ -1,5 +1,5 @@
 import { el, choice } from './dom.js';
-import { canLockKeys } from '../input/fullscreen.js';
+import { canLockKeys } from '../input/keyLock.js';
 import { renderControls } from './controls.js';
 
 const ON_OFF = [['on', 'On'], ['off', 'Off']];

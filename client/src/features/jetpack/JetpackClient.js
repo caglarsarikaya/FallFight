@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { registerPickupLook } from '../../entities/PickupView.js';
 import { ClientFeature } from '../ClientFeature.js';
-import { canLockKeys, keysLocked } from '../../input/fullscreen.js';
+import { canLockKeys, keysLocked } from '../../input/keyLock.js';
 
 const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];

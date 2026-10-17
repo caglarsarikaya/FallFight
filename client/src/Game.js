@@ -32,7 +32,7 @@ import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { BuyMenu } from './ui/BuyMenu.js';
 import { el } from './ui/dom.js';
-import { canLockKeys, exitGameFullscreen } from './input/fullscreen.js';
+import { canLockKeys, exitGameFullscreen } from './input/keyLock.js';
 import { controlGroups } from './ui/controls.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
@@ -86,7 +86,7 @@ export class Game {
         this.sound = sound;
         this.onEditProfile = onEditProfile;
         // Ctrl crouches (and sinks while flying), and Ctrl+W (with forward) would close the tab:
-        // fullscreen locks the keys (./input/fullscreen.js); otherwise ask first while playing
+        // fullscreen locks the keys (./input/keyLock.js); otherwise ask first while playing
         this.leaveGuard = e => {
             e.preventDefault();
             e.returnValue = '';

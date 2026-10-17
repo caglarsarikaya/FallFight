@@ -1,4 +1,4 @@
-import { enterGameFullscreen } from './fullscreen.js';
+import { enterGameFullscreen } from './keyLock.js';
 
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
@@ -6,7 +6,7 @@ import { enterGameFullscreen } from './fullscreen.js';
 // Crouch is C or Ctrl, walk is Shift, like CS. With the Zombies jetpack, Shift flies up and
 // Ctrl/C sinks instead. Jump is Space or the mouse wheel (either way), one
 // jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page outside
-// fullscreen, so taking the mouse also goes fullscreen with the keyboard locked (./fullscreen.js,
+// fullscreen, so taking the mouse also goes fullscreen with the keyboard locked (./keyLock.js,
 // the Fullscreen setting); without that the game asks before the tab closes (see Game). Other Ctrl
 // shortcuts (and Ctrl+wheel zoom) are swallowed while playing.
 // Quick buys: N ammo, M kevlar + helmet, H health potions, G grenades

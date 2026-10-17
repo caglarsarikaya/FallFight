@@ -1,6 +1,6 @@
 import { DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../../shared/characters/definitions.js';
 import { DEFAULT_MODE, isValidMode } from '../../shared/modes/registry.js';
-import { canLockKeys } from '../input/fullscreen.js';
+import { canLockKeys } from '../input/keyLock.js';
 
 const KEY = 'fallfight.profile.v1';
 
