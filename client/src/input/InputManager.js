@@ -22,6 +22,7 @@ export class InputManager {
         this.enabled = false;
         this.onAction = () => {};
         this.onLockChange = () => {};
+        this.onIdleKey = () => {};   // a key press with the mouse free (Esc can't take it back, other keys can)
         this.lockLostAt = -Infinity;
         this.jumpPressed = false;
         this.fullscreen = () => false;   // go fullscreen (keys locked) when taking the mouse
@@ -104,6 +105,7 @@ export class InputManager {
         if ((e.ctrlKey || e.metaKey) && !typing) e.preventDefault();
         if (down) {
             if (e.repeat) return;
+            if (!this.locked && !typing && code !== 'Escape') this.onIdleKey();
             this.keys.add(code);
             if (code === 'Space') this.jumpPressed = true;
             if (code.startsWith('Digit')) this.onAction('slot', Number(code.slice(5)) - 1);

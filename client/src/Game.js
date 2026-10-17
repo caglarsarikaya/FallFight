@@ -178,7 +178,7 @@ export class Game {
         // At the start, recommend fullscreen (no stray Ctrl+W, no distractions); gone once we play
         this.fullscreenTip = el('div.fullscreen-tip');
         this.clickToPlay = el('div.overlay.hidden', {}, el('div.click-to-play', { onclick: () => this.resume() }, [
-            el('div', { text: 'Click to play' }), this.fullscreenTip
+            el('div', { text: 'Click or press any key to play' }), this.fullscreenTip
         ]));
         this.updateFullscreenTip();
         ui.append(this.clickToPlay);
@@ -365,6 +365,13 @@ export class Game {
                 return;
             }
             this.pause();
+        };
+        // Browsers don't count Esc as a gesture, so closing the menu with it can't take the mouse
+        // back; any other key can. The overlay stays until the lock lands, in case it's refused
+        this.input.onIdleKey = () => {
+            if (this.clickToPlay.classList.contains('hidden')) return;
+            this.sound.unlock();
+            this.input.requestLock();
         };
         this.input.onAction = (action, value) => {
             if (!this.selfId) return;
