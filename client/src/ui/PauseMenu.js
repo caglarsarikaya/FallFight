@@ -1,84 +1,91 @@
-import { el } from './dom.js';
+import { el, choice } from './dom.js';
 import { canLockKeys } from '../input/fullscreen.js';
 import { renderControls } from './controls.js';
 
-// Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, fullscreen,
-// stats overlay, sights (hold right click to aim), Deathmatch random guns, leave; and a Help page
-// with every key (ui/controls.js) for anyone who missed the hint at the start
+const ON_OFF = [['on', 'On'], ['off', 'Off']];
+const onOff = on => (on ? 'on' : 'off');
+
+// Esc menu, three pages: the main list (resume, options, help, character/name, leave), Options
+// grouped into Audio & Mouse / Video / Gameplay (camera, sights, Deathmatch random guns), and
+// Help with every key (ui/controls.js) for anyone who missed the hint at the start
 export class PauseMenu {
     constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
-        this.graphics = profile.graphics;
-        this.graphicsButton = el('button.btn', {
-            type: 'button',
-            onclick: () => {
-                this.graphics = this.graphics === 'low' ? 'high' : 'low';
-                this.updateGraphicsLabel();
-                onGraphics(this.graphics);
-            }
+        this.graphicsChoice = choice([['high', 'High'], ['low', 'Low (fast)']], v => {
+            this.graphicsChoice.set(v);
+            onGraphics(v);
         });
-        this.updateGraphicsLabel();
-        this.fullscreen = profile.fullscreen;
-        this.fullscreenButton = el('button.btn', {
-            type: 'button',
-            onclick: () => {
-                this.fullscreen = !this.fullscreen;
-                this.updateFullscreenLabel();
-                onFullscreen(this.fullscreen);
-            }
+        this.graphicsChoice.set(profile.graphics);
+        this.fullscreenChoice = choice([['on', canLockKeys ? 'On (Ctrl+W safe)' : 'On'], ['off', 'Off']], v => {
+            this.setFullscreen(v === 'on');
+            onFullscreen(v === 'on');
         });
-        this.updateFullscreenLabel();
-        this.cameraButton = el('button.btn', { type: 'button', onclick: () => onToggleCamera() });
-        this.showStats = profile.showStats;
-        this.statsButton = el('button.btn', {
-            type: 'button',
-            onclick: () => {
-                this.showStats = !this.showStats;
-                this.updateStatsLabel();
-                onShowStats(this.showStats);
-            }
+        this.setFullscreen(profile.fullscreen);
+        this.statsChoice = choice(ON_OFF, v => {
+            this.statsChoice.set(v);
+            onShowStats(v === 'on');
         });
-        this.updateStatsLabel();
-        this.sights = profile.sights;
-        this.sightsButton = el('button.btn', {
-            type: 'button',
-            onclick: () => {
-                this.sights = !this.sights;
-                this.updateSightsLabel();
-                onSights(this.sights);
-            }
+        this.statsChoice.set(onOff(profile.showStats));
+        this.sightsChoice = choice(ON_OFF, v => {
+            this.sightsChoice.set(v);
+            onSights(v === 'on');
         });
-        this.updateSightsLabel();
-        // Deathmatch only (setRandomGuns): new guns every life, or keep the ones bought
+        this.sightsChoice.set(onOff(profile.sights));
+        this.cameraButton = el('button.btn.pause-toggle', { type: 'button', onclick: () => onToggleCamera() });
+        // Deathmatch only (setRandomGuns): new guns every life, or keep the ones bought.
+        // The server flips it and echoes back, so only ask when the pick differs
         this.randomGuns = null;
-        this.randomButton = el('button.btn.hidden', { type: 'button', onclick: () => onToggleRandom() });
+        this.randomChoice = choice(ON_OFF, v => {
+            if ((v === 'on') !== this.randomGuns) onToggleRandom();
+        });
         this.volume = el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: profile.volume });
         this.volume.addEventListener('input', () => onVolume(Number(this.volume.value)));
         this.sensitivity = el('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: profile.sensitivity });
         this.sensitivity.addEventListener('input', () => onSensitivity(Number(this.sensitivity.value)));
 
+        const row = (label, control) => el('div.menu-setting', {}, [el('span.menu-label', { text: label }), control]);
+        const section = (title, rows) => el('div.pause-section', {}, [el('h3', { text: title }), ...rows]);
+        this.randomRow = row('Random guns each life', this.randomChoice.node);
+        this.randomRow.classList.add('hidden');
+
         this.title = el('h2', { text: 'GAME MENU' });
-        this.main = el('div.pause-page', {}, [
-            this.title,
-            el('button.btn.primary', { type: 'button', text: 'Back to Game', onclick: () => onResume() }),
-            el('button.btn', { type: 'button', text: 'Help & Controls', onclick: () => this.showHelp(true) }),
-            el('button.btn', { type: 'button', text: 'Change Character & Name', onclick: () => onEditProfile() }),
-            this.cameraButton,
-            el('div.setting', {}, [el('span.label', { text: 'SOUND' }), this.volume]),
-            el('div.setting', {}, [el('span.label', { text: 'MOUSE SENSITIVITY' }), this.sensitivity]),
-            this.graphicsButton,
-            this.fullscreenButton,
-            this.statsButton,
-            this.sightsButton,
-            this.randomButton,
-            el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
-        ]);
-        this.helpList = el('div');
-        this.help = el('div.pause-page.pause-help.hidden', {}, [
-            el('h2', { text: 'HELP & CONTROLS' }),
-            this.helpList,
-            el('button.btn.primary', { type: 'button', text: 'Back', onclick: () => this.showHelp(false) })
-        ]);
-        this.root = el('div.overlay.dim.pause.hidden', {}, [this.main, this.help]);
+        this.pages = {
+            main: el('div.pause-page.pause-main', {}, [
+                this.title,
+                el('button.btn.primary', { type: 'button', text: 'Back to Game', onclick: () => onResume() }),
+                el('button.btn', { type: 'button', text: 'Options', onclick: () => this.showPage('options') }),
+                el('button.btn', { type: 'button', text: 'Help & Controls', onclick: () => this.showPage('help') }),
+                el('button.btn', { type: 'button', text: 'Change Character & Name', onclick: () => onEditProfile() }),
+                el('button.btn.pause-leave', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
+            ]),
+            options: el('div.pause-page', {}, [
+                el('h2', { text: 'OPTIONS' }),
+                el('div.pause-options', {}, [
+                    el('div.pause-column', {}, [
+                        section('Audio & Mouse', [row('Sound volume', this.volume), row('Mouse sensitivity', this.sensitivity)]),
+                        section('Video', [
+                            row('Graphics', this.graphicsChoice.node),
+                            row('Fullscreen', this.fullscreenChoice.node),
+                            row('FPS & ping', this.statsChoice.node)
+                        ])
+                    ]),
+                    el('div.pause-column', {}, [
+                        section('Gameplay', [
+                            row('Camera', this.cameraButton),
+                            row('Sights (hold right click)', this.sightsChoice.node),
+                            this.randomRow
+                        ])
+                    ])
+                ]),
+                el('button.btn.primary', { type: 'button', text: 'Back', onclick: () => this.showPage('main') })
+            ]),
+            help: el('div.pause-page.pause-help', {}, [
+                el('h2', { text: 'HELP & CONTROLS' }),
+                this.helpList = el('div'),
+                el('button.btn.primary', { type: 'button', text: 'Back', onclick: () => this.showPage('main') })
+            ])
+        };
+        this.root = el('div.overlay.dim.pause.hidden', {}, Object.values(this.pages));
+        this.showPage('main');
         root.append(this.root);
     }
 
@@ -87,9 +94,8 @@ export class PauseMenu {
         this.helpList.replaceChildren(renderControls(groups));
     }
 
-    showHelp(on) {
-        this.help.classList.toggle('hidden', !on);
-        this.main.classList.toggle('hidden', on);
+    showPage(id) {
+        for (const [name, page] of Object.entries(this.pages)) page.classList.toggle('hidden', name !== id);
     }
 
     setTitle(text) {
@@ -97,36 +103,19 @@ export class PauseMenu {
     }
 
     setCameraLabel(label) {
-        this.cameraButton.textContent = `Camera: ${label}`;
+        this.cameraButton.textContent = label;
     }
 
-    updateGraphicsLabel() {
-        this.graphicsButton.textContent = `Graphics: ${this.graphics === 'low' ? 'LOW (fast)' : 'HIGH'}`;
-    }
-
-    // Turned on from outside (the Play Fullscreen button at the start)
+    // Turned on from outside too (the Play Fullscreen button at the start)
     setFullscreen(on) {
-        this.fullscreen = on;
-        this.updateFullscreenLabel();
-    }
-
-    updateFullscreenLabel() {
-        this.fullscreenButton.textContent = `Fullscreen: ${this.fullscreen ? (canLockKeys ? 'ON (Ctrl+W safe)' : 'ON') : 'OFF'}`;
-    }
-
-    updateStatsLabel() {
-        this.statsButton.textContent = `FPS & Ping: ${this.showStats ? 'ON' : 'OFF'}`;
-    }
-
-    updateSightsLabel() {
-        this.sightsButton.textContent = `Sights (hold right click): ${this.sights ? 'ON' : 'OFF'}`;
+        this.fullscreenChoice.set(onOff(on));
     }
 
     // true / false, or null to hide the switch (not Deathmatch)
     setRandomGuns(on) {
         this.randomGuns = on;
-        this.randomButton.classList.toggle('hidden', on === null);
-        if (on !== null) this.randomButton.textContent = `Random guns: ${on ? 'ON' : 'OFF'}`;
+        this.randomRow.classList.toggle('hidden', on === null);
+        if (on !== null) this.randomChoice.set(onOff(on));
     }
 
     get visible() {
@@ -134,7 +123,7 @@ export class PauseMenu {
     }
 
     show() {
-        this.showHelp(false);
+        this.showPage('main');
         this.root.classList.remove('hidden');
     }
 

@@ -5,7 +5,7 @@ import { S2C } from '../../shared/protocol.js';
 import { drawDirt, textureDataUrl } from '../world/textures.js';
 import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
-import { el } from './dom.js';
+import { el, choice } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
 import { canLockKeys } from '../input/fullscreen.js';
 import { SHOP_CONTROLS, controlGroups } from './controls.js';
@@ -16,19 +16,6 @@ const CONTROLS = controlGroups(allClientFeatures(), [['B', 'Buy menu (in modes t
 const TABS = [['player', 'Player'], ['game', 'Game'], ['options', 'Options']];
 const ONLINE_ACTIONS = [['quick', 'Quick Play'], ['join', 'Join room'], ['create', 'Create room']];
 const PLAY_LABELS = { quick: 'Quick Play', offline: 'Play Offline', create: 'Create & Join', join: 'Pick a room' };
-
-// A row of buttons where exactly one is on: [[value, label]]
-function choice(options, onPick) {
-    const buttons = options.map(([value, label]) => {
-        const button = el('button.btn.menu-choice', { type: 'button', text: label, onclick: () => onPick(value) });
-        button.dataset.value = value;
-        return button;
-    });
-    return {
-        node: el('div.menu-choices', {}, buttons),
-        set: value => buttons.forEach(b => b.classList.toggle('selected', b.dataset.value === value))
-    };
-}
 
 // The start screen, laid out like a CS 1.6 dialog: Player (name, character), Game (online or
 // offline, quick play / rooms, mode and map) and Options tabs, with Play always at the bottom.

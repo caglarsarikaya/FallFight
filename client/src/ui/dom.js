@@ -17,6 +17,19 @@ export function el(spec, attrs = {}, children = []) {
     return node;
 }
 
+// A row of buttons where exactly one is on: [[value, label]]
+export function choice(options, onPick) {
+    const buttons = options.map(([value, label]) => {
+        const button = el('button.btn.menu-choice', { type: 'button', text: label, onclick: () => onPick(value) });
+        button.dataset.value = value;
+        return button;
+    });
+    return {
+        node: el('div.menu-choices', {}, buttons),
+        set: value => buttons.forEach(b => b.classList.toggle('selected', b.dataset.value === value))
+    };
+}
+
 // Re-trigger a CSS "show" flash
 export function flash(node, className = 'show', duration = 120) {
     node.classList.add(className);
