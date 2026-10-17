@@ -82,9 +82,8 @@ test('Deathmatch: a picked gun keeps its sight into the next life', () => {
     // A sight on a random gun goes with it
     assert.ok(room.mode.buy(p, sightItem('reddot', WEAPON_SLOT.SECONDARY)).ok);
     assert.equal(p.randomGuns, true);
-    const randomPistol = p.inventory.hotbar[WEAPON_SLOT.SECONDARY];
     newLife();
-    if (p.inventory.hotbar[WEAPON_SLOT.SECONDARY] === randomPistol) assert.deepEqual(p.inventory.sights, {});
+    assert.deepEqual(p.inventory.sights, {});
 
     // A picked gun keeps its sight
     assert.ok(room.mode.buy(p, 'ak47').ok);
