@@ -393,6 +393,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     display: block; left: -22px; top: -22px; width: 40px; height: 40px;
     background: transparent; border: 2px solid #ff2a2a; box-shadow: 0 0 3px rgba(255, 40, 40, 0.6);
 }
+/* Iron sights: a small bright dot on the front post tip */
+.reticle.iron i:first-child {
+    display: block; left: -2px; top: -2px; width: 4px; height: 4px;
+    background: #7dff7a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
 /* Reflex: a chevron, its tip on the aim point */
 .reticle.reflex i { display: block; background: #ff3b1f; width: 2px; height: 11px; top: 0; transform-origin: top center; }
 .reticle.reflex i:nth-child(1) { left: -1px; transform: rotate(40deg); }

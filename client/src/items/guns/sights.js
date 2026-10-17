@@ -40,6 +40,23 @@ export const SIGHT_MODELS = {
     }
 };
 
+// The riser every long gun's optic sits on: the sight rides high and the gun drops out of view
+export const RISER = 0.018;
+
+// How far to raise an optic on a riser: at least `minimum`, and enough that nothing on the gun
+// between it and the eye (rear sight, cocking handle) pokes into its window (the tallest centre
+// part behind the optic's front, against the window's bottom edge, with a 2 mm margin)
+export function opticLift(gun, optic, minimum = RISER) {
+    const [railY, railZ] = gun.rail;
+    const front = railZ + Math.min(...optic.parts.map(([, , d, , , z]) => z - d / 2));
+    const bottom = railY + optic.eye - optic.glass[1] / 2;
+    let top = -Infinity;
+    for (const [w, h, d, x, y, z] of gun.parts) {
+        if (Math.abs(x) - w / 2 < 0.01 && z + d / 2 > front) top = Math.max(top, y + h / 2);
+    }
+    return Math.max(minimum, top + 0.002 - bottom);
+}
+
 export const RETICLE_COLOR = { reddot: '#ff2a2a', reflex: '#ff3b1f', holo: '#ff2a2a' };
 
 // Buy menu icon (64 x 32): the window and its reticle, square pixels to match the voxel look

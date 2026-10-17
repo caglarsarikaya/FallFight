@@ -19,7 +19,7 @@ export class Hud {
         this.crosshair = el('div.crosshair', {}, [...['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)), this.reloadRing]);
         this.hitmarker = el('div.hitmarker');
         this.scope = el('div.scope.hidden', {}, [el('div.scope-h'), el('div.scope-v')]);
-        // Aiming down an optic: its reticle on the screen centre (iron sights need none)
+        // Aiming down an optic: its reticle on the screen centre (iron sights: a small dot)
         this.reticle = el('div.reticle.hidden', {}, [el('i'), el('i'), el('i')]);
         this.reticleShown = null;
         this.damageArcs = [];

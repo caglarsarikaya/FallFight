@@ -1352,7 +1352,7 @@ export class Game {
         const gap = 4 + (Math.tan(this.weapons.currentCone()) / Math.tan(halfFov)) * (window.innerHeight / 2);
         const sighted = this.cameraController.view.showsViewModel && aimT > 0.5;
         this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1 && !sighted, this.weapons.canFireNow);
-        this.hud.setReticle(sighted && aimT > 0.9 ? this.weapons.sightId : null);
+        this.hud.setReticle(sighted && aimT > 0.9 ? (this.weapons.sightId ?? 'iron') : null);
         this.hud.setReload(this.local.alive ? this.weapons.reloadStatus() : null);
         this.hud.update();
 

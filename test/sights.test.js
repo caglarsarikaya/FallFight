@@ -96,3 +96,26 @@ test('the server only lets sight guns aim, and drops it on reload and switch', (
     room.handleMessage('a', C2S.AIM, { on: true });
     assert.equal(p.gun.aiming, false);
 });
+
+test('long gun optics sit on a riser, and nothing on the gun pokes into their window', async () => {
+    const { GUN_MODELS } = await import('../client/src/items/guns/specs.js');
+    const { SIGHT_MODELS, RISER, opticLift } = await import('../client/src/items/guns/sights.js');
+    const { WEAPON_KIND } = await import('../shared/config/weapons.js');
+    for (const [id, gun] of Object.entries(GUN_MODELS)) {
+        if (!gun.rail) continue;
+        for (const sightId of WEAPONS[id]?.sights || []) {
+            const optic = SIGHT_MODELS[sightId];
+            const [railY, railZ] = gun.rail;
+            const pistol = WEAPONS[id].kind === WEAPON_KIND.PISTOL;
+            const lift = opticLift(gun, optic, pistol ? 0 : RISER);
+            if (!pistol) assert.ok(lift >= RISER, `${id} ${sightId} riser`);
+            const bottom = railY + lift + optic.eye - optic.glass[1] / 2;
+            const front = railZ + Math.min(...optic.parts.map(([, , d, , , z]) => z - d / 2));
+            for (const [w, h, d, x, y, z] of gun.parts) {
+                if (Math.abs(x) - w / 2 < 0.01 && z + d / 2 > front) assert.ok(y + h / 2 < bottom, `${id} ${sightId}`);
+            }
+        }
+    }
+    // The MP5's rear sight needs more than the plain riser
+    assert.ok(opticLift(GUN_MODELS.mp5, SIGHT_MODELS.reflex) > RISER);
+});

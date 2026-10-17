@@ -3,7 +3,7 @@ import { WEAPON_KIND, WEAPONS } from '../../../shared/config/weapons.js';
 import { ItemView } from '../ItemView.js';
 import { FLASH_TEXTURE } from '../../effects/GunEffects.js';
 import { GUN_MODELS, MATERIALS } from './specs.js';
-import { SIGHT_MODELS } from './sights.js';
+import { SIGHT_MODELS, RISER, opticLift } from './sights.js';
 
 const GLOVE = '#2a2522';
 const SLEEVE = '#3b4756';
@@ -113,9 +113,16 @@ export class GunView extends ItemView {
         let rearZ = this.model.iron[1];
         if (optic) {
             const [railY, railZ] = this.model.rail;
+            // Long guns on a riser; pistols only as high as they need (a tower on a slide looks wrong)
+            const lift = opticLift(this.model, optic, this.isPistol ? 0 : RISER);
             const group = new THREE.Group();
-            group.position.set(0, railY, railZ);
+            group.position.set(0, railY + lift, railZ);
             for (const [w, h, d, x, y, z, mat] of optic.parts) addBox(group, w, h, d, x, y, z, mat);
+            // A riser under the mount, down to the rail
+            if (lift > 0) {
+                const [mw, , md, mx, , mz] = optic.parts[0];
+                addBox(group, mw, lift, md, mx, -lift / 2, mz, 'black');
+            }
             glassMaterial ??= new THREE.MeshBasicMaterial({ color: '#bfe6ff', transparent: true, opacity: 0.12, depthWrite: false });
             const [gw, gh, , gy, gz] = optic.glass;
             const glass = new THREE.Mesh(unitBox, glassMaterial);
@@ -125,7 +132,7 @@ export class GunView extends ItemView {
             group.add(glass);
             model.add(group);
             holder.userData.sight = group;
-            sightY = railY + optic.eye;
+            sightY = railY + lift + optic.eye;
             rearZ = railZ + optic.rear;
         }
         const k = holder.userData.pose.scale;
@@ -157,12 +164,14 @@ export class GunView extends ItemView {
         const tags = model.userData.tags;
         // Down the sights the gun kicks less, so the sight stays near the target
         kick *= 1 - aim * 0.55;
-        // Recoil: back, up and a little twist, more for heavy guns
+        // Recoil: back, up and a little twist, more for heavy guns. Down the sights the gun sits
+        // right at the eye, where any move is huge on screen and tipping (it pivots on the grip)
+        // lifts the barrel into the sight window: there it only nudges, so the sight stays clear
         const heavy = this.spec.damage / 40;
-        model.position.z += kick * 0.06 * (0.6 + heavy * 0.6);
-        model.position.y += kick * 0.016;
-        model.rotation.x += kick * 0.11 * (0.5 + heavy * 0.7);
-        model.rotation.z += kick * 0.05 * roll;
+        model.position.z += kick * 0.06 * (0.6 + heavy * 0.6) * (1 - aim * 0.75);
+        model.position.y += kick * 0.016 * (1 - aim * 0.85);
+        model.rotation.x += kick * 0.11 * (0.5 + heavy * 0.7) * (1 - aim * 0.85);
+        model.rotation.z += kick * 0.05 * roll * (1 - aim * 0.7);
         if (tags.bolt) tags.bolt.position.z = tags.bolt.userData.rest.z + Math.max(0, Math.min(1, kick * 2)) * 0.04;
 
         if (reload !== null) {
