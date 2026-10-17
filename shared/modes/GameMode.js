@@ -125,6 +125,12 @@ export class GameMode {
 
     tick(_dt) {}
 
+    // After everyone moved this tick (bodies pushing apart...)
+    afterMovement(_dt) {}
+
+    // A block started cracking, broke or grew back: { type: 'cracking' | 'broken' | 'restored', ix, iy, iz }
+    onBlockChange(_event) {}
+
     // Broadcast to clients as MODE_STATE
     stateJSON() {
         return { mode: this.id };

@@ -88,18 +88,26 @@ export class FlowField {
 
     // Best spot to step to from feet position (ix, iz, y): { ix, iz, y } or null
     // (Standing on a cracking block, which the field skips, still finds the way off it.)
-    next(ix, iz, y) {
+    // cost(nx, nz, dx, dz), optional: extra cost of a step, so followers can spread over several
+    // equally short roads (a busy tile, a side they prefer, somewhere one of them just died). Only
+    // steps that get closer are ever taken, so a follower never goes round in circles.
+    next(ix, iz, y, cost = null) {
         let here = this.levelNear(ix, iz, Math.round(y));
         if (here < 0) here = this.arena.levelNear(ix, iz, Math.round(y)) ?? -1;
         if (here < 0) return null;
+        const hereDist = this.distanceAt(ix, iz, here);
         let best = null;
-        let bestDist = this.distanceAt(ix, iz, here);
+        let bestScore = Infinity;
+        let bestDist = hereDist;
         for (const [dx, dz] of DIRS) {
             const ny = this.levelNear(ix + dx, iz + dz, here);
             if (ny < 0) continue;
             if (dx && dz && (ny !== here || this.levelNear(ix + dx, iz, here) !== here || this.levelNear(ix, iz + dz, here) !== here)) continue;
             const d = this.distanceAt(ix + dx, iz + dz, ny);
-            if (d < bestDist) {
+            if (d >= hereDist) continue;
+            const score = cost ? d + cost(ix + dx, iz + dz, dx, dz) : d;
+            if (score < bestScore || (score === bestScore && d < bestDist)) {
+                bestScore = score;
                 bestDist = d;
                 best = { ix: ix + dx, iz: iz + dz, y: ny };
             }

@@ -5,6 +5,7 @@ import { ZombieBrain } from './ZombieBrain.js';
 import { buyItem } from '../../features/shop/Shop.js';
 import { isGun } from '../../config/weapons.js';
 import { GameMode } from '../GameMode.js';
+import { moveHorizontal } from '../../physics.js';
 
 const FLOW_INTERVAL = 0.5;       // seconds between flow field rebuilds
 const CORPSE_TIME = 2.5;         // a dead zombie lies there this long before it's removed
@@ -33,6 +34,8 @@ export class Zombies extends GameMode {
         super.reset();
         this.flow ??= new FlowField(this.room.arena);
         this.flowTimer = 0;
+        this.pack = { x: 0, z: 0, n: 0 };    // where the living zombies are on average (flankers go round it)
+        this.danger = new Map();             // tile index -> until when zombies avoid it (one fell there)
         this.wave = 0;
         this.phase = 'break';
         this.phaseEndsAt = this.room.time + ZOMBIES.firstWaveDelay;
@@ -135,6 +138,85 @@ export class Zombies extends GameMode {
         return best;
     }
 
+    // A zombie fell to its death round here not long ago
+    isDangerous(ix, iz) {
+        if (!this.danger.size) return false;
+        const until = this.danger.get(iz * this.room.arena.size + ix);
+        return until !== undefined && until > this.room.time;
+    }
+
+    markDanger(x, z) {
+        const arena = this.room.arena;
+        const { ix, iz } = arena.tileAt(x, z);
+        const until = this.room.time + ZOMBIES.brain.dangerTime;
+        for (let oz = -1; oz <= 1; oz++) {
+            for (let ox = -1; ox <= 1; ox++) {
+                const tx = ix + ox;
+                const tz = iz + oz;
+                if (tx >= 0 && tz >= 0 && tx < arena.size && tz < arena.size) this.danger.set(tz * arena.size + tx, until);
+            }
+        }
+    }
+
+    // The floor changed: the zombies rethink their roads right away rather than on the next rebuild
+    onBlockChange() {
+        this.flowTimer = Math.min(this.flowTimer, 0.05);
+    }
+
+    // After everyone moved: zombies' bodies push apart so they never stand inside each other (and
+    // their heads don't line up). Giants are heavy and hardly get pushed. A push that would put a
+    // zombie over a hole is skipped.
+    afterMovement() {
+        const room = this.room;
+        const r = ZOMBIES.brain.bodyRadius;
+        const pack = this.pack;
+        pack.x = pack.z = pack.n = 0;
+        for (const [id, brain] of room.npcs) {
+            const a = room.players.get(id);
+            if (!a?.alive || !a.isZombie) continue;
+            pack.x += a.x;
+            pack.z += a.z;
+            pack.n++;
+            room.crowd.forNeighbours(a, 1, b => {
+                if (!b.isZombie || !b.alive || a.id >= b.id || Math.abs(a.y - b.y) > 1.5) return;
+                const min = r * (a.scale || 1) + r * (b.scale || 1);
+                let dx = b.x - a.x;
+                let dz = b.z - a.z;
+                let d = Math.hypot(dx, dz);
+                if (d >= min) return;
+                if (d < 1e-4) {
+                    // Same spot: split along a direction that depends on who they are
+                    const angle = b.id.charCodeAt(b.id.length - 1) + a.id.length;
+                    dx = Math.cos(angle);
+                    dz = Math.sin(angle);
+                    d = 0;
+                } else {
+                    dx /= d;
+                    dz /= d;
+                }
+                const wa = a.isGiant ? 4 : 1;
+                const wb = b.isGiant ? 4 : 1;
+                const overlap = min - d;
+                this.nudge(a, brain, -dx * overlap * wb / (wa + wb), -dz * overlap * wb / (wa + wb));
+                this.nudge(b, room.npcs.get(b.id), dx * overlap * wa / (wa + wb), dz * overlap * wa / (wa + wb));
+            });
+        }
+        if (pack.n) {
+            pack.x /= pack.n;
+            pack.z /= pack.n;
+        }
+    }
+
+    nudge(p, brain, x, z) {
+        if (!brain || (p.onGround && !brain.groundAt(p.x + x, p.z + z))) return;
+        const vx = p.vx;
+        const vz = p.vz;
+        moveHorizontal(p, this.room.arena, 'x', x);
+        moveHorizontal(p, this.room.arena, 'z', z);
+        p.vx = vx;
+        p.vz = vz;
+    }
+
     // ---- waves -----------------------------------------------------------------------------
 
     waveStats(wave) {
@@ -214,7 +296,8 @@ export class Zombies extends GameMode {
             damage: Math.round(ZOMBIES.damage * (giant ? g.damage : 1)),
             attackInterval: ZOMBIES.attackInterval,
             reach: giant ? g.reach : ZOMBIES.reach,
-            gunner: gun ? ZOMBIES.gunner : null
+            gunner: gun ? ZOMBIES.gunner : null,
+            giant
         });
         this.room.npcs.set(id, brain);
         if (giant) {
@@ -278,10 +361,12 @@ export class Zombies extends GameMode {
         }
     }
 
-    onKill(victim, killer) {
+    onKill(victim, killer, cause) {
         this.dirty = true;
         if (victim.isZombie) {
             victim.diedAt = this.room.time;
+            // The others steer clear of the trap it walked into for a while
+            if (cause === 'fall') this.markDanger(victim.x, victim.z);
             this.kills++;
             if (killer) {
                 killer.score = killer.kills;

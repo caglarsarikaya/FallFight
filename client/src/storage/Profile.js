@@ -1,5 +1,6 @@
 import { DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../../shared/characters/definitions.js';
 import { DEFAULT_MODE, isValidMode } from '../../shared/modes/registry.js';
+import { canLockKeys } from '../input/fullscreen.js';
 
 const KEY = 'fallfight.profile.v1';
 
@@ -20,6 +21,7 @@ const DEFAULTS = {
     sensitivity: 1,
     showStats: true,    // FPS / ping / latency readout in the corner
     graphics: 'high',   // 'high' (shadows, sharper) or 'low' (for slow computers)
+    fullscreen: canLockKeys,   // play fullscreen with the keyboard locked, so Ctrl+W can't close the tab
     randomGuns: true    // Deathmatch: random guns every life, or keep the ones picked in the buy menu
 };
 
@@ -57,6 +59,7 @@ export class Profile {
                 sensitivity: this.sensitivity,
                 showStats: this.showStats,
                 graphics: this.graphics,
+                fullscreen: this.fullscreen,
                 randomGuns: this.randomGuns,
                 roomName: this.roomName,
                 roomMaxPlayers: this.roomMaxPlayers,

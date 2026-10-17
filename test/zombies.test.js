@@ -126,13 +126,16 @@ test('dead zombies drop loot that players can grab', () => {
     // Walk onto an armor or weapon drop
     const pickup = drops[0];
     a.armor = 0;
+    const home = { x: a.x, y: a.y, z: a.z };
     Object.assign(a, { x: pickup.x, y: pickup.baseY, z: pickup.z });
     room.tick(1 / 30);
+    Object.assign(a, home);   // and back, away from the rest of the loot
     const taken = room.eventsOf('pickupTaken').find(p => p.id === pickup.id);
     assert.equal(taken?.by, 'a');
     if (pickup.type === 'armor') assert.equal(a.armor, 100);
     if (pickup.type === 'weapon') assert.ok(a.inventory.has(pickup.weapon));
-    // Loot left on the floor disappears
+    // Loot left on the floor disappears (a fresh drop where the first ones were, away from the player)
+    room.mode.dropLoot({ x: pickup.x, y: pickup.baseY, z: pickup.z }, 'ammo');
     run(room, ZOMBIES.dropLife + 1);
     assert.ok(room.eventsOf('pickupTaken').filter(p => p.by === null).length > 0);
 });

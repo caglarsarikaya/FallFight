@@ -20,7 +20,32 @@ export const ZOMBIES = Object.freeze({
     // range, aim badly and never run out of ammo. Their gun is dropped when they die.
     gunner: {
         chance: 0.05, fromWave: 2, guns: ['glock', 'usp', 'mp5', 'ak47', 'm4a1'],
-        damageScale: 0.5, range: 30, reaction: [0.6, 1.0], aimError: 0.06, burst: [2, 5], burstPause: [0.8, 1.6]
+        damageScale: 0.5, range: 30, reactionTime: [0.6, 1.0], aimError: 0.06, shotJitter: 0.01, headChance: 0,
+        burst: [2, 5], burstPause: [0.8, 1.6], tapDelay: [0.4, 0.8],
+        keep: [8, 15]           // the distance they try to fight from, backing off when you close in
+    },
+    // How zombies think (shared/modes/zombies/ZombieBrain.js on top of shared/ai/Brain.js)
+    brain: {
+        // Hopping off a block that starts cracking under them: better at it as the waves go on, so
+        // floor traps work early and get harder later
+        dodgeChance: 0.2, dodgeChancePerWave: 0.04, dodgeChanceMax: 0.6, dodgeReaction: [0.02, 0.1],
+        // Under fire (hit in the last `memory` s, or a crosshair within aimMiss blocks of the chest):
+        // weave left and right, flipping every `flip` s, while still mostly coming at you
+        juke: { flip: [0.3, 0.8], memory: 1.0, aimMiss: 0.8, forward: 0.8 },
+        separation: { radius: 1.3, weight: 1.2 },   // steer away from other zombies this close
+        // Bodies push apart: never closer than their radii (scaled for giants)
+        bodyRadius: 0.32,
+        // Picking among equally short roads: a busy tile, a side this zombie prefers, a spot where
+        // one fell to its death in the last dangerTime s
+        crowdCost: 0.7, sideCost: 0.35, dangerCost: 3, dangerTime: 6,
+        // Some go round the side or behind you rather than straight in
+        flankers: 0.3, flank: { distance: [4, 7], replan: [1, 1.5], maxNodes: 1500, from: 9, closeIn: 3.5 },
+        // Close in from their own angle around you, not single file
+        surround: { range: 5, spread: 1.1 },
+        // Normal zombies and runners leap at you from a few blocks away
+        lunge: { range: [2.2, 3.6], speed: 1.9, up: 5, cooldown: [2.5, 4.5] },
+        // Out in front of the pack and facing an automatic gun: slow down for the others
+        packWait: { lead: 6, slow: 0.75, friends: 2 }
     },
     knockback: 0.3,         // how much a bullet's shove moves a zombie (giants: none)
     damage: 20,

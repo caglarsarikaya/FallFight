@@ -1,11 +1,14 @@
+import { enterGameFullscreen } from './fullscreen.js';
+
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
 // ('primary', down) ('secondary') ('reload') ('last') ('buy') ('quickbuy', kind) ('use', down) ('pause').
 // Crouch is C or Ctrl, walk is Shift, like CS. With the Zombies jetpack, Shift flies up and
 // Ctrl/C sinks instead. Jump is Space or the mouse wheel (either way), one
-// jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page, so the game
-// asks before the tab closes (see Game); other Ctrl shortcuts (and Ctrl+wheel zoom) are swallowed
-// while playing.
+// jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page outside
+// fullscreen, so taking the mouse also goes fullscreen with the keyboard locked (./fullscreen.js,
+// the Fullscreen setting); without that the game asks before the tab closes (see Game). Other Ctrl
+// shortcuts (and Ctrl+wheel zoom) are swallowed while playing.
 // Quick buys: N ammo, M kevlar + helmet, H health potions, G grenades
 const QUICK_BUY_KEYS = { KeyN: 'ammo', KeyM: 'armor', KeyH: 'potion', KeyG: 'grenades' };
 
@@ -20,6 +23,7 @@ export class InputManager {
         this.onLockChange = () => {};
         this.lockLostAt = -Infinity;
         this.jumpPressed = false;
+        this.fullscreen = () => false;   // go fullscreen (keys locked) when taking the mouse
 
         document.addEventListener('keydown', e => this.handleKey(e, true));
         document.addEventListener('keyup', e => this.handleKey(e, false));
@@ -71,6 +75,7 @@ export class InputManager {
     }
 
     requestLock() {
+        if (this.fullscreen()) enterGameFullscreen();
         const request = this.element.requestPointerLock?.();
         // Newer browsers return a promise that rejects if the user exited lock very recently
         if (request?.catch) request.catch(() => {});

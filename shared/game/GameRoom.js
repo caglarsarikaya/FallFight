@@ -11,6 +11,7 @@ import { weaponSpec } from '../config/weapons.js';
 import { CHARACTERS, DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../characters/definitions.js';
 import { stepMovement } from '../physics.js';
 import { BotBrain } from '../ai/BotBrain.js';
+import { Crowd } from '../ai/Crowd.js';
 import { PlayerState, freshGunState } from './PlayerState.js';
 import { Projectile } from './Projectile.js';
 import { PickupSpawner } from './PickupSpawner.js';
@@ -45,6 +46,7 @@ export class GameRoom {
         this.players = new Map();
         this.bots = new Map();          // id -> BotBrain (seat bots)
         this.npcs = new Map();          // id -> brain (monsters a mode brings)
+        this.crowd = new Crowd(this.arena);   // who stands on which tile, rebuilt every tick for the brains
         this.projectiles = new Map();
         this.smokes = [];               // smoke grenade clouds: { x, y, z, radius, until }
         this.mode = createMode(mode, this);
@@ -533,6 +535,7 @@ export class GameRoom {
     breakBlock(ix, iy, iz, player) {
         if (this.arena.startBreak(ix, iy, iz, player.id, this.time)) {
             this.emit(null, S2C.BLOCK_CRACKING, { ix, iy, iz, by: player.id });
+            this.mode.onBlockChange({ type: 'cracking', ix, iy, iz });
         }
     }
 
@@ -593,6 +596,7 @@ export class GameRoom {
                     if (Math.hypot(b.x - at.x, b.y - at.y, b.z - at.z) > blockRadius) continue;
                     if (this.arena.startBreak(ix, iy, iz, by, this.time)) {
                         this.emit(null, S2C.BLOCK_CRACKING, { ix, iy, iz, by });
+                        this.mode.onBlockChange({ type: 'cracking', ix, iy, iz });
                     }
                 }
             }
@@ -789,6 +793,7 @@ export class GameRoom {
 
         for (const event of this.arena.update(this.time, (ix, iy, iz) => this.isBlockOccupied(ix, iy, iz))) {
             this.emit(null, event.type === 'broken' ? S2C.BLOCK_BROKEN : S2C.BLOCK_RESTORED, { ix: event.ix, iy: event.iy, iz: event.iz });
+            this.mode.onBlockChange(event);
         }
         for (const pickup of this.pickups.removeUnsupported(this.arena)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
@@ -798,6 +803,7 @@ export class GameRoom {
         for (const f of this.features) f.tick(dt);
         if (this.matchOver && this.time >= this.matchOver.restartAt) this.restartMatch();
 
+        if (this.bots.size || this.npcs.size) this.crowd.rebuild(this.players);
         for (const [id, brain] of this.bots) {
             const bot = this.players.get(id);
             const input = brain.update(dt);
@@ -813,6 +819,7 @@ export class GameRoom {
             stepMovement(npc, input, this.arena, dt, this.ruleset, this.movementHooks);
             this.afterMove(npc);
         }
+        this.mode.afterMovement(dt);
         this.updateReloads();
         if (this.smokes.length && this.smokes[0].until <= this.time) this.smokes = this.smokes.filter(s => s.until > this.time);
 

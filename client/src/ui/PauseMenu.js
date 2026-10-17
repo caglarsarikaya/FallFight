@@ -1,8 +1,10 @@
 import { el } from './dom.js';
+import { canLockKeys } from '../input/fullscreen.js';
 
-// Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, stats overlay, leave
+// Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, fullscreen,
+// stats overlay, leave
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onGraphics, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onGraphics, onFullscreen, onLeave }) {
         this.graphics = profile.graphics;
         this.graphicsButton = el('button.btn', {
             type: 'button',
@@ -13,6 +15,16 @@ export class PauseMenu {
             }
         });
         this.updateGraphicsLabel();
+        this.fullscreen = profile.fullscreen;
+        this.fullscreenButton = el('button.btn', {
+            type: 'button',
+            onclick: () => {
+                this.fullscreen = !this.fullscreen;
+                this.updateFullscreenLabel();
+                onFullscreen(this.fullscreen);
+            }
+        });
+        this.updateFullscreenLabel();
         this.cameraButton = el('button.btn', { type: 'button', onclick: () => onToggleCamera() });
         this.showStats = profile.showStats;
         this.statsButton = el('button.btn', {
@@ -38,6 +50,7 @@ export class PauseMenu {
             el('div.setting', {}, [el('span.label', { text: 'SOUND' }), this.volume]),
             el('div.setting', {}, [el('span.label', { text: 'MOUSE SENSITIVITY' }), this.sensitivity]),
             this.graphicsButton,
+            this.fullscreenButton,
             this.statsButton,
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
@@ -54,6 +67,10 @@ export class PauseMenu {
 
     updateGraphicsLabel() {
         this.graphicsButton.textContent = `Graphics: ${this.graphics === 'low' ? 'LOW (fast)' : 'HIGH'}`;
+    }
+
+    updateFullscreenLabel() {
+        this.fullscreenButton.textContent = `Fullscreen: ${this.fullscreen ? (canLockKeys ? 'ON (Ctrl+W safe)' : 'ON') : 'OFF'}`;
     }
 
     updateStatsLabel() {

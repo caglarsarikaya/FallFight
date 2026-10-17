@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { registerPickupLook } from '../../entities/PickupView.js';
 import { ClientFeature } from '../ClientFeature.js';
+import { canLockKeys, keysLocked } from '../../input/fullscreen.js';
 
 const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
@@ -36,6 +37,11 @@ export class JetpackClient extends ClientFeature {
                     if (by === game.selfId) game.sound.play('armorUp');
                     game.hud.toast(by === game.selfId ? '🚀 Jetpack! Shift up · Ctrl down · WASD to fly'
                         : `${game.players.get(by)?.name || 'Someone'} has the jetpack!`);
+                    // Ctrl + W closes the tab unless the keys are locked in fullscreen
+                    if (by === game.selfId && !keysLocked()) {
+                        game.hud.toast(canLockKeys ? "Tip: turn on Fullscreen (Esc menu) so Ctrl+W can't close the tab"
+                            : 'Tip: Ctrl+W closes the tab in this browser; Chrome or Edge fullscreen blocks it');
+                    }
                 }
             }
         };

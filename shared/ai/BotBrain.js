@@ -1,7 +1,7 @@
 import { PLAYER } from '../constants.js';
-import { KNIFE, WEAPON_KIND, WEAPON_SLOT, weaponSpec } from '../config/weapons.js';
+import { KNIFE, WEAPON_KIND, WEAPON_SLOT } from '../config/weapons.js';
 import { normalize, yawTowards } from '../math.js';
-import { BLOCK_STATE } from '../world/Arena.js';
+import { Brain, rand } from './Brain.js';
 import { Pathfinder } from './Pathfinder.js';
 
 // Bot tuning (distances in blocks, times in seconds)
@@ -23,6 +23,11 @@ export const BOT_SETTINGS = {
     retargetInterval: 2.5,
     crowdPenalty: 4,             // prefer targets other bots aren't already chasing
     dodgeChance: 0.8,
+    dodgeReaction: [0.3, 0.55],
+    // Under fire (hit in the last `memory` s, or someone's crosshair within aimMiss blocks of us):
+    // side-step, flipping every `flip` s; sometimes hop or duck
+    juke: { flip: [0.25, 0.7], memory: 1.2, aimMiss: 0.9, forward: 0.35, hop: 0.2, duck: 0.15 },
+    separation: { radius: 1.5, weight: 0.6 },
     replanInterval: 0.5,
     // Pickup racing
     pickupNotice: [0.3, 0.9],    // how long after a pickup appears before this bot reacts
@@ -36,29 +41,20 @@ export const BOT_SETTINGS = {
     sniperStay: [15, 25]
 };
 
-const rand = (rng, [min, max]) => min + rng() * (max - min);
-const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
 const idle = () => ({ moveX: 0, moveZ: 0, jump: false });
 
 // Decides what a bot does each tick. Movement is returned as input for shared physics;
-// attacks go through the same GameRoom actions human players use.
-export class BotBrain {
+// attacks go through the same GameRoom actions human players use. Senses, shooting, juking and
+// dodging are shared with the zombies (./Brain.js).
+export class BotBrain extends Brain {
     constructor(room, player, rng) {
-        this.room = room;
-        this.player = player;
-        this.rng = rng;
+        super(room, player, rng, BOT_SETTINGS);
         this.pathfinder = new Pathfinder(room.arena);
         this.targetId = null;
         this.retargetAt = 0;
-        this.seenTargetId = null;     // target in sight (the reaction time applies when it changes)
         this.nextShotAt = 1 + rng() * 2;
-        this.burstLeft = 0;
-        this.aimOffset = { yaw: 0, pitch: 0, head: false };
-        this.seq = 0;
         this.trapMode = false;
-        this.strafeDir = rng() < 0.5 ? 1 : -1;
-        this.dodge = null;
-        this.handledCrackKey = null;
+        this.duckUntil = 0;
         this.noticeDelay = rand(rng, BOT_SETTINGS.pickupNotice);
         this.pickupId = null;
         this.pickupThinkAt = 0;
@@ -67,14 +63,6 @@ export class BotBrain {
         this.replanAt = 0;
         this.sniper = null;          // { perch, until } while heading to / holding a sniper tower top
         this.sniperThinkAt = 2 + rng() * BOT_SETTINGS.sniperThink;
-    }
-
-    get now() {
-        return this.room.time;
-    }
-
-    get arena() {
-        return this.room.arena;
     }
 
     update(_dt) {
@@ -118,8 +106,10 @@ export class BotBrain {
         const visible = this.hasLineOfSight(target);
         if (!knifeOnly && visible && dist <= range) {
             this.shoot(target, dist);
-            // Snipers, and rifles at range, stand still to shoot accurately; the rest strafe
+            // Snipers, and rifles at range, stand still to shoot accurately; the rest strafe.
+            // Being shot at beats accuracy: everyone dances then.
             const still = spec.kind === WEAPON_KIND.SNIPER || spec.kind === WEAPON_KIND.LAUNCHER || (spec.kind === WEAPON_KIND.RIFLE && dist > 15);
+            if (this.underFire()) return this.evade(target, dist);
             return still ? idle() : this.strafe(target, dist, 0.45);
         }
         if (!visible) this.seenTargetId = null;
@@ -127,10 +117,6 @@ export class BotBrain {
     }
 
     // ---- weapons ------------------------------------------------------------------------
-
-    get weapon() {
-        return weaponSpec(this.player.inventory.selectedId);
-    }
 
     ammoOf(slot) {
         const id = this.player.inventory.hotbar[slot];
@@ -162,57 +148,6 @@ export class BotBrain {
             return;
         }
         if (inv.selected !== WEAPON_SLOT.KNIFE) this.room.select(bot, WEAPON_SLOT.KNIFE);
-    }
-
-    // Aim at the chest (sometimes the head) with a per-burst error and a little per-shot jitter
-    aimAt(target, dist) {
-        const bot = this.player;
-        const eye = bot.eye;
-        const scale = target.crouching ? PLAYER.crouchHeight / PLAYER.height : 1;
-        // Rockets go at the feet: a near miss still blows up the floor under them
-        const launcher = this.weapon?.kind === WEAPON_KIND.LAUNCHER;
-        const y = target.y + (launcher ? 0.3 : (this.aimOffset.head ? 1.62 : 1.15) * scale);
-        const lead = Math.min(0.12, dist / 300);
-        const dir = normalize({ x: target.x + target.vx * lead - eye.x, y: y - eye.y, z: target.z + target.vz * lead - eye.z });
-        const j = BOT_SETTINGS.shotJitter;
-        const yaw = Math.atan2(-dir.x, -dir.z) + this.aimOffset.yaw + (this.rng() - 0.5) * j;
-        const pitch = Math.asin(Math.max(-1, Math.min(1, dir.y))) + this.aimOffset.pitch + (this.rng() - 0.5) * j;
-        bot.pitch = pitch;
-        return { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
-    }
-
-    newBurst(spec) {
-        const e = BOT_SETTINGS.aimError;
-        this.aimOffset = {
-            yaw: (this.rng() + this.rng() - 1) * e,
-            pitch: (this.rng() + this.rng() - 1) * e * 0.7,
-            head: this.rng() < BOT_SETTINGS.headChance
-        };
-        this.burstLeft = spec.auto ? Math.round(rand(this.rng, BOT_SETTINGS.burst)) : 1;
-    }
-
-    shoot(target, dist) {
-        const bot = this.player;
-        const spec = this.weapon;
-        if (!spec || spec.kind === WEAPON_KIND.KNIFE) return;
-        // React to a target that just came into view
-        if (this.seenTargetId !== target.id) {
-            this.seenTargetId = target.id;
-            this.nextShotAt = Math.max(this.nextShotAt, this.now + rand(this.rng, BOT_SETTINGS.reactionTime));
-            this.burstLeft = 0;
-        }
-        if (spec.scope && bot.gun.scoped === 0 && dist > 8) this.room.setScope(bot, 1);
-        if (this.now < this.nextShotAt) return;
-        if (this.burstLeft <= 0) this.newBurst(spec);
-
-        const dir = this.aimAt(target, dist);
-        if (!this.room.fire(bot, { slot: bot.inventory.selected, seq: ++this.seq, dir, t: this.now })) return;
-        this.burstLeft--;
-        if (this.burstLeft <= 0) {
-            this.nextShotAt = this.now + (spec.auto
-                ? rand(this.rng, BOT_SETTINGS.burstPause)
-                : spec.interval + rand(this.rng, BOT_SETTINGS.tapDelay));
-        }
     }
 
     knife(target) {
@@ -323,48 +258,6 @@ export class BotBrain {
         if (slot >= 0) this.room.useItem(bot, slot, { x: 0, y: -1, z: 0 });
     }
 
-    hasLineOfSight(target) {
-        const eye = this.player.eye;
-        const to = { x: target.x - eye.x, y: target.y + 1.2 - eye.y, z: target.z - eye.z };
-        const dist = Math.hypot(to.x, to.y, to.z);
-        return !this.arena.raycast(eye, normalize(to), dist) && !this.room.smokeBlocks(eye, to);
-    }
-
-    // React to the block under its feet cracking by jumping to a safe neighbour
-    updateDodge() {
-        const bot = this.player;
-        const arena = this.arena;
-        const under = arena.supportBlock(bot.x, bot.y, bot.z, 0);
-        const key = under ? `${under.ix},${under.iy},${under.iz}` : null;
-
-        if (!this.dodge && bot.onGround && under && arena.stateAt(under.ix, under.iy, under.iz) === BLOCK_STATE.CRACKING && this.handledCrackKey !== key) {
-            this.handledCrackKey = key;
-            if (this.rng() < BOT_SETTINGS.dodgeChance) {
-                const options = NEIGHBOURS
-                    .map(([ox, oz]) => ({ ix: under.ix + ox, iz: under.iz + oz }))
-                    .filter(t => this.isSafeStep(t.ix, t.iz));
-                if (options.length) {
-                    const pick = options[Math.floor(this.rng() * options.length)];
-                    this.dodge = {
-                        at: this.now + rand(this.rng, BOT_SETTINGS.reactionTime),
-                        until: this.now + 0.9,
-                        target: arena.tileCenter(pick.ix, pick.iz)
-                    };
-                }
-            }
-        }
-        if (!this.dodge) return null;
-        if (this.now < this.dodge.at) return idle();
-        const dx = this.dodge.target.x - bot.x;
-        const dz = this.dodge.target.z - bot.z;
-        const d = Math.hypot(dx, dz);
-        if (this.now > this.dodge.until || d < 0.2) {
-            this.dodge = null;
-            return null;
-        }
-        return { moveX: dx / d, moveZ: dz / d, jump: true };
-    }
-
     // With a rifle or sniper, climb a sniper tower when things are quiet and hold it for a while
     updateSniper(target, targetDist) {
         const bot = this.player;
@@ -437,13 +330,6 @@ export class BotBrain {
 
     // ---- movement -----------------------------------------------------------------------
 
-    // A tile the bot can step onto from where it stands: stable, not higher, not a deadly drop
-    isSafeStep(ix, iz) {
-        const y = this.player.y;
-        const h = this.arena.levelNear(ix, iz, Math.round(y));
-        return h !== null && h <= y + 0.5 && h >= y - 3 && this.arena.isStable(ix, h, iz);
-    }
-
     safeAt(x, z) {
         const { ix, iz } = this.arena.tileAt(x, z);
         return this.isSafeStep(ix, iz);
@@ -501,20 +387,41 @@ export class BotBrain {
     circle(target, dist, preferred) {
         const dx = (target.x - this.player.x) / (dist || 1);
         const dz = (target.z - this.player.z) / (dist || 1);
-        if (this.rng() < 0.02) this.strafeDir *= -1;
+        const side = this.jukeSide();
         const radial = dist > preferred + 0.4 ? 1 : dist < preferred - 0.4 ? -1 : 0;
-        const wx = dx * radial + -dz * this.strafeDir * 0.6;
-        const wz = dz * radial + dx * this.strafeDir * 0.6;
+        const wx = dx * radial + -dz * side * 0.6;
+        const wz = dz * radial + dx * side * 0.6;
         const len = Math.hypot(wx, wz);
         return len > 0.01 ? this.steer(wx / len, wz / len) : idle();
     }
 
+    // Side-step while shooting, away from teammates standing too close
     strafe(target, dist, amount) {
         const dx = (target.x - this.player.x) / (dist || 1);
         const dz = (target.z - this.player.z) / (dist || 1);
-        if (this.rng() < 0.02) this.strafeDir *= -1;
-        const input = this.steer(-dz * this.strafeDir, dx * this.strafeDir);
+        const side = this.jukeSide();
+        const sep = this.separation();
+        const w = BOT_SETTINGS.separation.weight;
+        const wx = -dz * side + sep.x * w;
+        const wz = dx * side + sep.z * w;
+        const len = Math.hypot(wx, wz) || 1;
+        const input = this.steer(wx / len, wz / len);
         return { moveX: input.moveX * amount, moveZ: input.moveZ * amount, jump: false };
+    }
+
+    // Under fire: full-speed side-steps on an uneven rhythm, now and then a hop or a duck as the
+    // direction changes, so the crosshair has to keep chasing
+    evade(target, dist) {
+        const j = BOT_SETTINGS.juke;
+        const flipAt = this.jukeFlipAt;
+        const input = this.strafe(target, dist, 1);
+        if (this.jukeFlipAt !== flipAt) {
+            const r = this.rng();
+            input.jump = r < j.hop && this.player.onGround;
+            if (!input.jump && r < j.hop + j.duck) this.duckUntil = this.now + 0.35;
+        }
+        input.crouch = this.now < this.duckUntil;
+        return input;
     }
 
     // Pick the safe direction closest to the wanted one

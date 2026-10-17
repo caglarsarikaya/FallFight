@@ -7,6 +7,7 @@ import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
 import { el } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
+import { canLockKeys } from '../input/fullscreen.js';
 
 const CONTROLS = [
     ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space, wheel', 'Jump'],
@@ -216,6 +217,7 @@ export class MainMenu {
         this.graphicsChoice = setting('graphics', [['high', 'High'], ['low', 'Low (fast)']]);
         this.cameraChoice = setting('cameraMode', [['first', 'First person'], ['third', 'Third person']]);
         this.statsChoice = setting('showStats', [['on', 'On'], ['off', 'Off']]);
+        this.fullscreenChoice = setting('fullscreen', [['on', canLockKeys ? 'On (Ctrl+W safe)' : 'On'], ['off', 'Off']]);
         this.refreshOptions();
 
         const row = (label, control) => el('div.menu-setting', {}, [el('span.menu-label', { text: label }), control]);
@@ -225,7 +227,8 @@ export class MainMenu {
                 row('Mouse sensitivity', this.sensitivityInput),
                 row('Graphics', this.graphicsChoice.node),
                 row('Camera', this.cameraChoice.node),
-                row('FPS & ping', this.statsChoice.node)
+                row('FPS & ping', this.statsChoice.node),
+                row('Fullscreen', this.fullscreenChoice.node)
             ]),
             el('div.menu-column', {}, [
                 el('div.menu-label', { text: 'Controls' }),
@@ -241,6 +244,7 @@ export class MainMenu {
         this.graphicsChoice.set(this.profile.graphics);
         this.cameraChoice.set(this.profile.cameraMode);
         this.statsChoice.set(this.profile.showStats ? 'on' : 'off');
+        this.fullscreenChoice.set(this.profile.fullscreen ? 'on' : 'off');
     }
 
     showTab(id, withSound = true) {

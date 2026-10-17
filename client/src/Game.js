@@ -31,6 +31,7 @@ import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { BuyMenu } from './ui/BuyMenu.js';
 import { el } from './ui/dom.js';
+import { exitGameFullscreen } from './input/fullscreen.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
 const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet' };
@@ -80,13 +81,15 @@ export class Game {
         this.profile = profile;
         this.sound = sound;
         this.onEditProfile = onEditProfile;
-        // Ctrl crouches, and Ctrl+W (crouch + forward) would close the tab: ask first while playing
+        // Ctrl crouches (and sinks while flying), and Ctrl+W (with forward) would close the tab:
+        // fullscreen locks the keys (./input/fullscreen.js); otherwise ask first while playing
         this.leaveGuard = e => {
             e.preventDefault();
             e.returnValue = '';
         };
         this.onLeave = () => {
             window.removeEventListener('beforeunload', this.leaveGuard);
+            exitGameFullscreen();
             onLeave();
         };
 
@@ -109,6 +112,7 @@ export class Game {
         this.spectate = null;           // { id, view: 'chase' | 'eye', startAt }
         this.spectateEye = { x: 0, y: 0, z: 0 };
         this.input = new InputManager(this.renderer.domElement);
+        this.input.fullscreen = () => profile.fullscreen;
         this.local = new LocalPlayerController();
         this.weapons = new WeaponController(this);
 
@@ -150,6 +154,12 @@ export class Game {
                 profile.graphics = v;
                 profile.save();
                 this.applyGraphics();
+            },
+            // On takes effect with the click back into the game
+            onFullscreen: v => {
+                profile.fullscreen = v;
+                profile.save();
+                if (!v) exitGameFullscreen();
             },
             onLeave: () => this.onLeave()
         });
