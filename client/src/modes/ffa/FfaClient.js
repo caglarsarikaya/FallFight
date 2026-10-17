@@ -7,7 +7,7 @@ import { ClientMode } from '../ClientMode.js';
 // keeping the guns picked there
 export class FfaClient extends ClientMode {
     static id = 'ffa';
-    static controls = ['B free guns · N ammo · M kevlar · H potions · G grenades'];
+    static menuControls = [['B', 'Free guns menu'], ['N', 'Ammo'], ['M', 'Kevlar + helmet'], ['H', '2 potions'], ['G', 'HE + smoke']];
 
     get hasShop() {
         return true;

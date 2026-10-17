@@ -11,7 +11,6 @@ const SPARKLE_EVERY = 0.08;
 // down our own time, and the sounds of it coming and going
 export class AngelClient extends ClientFeature {
     static id = 'angel';
-    static controls = ['8 angel'];
     static menuControls = [['8', 'Angel: 15 s untouchable, if you carry one']];
 
     constructor(game) {

@@ -7,7 +7,6 @@ import { ReviveEffects } from './ReviveEffects.js';
 // and the light coming down on the body for everyone to see
 export class ReviveClient extends ClientFeature {
     static id = 'revive';
-    static controls = ['E revive'];
     static menuControls = [['E (hold)', 'Revive a fallen teammate']];
 
     constructor(game) {

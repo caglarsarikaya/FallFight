@@ -3,9 +3,11 @@ import { weaponSpec } from '../../shared/config/weapons.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
 import { el, flash } from './dom.js';
+import { renderControls } from './controls.js';
 
 const MAX_DAMAGE_ARCS = 4;
 const STACKED = ['health_potion', 'hegrenade', 'smokegrenade'];   // counted items: shown even when out
+const HELP_SECONDS = 5;     // the controls stay this long after play starts
 
 // Heads-up display, laid out like CS 1.6: health and armor bottom left, ammo bottom right,
 // a crosshair that opens up with inaccuracy, kill feed top right, and a weapon bar bottom centre
@@ -67,10 +69,7 @@ export class Hud {
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
         this.helpHint = el('div.help-hint');
-        this.setHelp([]);
-        setTimeout(() => {
-            this.helpHint.style.opacity = '0';
-        }, 14000);
+        this.helpFading = false;
 
         this.root = el('div.hud', {}, [
             this.underwater, this.smoke, this.scope, this.reticle, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
@@ -299,14 +298,18 @@ export class Hud {
         this.progressFill.style.width = `${(Math.min(1, status.progress) * 100).toFixed(1)}%`;
     }
 
-    // The controls line shown for a while at the start: the core keys plus the mode's and the
-    // features' own (["E use", ...])
-    setHelp(extra) {
-        this.helpHint.textContent = [
-            'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab/hold to aim · R reload · 1-5 / Q weapons · 6 / 7 grenades',
-            ...extra,
-            'V camera · Tab scores · Esc menu'
-        ].join(' · ');
+    // The controls shown at the start, grouped (ui/controls.js)
+    setHelp(groups) {
+        this.helpHint.replaceChildren(renderControls(groups));
+    }
+
+    // Play started: the controls fade out a few seconds later (the Esc menu has them for good)
+    startHelpFade() {
+        if (this.helpFading) return;
+        this.helpFading = true;
+        setTimeout(() => {
+            this.helpHint.style.opacity = '0';
+        }, HELP_SECONDS * 1000);
     }
 
     // Hit confirmation: a small white X, shown at full strength, then faded by update() every frame

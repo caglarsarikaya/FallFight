@@ -1,5 +1,6 @@
 import { TEAM_BUY, TEAM_BUY_EVENTS } from '../../../shared/modes/teambuy/config.js';
 import { el } from '../../ui/dom.js';
+import { SHOP_CONTROLS } from '../../ui/controls.js';
 import { ClientMode } from '../ClientMode.js';
 
 function formatTime(seconds) {
@@ -11,7 +12,7 @@ function formatTime(seconds) {
 // watching your team after you die
 export class TeamBuyClient extends ClientMode {
     static id = 'teambuy';
-    static controls = ['B buy · N ammo · M kevlar · H potions · G grenades'];
+    static menuControls = SHOP_CONTROLS;
 
     get events() {
         const game = this.game;

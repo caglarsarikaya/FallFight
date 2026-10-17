@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
 // World-space gunfire effects, all pooled and instanced: bullet tracers, bullet holes on blocks,
-// blood pools under kills, smoke grenade clouds, and muzzle flashes (a sprite plus one shared
+// blood pools under kills, spent casings that bounce and lie on the floor, smoke grenade clouds,
+// and muzzle flashes (a sprite plus one shared
 // light that is always in the scene, so firing never changes the light count and forces a shader
 // recompile).
 
@@ -17,6 +18,10 @@ const SMOKE_PUFFS = 16;     // sprites per smoke cloud
 const MAX_SMOKES = 3;       // clouds at once (a fourth replaces the oldest)
 const SMOKE_GROW = 1.5;     // seconds for a cloud to billow out
 const SMOKE_FADE = 3;       // seconds it thins out at the end
+const MAX_CASINGS = 96;     // the oldest is reused
+const CASING_LIFE = 6;      // seconds a casing lies on the floor
+const CASING_RADIUS = 0.012;
+const CASING_GRAVITY = 12;
 
 function radialTexture(stops, size = 64) {
     const canvas = document.createElement('canvas');
@@ -171,6 +176,32 @@ export class GunEffects {
             this.smokes.push({ puffs, active: false, x: 0, y: 0, z: 0, radius: 0, born: 0, until: 0 });
         }
         this.nextSmoke = 0;
+        // Spent casings: brass tubes (length along X) that tumble, bounce on blocks and lie there
+        const casingGeometry = new THREE.CylinderGeometry(CASING_RADIUS, CASING_RADIUS, 0.06, 6);
+        casingGeometry.rotateZ(Math.PI / 2);
+        this.casingMesh = new THREE.InstancedMesh(casingGeometry, new THREE.MeshStandardMaterial({
+            color: '#d4a945', metalness: 0.7, roughness: 0.35
+        }), MAX_CASINGS);
+        this.casingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.casingMesh.frustumCulled = false;
+        this.casingMesh.count = 0;
+        scene.add(this.casingMesh);
+        this.casings = [];
+        for (let i = 0; i < MAX_CASINGS; i++) {
+            this.casings.push({
+                active: false, resting: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+                quat: new THREE.Quaternion(), spinAxis: new THREE.Vector3(), spinRate: 0,
+                size: 1, born: 0, bounces: 0, block: null
+            });
+        }
+        this.nextCasing = 0;
+        this.spin = new THREE.Quaternion();
+        this.dummy.scale.setScalar(0);
+        this.dummy.updateMatrix();
+        for (let i = 0; i < MAX_CASINGS; i++) this.casingMesh.setMatrixAt(i, this.dummy.matrix);
+        this.casingMesh.count = MAX_CASINGS;
+        this.arena = null;              // set by Game: what casings bounce on
+        this.onCasingBounce = null;     // (position) => the tink of brass on the floor
         this.light = new THREE.PointLight('#ffb050', 0, 9, 2);
         scene.add(this.light);
         this.lightLife = 0;
@@ -224,8 +255,111 @@ export class GunEffects {
         this.bloodMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // A block broke: its bullet holes and blood go with it
+    // A spent casing thrown out at `pos` with velocity `vel` (blocks per second), size 1 = rifle
+    casing(pos, vel, size = 1) {
+        const c = this.casings[this.nextCasing];
+        this.nextCasing = (this.nextCasing + 1) % MAX_CASINGS;
+        c.active = true;
+        c.resting = false;
+        c.pos.set(pos.x, pos.y, pos.z);
+        c.vel.set(vel.x, vel.y, vel.z);
+        // Across the throw, so it flips end over end on the way down
+        c.quat.setFromAxisAngle(this.tmp.set(0, 1, 0), Math.atan2(-vel.z, vel.x));
+        c.spinAxis.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, 1).normalize();
+        c.spinRate = 18 + Math.random() * 14;
+        c.size = size;
+        c.born = this.time;
+        c.bounces = 0;
+        c.block = null;
+    }
+
+    updateCasings(dt) {
+        const arena = this.arena;
+        let dirty = false;
+        for (let i = 0; i < MAX_CASINGS; i++) {
+            const c = this.casings[i];
+            if (!c.active) continue;
+            const age = this.time - c.born;
+            // Gone, or thrown out inside a block (shooting with the gun in a wall)
+            if (age > CASING_LIFE || !arena || (!c.resting && arena.isSolidAt(c.pos.x, c.pos.y, c.pos.z))) {
+                this.hideCasing(i);
+                dirty = true;
+                continue;
+            }
+            if (c.resting) {
+                // Shrink away at the very end
+                if (age > CASING_LIFE - 0.4) {
+                    this.writeCasing(i, c.size * (CASING_LIFE - age) / 0.4);
+                    dirty = true;
+                }
+                continue;
+            }
+            c.vel.y -= CASING_GRAVITY * dt;
+            const nx = c.pos.x + c.vel.x * dt;
+            const ny = c.pos.y + c.vel.y * dt;
+            const nz = c.pos.z + c.vel.z * dt;
+            if (arena.isSolidAt(nx, ny - CASING_RADIUS, nz)) {
+                if (c.vel.y < 0 && !arena.isSolidAt(nx, c.pos.y - CASING_RADIUS, nz)) {
+                    // Hit the floor: bounce, lose most of the speed, then lie flat
+                    const top = Math.floor(ny - CASING_RADIUS) + 1;
+                    c.pos.set(nx, top + CASING_RADIUS, nz);
+                    if (c.bounces === 0) this.onCasingBounce?.(c.pos);
+                    c.bounces++;
+                    c.vel.set(c.vel.x * 0.45, -c.vel.y * 0.32, c.vel.z * 0.45);
+                    c.spinRate *= 0.5;
+                    if (c.bounces >= 3 || c.vel.y < 0.5) {
+                        c.resting = true;
+                        // Flat on the floor at whatever heading it ended up
+                        const along = this.tmp.set(1, 0, 0).applyQuaternion(c.quat);
+                        const heading = Math.atan2(-along.z, along.x);
+                        c.quat.setFromAxisAngle(this.tmp.set(0, 1, 0), heading);
+                        const { ix, iy, iz } = arena.cellAt(nx, top - 0.5, nz);
+                        c.block = arena.index(ix, iy, iz);
+                    }
+                } else {
+                    // Hit a wall: knock back off it
+                    c.vel.x *= -0.3;
+                    c.vel.z *= -0.3;
+                }
+            } else {
+                c.pos.set(nx, ny, nz);
+            }
+            if (!c.resting) c.quat.multiply(this.spin.setFromAxisAngle(c.spinAxis, c.spinRate * dt));
+            this.writeCasing(i, c.size);
+            dirty = true;
+        }
+        if (dirty) this.casingMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    writeCasing(i, scale) {
+        const c = this.casings[i];
+        const d = this.dummy;
+        d.position.copy(c.pos);
+        d.quaternion.copy(c.quat);
+        d.scale.setScalar(scale);
+        d.updateMatrix();
+        this.casingMesh.setMatrixAt(i, d.matrix);
+    }
+
+    hideCasing(i) {
+        this.casings[i].active = false;
+        this.casings[i].block = null;
+        this.dummy.scale.setScalar(0);
+        this.dummy.updateMatrix();
+        this.casingMesh.setMatrixAt(i, this.dummy.matrix);
+        this.casingMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // A block broke: its bullet holes, blood and casings go with it
     clearBlock(blockKey) {
+        for (let i = 0; i < MAX_CASINGS; i++) {
+            if (this.casings[i].active && this.casings[i].block === blockKey) {
+                // Falls again from where it lay
+                this.casings[i].resting = false;
+                this.casings[i].block = null;
+                this.casings[i].bounces = 3;
+            }
+        }
         for (let i = 0; i < MAX_DECALS; i++) {
             if (this.decals[i]?.block === blockKey) this.hideDecal(i);
         }
@@ -333,6 +467,7 @@ export class GunEffects {
     update(dt) {
         this.time += dt;
         this.updateSmokes();
+        this.updateCasings(dt);
         let n = 0;
         const d = this.dummy;
         for (const t of this.tracers) {

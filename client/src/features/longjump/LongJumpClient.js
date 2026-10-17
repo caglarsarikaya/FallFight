@@ -5,7 +5,6 @@ import { ClientFeature } from '../ClientFeature.js';
 // The long jump module on screen: its pickup, what it says, and the leap's sound
 export class LongJumpClient extends ClientFeature {
     static id = 'longjump';
-    static controls = ['Ctrl+Space long jump'];
     static menuControls = [['Ctrl + Space', 'Long jump, if you carry the module']];
 
     get pickups() {

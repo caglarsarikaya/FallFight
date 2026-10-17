@@ -3,8 +3,8 @@
 // hooks on all of them; every hook is optional. Hooks that return true "handled" the thing, so the
 // core leaves its default out.
 //
-//   static id, static controls: ['8 angel', ...] for the in-game help line,
-//   static menuControls: [[key, what]] for the menu's controls list
+//   static id, static menuControls: [[key, what]] for the controls lists (in-game hint, Esc menu
+//   help, main menu; see ui/controls.js)
 //   events: { name: handler(data) }      the mode's or feature's own S2C.EVENT messages
 //   pickups: { type: { name?, spawned?(data), taken?(data) } }   what its pickups say and sound like
 //   onPlayerAdded(info), onPlayerLeft(id)
@@ -18,8 +18,6 @@
 //   onUseKey(down)                       the use key (E)
 //   itemName(id), jumpSound(jumpKind)    -> a name / sound id, or null
 export class ClientFeature {
-    static controls = [];
-
     constructor(game) {
         this.game = game;
     }

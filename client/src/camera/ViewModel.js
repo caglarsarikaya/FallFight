@@ -3,7 +3,13 @@ import { getItemView } from '../items/registry.js';
 
 const SWITCH_TIME = 0.22;
 const ACTION_TIMES = { swing: 0.42, stab: 0.85, drink: 0.6, throw: 0.5, angel: 0.7 };
-const MAX_SHELLS = 12;
+// Spent casings: brass tubes with a dark primer end, kicked out of the ejection port up and to the
+// right, tumbling end over end, glowing hot for a moment
+const MAX_SHELLS = 24;
+const SHELL_LIFE = 0.75;
+const SHELL_GRAVITY = 7;
+const SHELL_HOT = 0.08;     // seconds of hot glint
+const BRASS = '#d4a945';
 // Recoil is a spring: each shot kicks it, it snaps back with a slight overshoot (underdamped)
 const KICK_STIFFNESS = 340;
 const KICK_DAMPING = 2 * Math.sqrt(KICK_STIFFNESS) * 0.55;
@@ -42,18 +48,22 @@ export class ViewModel {
         this.crouch = 0;
         this.aim = 0;
 
-        // Spent casings flying out of the ejection port
+        // Spent casings flying out of the ejection port (lying across the gun: length along X)
         this.shells = [];
-        const brass = new THREE.MeshStandardMaterial({ color: '#c8a040', metalness: 0.8, roughness: 0.3 });
-        const geometry = new THREE.BoxGeometry(0.012, 0.012, 0.03);
+        const geometry = new THREE.CylinderGeometry(0.0062, 0.0062, 0.03, 8);
+        geometry.rotateZ(Math.PI / 2);
+        const primer = new THREE.MeshStandardMaterial({ color: '#5a4520', metalness: 0.6, roughness: 0.5 });
         for (let i = 0; i < MAX_SHELLS; i++) {
-            const mesh = new THREE.Mesh(geometry, brass);
+            // Own brass material per shell, so each can glow hot on its own
+            const brass = new THREE.MeshStandardMaterial({ color: BRASS, metalness: 0.85, roughness: 0.28, emissive: '#ff9a30', emissiveIntensity: 0 });
+            const mesh = new THREE.Mesh(geometry, [brass, brass, primer]);   // side, mouth, primer end
             mesh.visible = false;
             this.scene.add(mesh);
-            this.shells.push({ mesh, velocity: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0 });
+            this.shells.push({ mesh, brass, velocity: new THREE.Vector3(), spinAxis: new THREE.Vector3(), spinRate: 0, age: 0 });
         }
         this.nextShell = 0;
         this.tmp = new THREE.Vector3();
+        this.tmpQuat = new THREE.Quaternion();
     }
 
     setItem(itemId) {
@@ -86,8 +96,8 @@ export class ViewModel {
         this.action = { name: action, t: 0 };
     }
 
-    // One shot: kick (strength 0..1.6, see Game.kickOf), flash, casing
-    fire({ shell = true, kick = 0.5 } = {}) {
+    // One shot: kick (strength 0..1.6, see Game.kickOf), flash, casing (its size, 0 for none)
+    fire({ shell = 1, kick = 0.5 } = {}) {
         this.kickVelocity += KICK_IMPULSE * (0.6 + kick * 0.8);
         this.kickRoll = Math.random() * 2 - 1;
         const flash = this.holder?.userData.flash;
@@ -100,7 +110,7 @@ export class ViewModel {
             this.flashTime = 0.04 + kick * 0.015;
             this.flashLight.intensity = 3 + kick * 1.5;
         }
-        if (shell) this.ejectShell();
+        if (shell) this.ejectShell(shell);
     }
 
     // progress 0..1 or null
@@ -121,17 +131,25 @@ export class ViewModel {
         this.camera.updateProjectionMatrix();
     }
 
-    ejectShell() {
+    // Out of the port in the gun's own frame (right, up, a little back toward us), so it leaves
+    // the right way even mid-recoil
+    ejectShell(size) {
         const model = this.holder?.userData.model;
         const eject = model?.userData.eject;
         if (!eject) return;
         const shell = this.shells[this.nextShell];
         this.nextShell = (this.nextShell + 1) % MAX_SHELLS;
         model.updateWorldMatrix(true, false);
+        model.getWorldQuaternion(this.tmpQuat);
         shell.mesh.position.copy(eject).applyMatrix4(model.matrixWorld);
-        shell.velocity.set(0.9 + Math.random() * 0.4, 0.9 + Math.random() * 0.5, 0.3 + Math.random() * 0.3);
-        shell.spin.set(Math.random() * 20, Math.random() * 20, Math.random() * 20);
-        shell.life = 0.5;
+        shell.mesh.quaternion.copy(this.tmpQuat);
+        shell.mesh.scale.setScalar(size);
+        shell.velocity.set(1 + Math.random() * 0.45, 1.05 + Math.random() * 0.5, 0.2 + Math.random() * 0.25).applyQuaternion(this.tmpQuat);
+        // End over end (about the barrel's axis), with a little wobble
+        shell.spinAxis.set((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 1).normalize();
+        shell.spinRate = -(24 + Math.random() * 14);
+        shell.age = 0;
+        shell.brass.emissiveIntensity = 1.4;
         shell.mesh.visible = true;
     }
 
@@ -197,16 +215,15 @@ export class ViewModel {
     updateShells(dt) {
         for (const s of this.shells) {
             if (!s.mesh.visible) continue;
-            s.life -= dt;
-            if (s.life <= 0) {
+            s.age += dt;
+            if (s.age >= SHELL_LIFE) {
                 s.mesh.visible = false;
                 continue;
             }
-            s.velocity.y -= 6 * dt;
+            s.brass.emissiveIntensity = Math.max(0, 1.4 * (1 - s.age / SHELL_HOT));
+            s.velocity.y -= SHELL_GRAVITY * dt;
             s.mesh.position.addScaledVector(s.velocity, dt);
-            s.mesh.rotation.x += s.spin.x * dt;
-            s.mesh.rotation.y += s.spin.y * dt;
-            s.mesh.rotation.z += s.spin.z * dt;
+            s.mesh.rotateOnAxis(s.spinAxis, s.spinRate * dt);
         }
     }
 }

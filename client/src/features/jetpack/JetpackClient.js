@@ -13,7 +13,6 @@ const THRUST = 0.085;     // seconds between overlapping thruster sounds
 // everyone flying, and the thruster roar
 export class JetpackClient extends ClientFeature {
     static id = 'jetpack';
-    static controls = ['Shift up / Ctrl down with the jetpack'];
     static menuControls = [['Shift / Ctrl', 'Fly up / down with a jetpack']];
 
     constructor(game) {

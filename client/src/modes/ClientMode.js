@@ -7,6 +7,8 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // buy menu rules, banners and death screen. Gets every ClientFeature hook too. The defaults are a
 // plain free-for-all.
 export class ClientMode extends ClientFeature {
+    static isMode = true;   // its menuControls are the Shop group (ui/controls.js)
+
     get id() {
         return this.constructor.id;
     }

@@ -1,11 +1,12 @@
 import { ZOMBIES, ZOMBIES_EVENTS } from '../../../shared/modes/zombies/config.js';
+import { SHOP_CONTROLS } from '../../ui/controls.js';
 import { ClientMode } from '../ClientMode.js';
 
 // Zombies: wave banners, moaning and clawing monsters, quiet zombie deaths, and waiting for the
 // wave to end (watching the others) after you fall
 export class ZombiesClient extends ClientMode {
     static id = 'zombies';
-    static controls = ['B buy · N ammo · M kevlar · H potions · G grenades'];
+    static menuControls = SHOP_CONTROLS;
 
     get events() {
         const game = this.game;

@@ -295,10 +295,37 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* ---------- Pause menu ---------- */
 
-.pause { flex-direction: column; gap: 10px; }
+.pause-page { display: flex; flex-direction: column; align-items: center; gap: 10px; max-height: 100%; overflow-y: auto; }
 .pause h2 { font-size: 40px; margin-bottom: 14px; text-shadow: 3px 3px 0 #333; }
 .pause .btn { width: min(360px, 90vw); }
 .pause .setting { width: min(360px, 90vw); display: flex; flex-direction: column; gap: 4px; }
+.pause-help .controls-groups {
+    width: min(640px, 92vw);
+    background: var(--panel);
+    border: 3px solid var(--panel-border);
+    padding: 12px 16px;
+    font-size: 18px;
+}
+
+/* Grouped key lists: the in-game hint and the Esc menu's help (ui/controls.js) */
+.controls-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 22px;
+    color: var(--text);
+    text-shadow: 1px 1px 0 #000;
+}
+.controls-title {
+    font-size: 0.8em;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 3px;
+}
+.controls-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.controls-group li { line-height: 1.2; }
+.controls-group li::before { content: '•'; color: var(--muted); margin-right: 6px; }
+.controls-group b { color: var(--gold); font-weight: 600; }
 
 /* ---------- HUD ---------- */
 
@@ -547,12 +574,15 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .help-hint {
     position: absolute;
     left: 12px; top: 44px;
-    max-width: min(400px, 32vw);   /* clear of the mode panel at the top centre */
-    font-size: 18px;
-    color: var(--muted);
-    background: rgba(0, 0, 0, 0.45);
-    padding: 6px 10px;
+    width: min(520px, 40vw);   /* clear of the mode panel at the top centre */
+    font-size: 15px;
+    background: rgba(0, 0, 0, 0.72);
+    border: 2px solid rgba(0, 0, 0, 0.9);
+    padding: 10px 12px;
     transition: opacity 1s;
+}
+@media (max-width: 900px) {
+    .help-hint .controls-groups { grid-template-columns: 1fr; }
 }
 
 .underwater { position: absolute; inset: 0; background: radial-gradient(circle, rgba(30, 110, 170, 0.35), rgba(5, 40, 80, 0.75)); }
@@ -619,12 +649,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 .click-to-play {
     font-family: var(--font);
+    text-align: center;
     font-size: 25px;
     text-shadow: 2px 2px 0 #000;
     background: rgba(0, 0, 0, 0.45);
     padding: 16px 20px;
     cursor: pointer;
 }
+.fullscreen-tip {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    margin-top: 10px;
+    font-size: 17px;
+    color: var(--gold);
+}
+.fullscreen-tip .btn { font-size: 18px; }
 
 /* ---------- Mode panel, match end ---------- */
 

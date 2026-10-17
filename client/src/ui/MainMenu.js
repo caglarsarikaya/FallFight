@@ -8,17 +8,10 @@ import { RoomBrowser } from './RoomBrowser.js';
 import { el } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
 import { canLockKeys } from '../input/fullscreen.js';
+import { SHOP_CONTROLS, controlGroups } from './controls.js';
 
-const CONTROLS = [
-    ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space, wheel', 'Jump'],
-    ['Left click', 'Fire / slash'], ['Right click', 'Scope / knife stab'], ['R', 'Reload'],
-    ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q', 'Switch weapon'], ['6 / 7', 'HE grenade / smoke grenade (click to throw)'],
-    ['B', 'Buy menu (in modes that have one)'], ['N / M', 'Quick buy: ammo / kevlar + helmet'], ['H / G', 'Quick buy: 2 potions / HE + smoke'],
-    // What the features add (shared/features/, client/src/features/)
-    ...allClientFeatures().flatMap(F => F.menuControls ?? []),
-    ['V', 'First / third person'],
-    ['Tab', 'Scoreboard'], ['Esc', 'Close the buy menu, open / close the game menu']
-];
+// All the keys, the shop's and every feature's too (ui/controls.js)
+const CONTROLS = controlGroups(allClientFeatures(), [['B', 'Buy menu (in modes that have one)'], ...SHOP_CONTROLS.slice(1)]).flatMap(g => g.rows);
 
 const TABS = [['player', 'Player'], ['game', 'Game'], ['options', 'Options']];
 const ONLINE_ACTIONS = [['quick', 'Quick Play'], ['join', 'Join room'], ['create', 'Create room']];

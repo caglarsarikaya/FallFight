@@ -32,7 +32,8 @@ import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { BuyMenu } from './ui/BuyMenu.js';
 import { el } from './ui/dom.js';
-import { exitGameFullscreen } from './input/fullscreen.js';
+import { canLockKeys, exitGameFullscreen } from './input/fullscreen.js';
+import { controlGroups } from './ui/controls.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
 const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet' };
@@ -52,6 +53,8 @@ const HARD_SURFACES = ['stone', 'ice'];
 // Per-shot camera kick by weapon kind (0..1): a short shake and FOV punch, on top of the recoil
 const SHOT_KICK = { pistol: 0.35, smg: 0.3, rifle: 0.5, mg: 0.5, shotgun: 0.9, sniper: 1, launcher: 1 };
 const HEAVY_PISTOLS = ['deagle'];
+// Spent casing size by weapon kind (1 = rifle); shotguns and launchers throw none
+const CASING_SIZE = { pistol: 0.75, smg: 0.8, rifle: 1, mg: 1.1, sniper: 1.35 };
 const SHOT_FOV = 3.5;         // degrees of FOV punch at full kick
 const SHOT_ROLL = 0.012;      // radians of camera roll and tilt jitter at full kick
 // Snapshot fields the avatar or the events own; every other field (the mode's and the features'
@@ -106,6 +109,8 @@ export class Game {
         this.world = new WorldRenderer(this.scene);
         this.particles = new Particles(this.scene);
         this.effects = new GunEffects(this.scene);
+        // Brass tinkling on the floor
+        this.effects.onCasingBounce = at => this.sound.play('shell', { at: { x: at.x, y: at.y, z: at.z }, range: 14, volume: 0.6 });
         this.viewModel = new ViewModel();
         this.cameraController = new CameraController(this.camera, profile.cameraMode);
         // Dead and waiting for the wave or round: watch a living teammate
@@ -165,11 +170,17 @@ export class Game {
                 profile.fullscreen = v;
                 profile.save();
                 if (!v) exitGameFullscreen();
+                this.updateFullscreenTip();
             },
             onLeave: () => this.onLeave()
         });
         this.pauseMenu.setCameraLabel(this.cameraController.view.label);
-        this.clickToPlay = el('div.overlay.hidden', {}, el('div.click-to-play', { text: 'Click to play', onclick: () => this.resume() }));
+        // At the start, recommend fullscreen (no stray Ctrl+W, no distractions); gone once we play
+        this.fullscreenTip = el('div.fullscreen-tip');
+        this.clickToPlay = el('div.overlay.hidden', {}, el('div.click-to-play', { onclick: () => this.resume() }, [
+            el('div', { text: 'Click to play' }), this.fullscreenTip
+        ]));
+        this.updateFullscreenTip();
         ui.append(this.clickToPlay);
 
         this.players = new Map();       // id -> { id, name, characterId, isBot, alive, health, kills, deaths, avatar, stepTimer }
@@ -265,6 +276,27 @@ export class Game {
 
     // ---- menus and pointer lock -------------------------------------------------------------
 
+    updateFullscreenTip() {
+        const why = canLockKeys ? ": Ctrl+W can't close the tab" : '';
+        if (this.profile.fullscreen) {
+            this.fullscreenTip.replaceChildren(el('span', { text: 'You will play fullscreen (recommended)' }));
+            return;
+        }
+        this.fullscreenTip.replaceChildren(
+            el('span', { text: `Fullscreen recommended${why}` }),
+            el('button.btn.primary', {
+                type: 'button', text: 'Play Fullscreen',
+                onclick: e => {
+                    e.stopPropagation();
+                    this.profile.fullscreen = true;
+                    this.profile.save();
+                    this.pauseMenu.setFullscreen(true);
+                    this.resume();
+                }
+            })
+        );
+    }
+
     resume() {
         this.sound.unlock();
         this.pauseMenu.hide();
@@ -319,6 +351,9 @@ export class Game {
             if (locked) {
                 this.pauseMenu.hide();
                 this.clickToPlay.classList.add('hidden');
+                // Play has started: the tip and the controls hint have done their job
+                this.fullscreenTip.classList.add('hidden');
+                this.hud.startHelpFade();
                 return;
             }
             // Esc with the buy menu open only closes the buy menu (the browser frees the mouse
@@ -448,7 +483,9 @@ export class Game {
         this.features = createClientFeatures(featureIds, this);
         // Features first: they clean up after a death before the mode decides what it means
         this.plugins = [...this.features, this.mode];
-        this.hud.setHelp(this.plugins.flatMap(p => p.constructor.controls ?? []));
+        const help = controlGroups(this.plugins);
+        this.hud.setHelp(help);
+        this.pauseMenu.setHelp(help);
     }
 
     useConsumable(id = 'health_potion') {
@@ -531,7 +568,8 @@ export class Game {
         this.protectedUntil = 0;
         if (spec.kind === WEAPON_KIND.LAUNCHER) return this.onLocalRocket(spec);
         this.sound.playShot(spec.id, null, { self: true });
-        this.viewModel.fire({ shell: spec.kind !== WEAPON_KIND.SHOTGUN, kick: this.kickOf(spec) });
+        const casing = this.casingSize(spec);
+        this.viewModel.fire({ shell: casing, kick: this.kickOf(spec) });
         this.self?.avatar.playAction('shoot');
         this.kickCamera(spec);
         const eye = this.local.eye;
@@ -544,10 +582,6 @@ export class Game {
             z: eye.z + forward.z * 0.7 - Math.sin(yaw) * 0.14
         };
         this.effects.lightAt(muzzle);
-        // Gun smoke curling off the barrel, thicker once a spray gets going
-        this.sprayShots = performance.now() - (this.lastShotAt || 0) < 250 ? (this.sprayShots || 0) + 1 : 1;
-        this.lastShotAt = performance.now();
-        this.particles.burst(muzzle, { count: this.sprayShots >= 4 ? 3 : 1, colors: SMOKE, speed: 0.3, up: 0.6, gravity: -1, life: 0.8, size: 0.09, spread: 0.04, dir: forward, dirSpeed: 0.8 });
         const tracerEvery = spec.pellets > 1 ? 3 : 1;
         dirs.forEach((dir, i) => {
             const distance = this.traceLocal(eye, dir, spec);
@@ -555,8 +589,11 @@ export class Game {
                 this.effects.tracer(muzzle, { x: eye.x + dir.x * distance, y: eye.y + dir.y * distance, z: eye.z + dir.z * distance });
             }
         });
-        if (spec.kind !== WEAPON_KIND.SHOTGUN && spec.kind !== WEAPON_KIND.SNIPER) {
-            setTimeout(() => this.sound.play('shell', { volume: 0.5 }), 380 + Math.random() * 200);
+        // Our brass lands at our feet: thrown from beside the eye, out of sight to the right
+        if (casing) {
+            const rx = Math.cos(yaw);
+            const rz = -Math.sin(yaw);
+            this.throwCasing({ x: eye.x + rx * 0.3 - forward.x * 0.05, y: eye.y - 0.15, z: eye.z + rz * 0.3 - forward.z * 0.05 }, forward, casing);
         }
         this.onWeaponChanged();
     }
@@ -575,6 +612,24 @@ export class Game {
         this.particles.burst({ x: eye.x - forward.x * 0.8, y: eye.y - 0.1, z: eye.z - forward.z * 0.8 },
             { count: 26, colors: SMOKE, speed: 2, up: 1.2, gravity: -0.6, life: 1.4, size: 0.3, spread: 0.4, dir: back, dirSpeed: 6 });
         this.onWeaponChanged();
+    }
+
+    casingSize(spec) {
+        return HEAVY_PISTOLS.includes(spec.id) ? 0.95 : CASING_SIZE[spec.kind] ?? 0;
+    }
+
+    // A spent casing flung up and out to the right of a gun firing along `forward`
+    throwCasing(at, forward, size) {
+        const flat = Math.hypot(forward.x, forward.z) || 1;
+        const rx = -forward.z / flat;
+        const rz = forward.x / flat;
+        const out = 1.4 + Math.random() * 0.8;
+        const back = 0.2 + Math.random() * 0.4;
+        this.effects.casing(at, {
+            x: rx * out - forward.x / flat * back,
+            y: 1.4 + Math.random() * 0.9,
+            z: rz * out - forward.z / flat * back
+        }, size);
     }
 
     kickOf(spec) {
@@ -884,6 +939,7 @@ export class Game {
         if (this.room) this.pauseMenu.setTitle(this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name);
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
+        this.effects.arena = this.arena;
         this.serverOffset = data.time - performance.now() / 1000;
         for (const p of data.players) this.addPlayer(p);
         this.modePanel.render(this.modeState, this.players, this.selfId, this.mode);
@@ -995,11 +1051,12 @@ export class Game {
         this.effects.flash(at, spec?.kind === WEAPON_KIND.SHOTGUN || w === 'awp' ? 0.9 : 0.6);
         this.sound.playShot(w, at);
         info?.avatar.playAction('shoot');
-        // A few hot blocky sparks and a wisp of smoke at their barrel
+        // A few hot blocky sparks at their barrel, and their brass flying out of the gun
         if (p.length >= 3) {
             const fwd = { x: p[0], y: p[1], z: p[2] };
             this.particles.burst(at, { count: 3, colors: SPARKS, speed: 1.5, up: 0.5, gravity: 6, size: 0.04, spread: 0.05, life: 0.14, glow: true, dir: fwd, dirSpeed: 6 });
-            this.particles.burst(at, { count: 1, colors: SMOKE, speed: 0.3, up: 0.5, gravity: -1, life: 0.7, size: 0.1, spread: 0.05, dir: fwd, dirSpeed: 0.8 });
+            const casing = spec ? this.casingSize(spec) : 0;
+            if (casing) this.throwCasing({ x: at.x - fwd.x * 0.35, y: at.y + 0.03, z: at.z - fwd.z * 0.35 }, fwd, casing);
         }
 
         const origin = { x: o[0], y: o[1], z: o[2] };

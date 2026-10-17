@@ -1,8 +1,10 @@
 import { el } from './dom.js';
 import { canLockKeys } from '../input/fullscreen.js';
+import { renderControls } from './controls.js';
 
 // Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, fullscreen,
-// stats overlay, sights (hold right click to aim), Deathmatch random guns, leave
+// stats overlay, sights (hold right click to aim), Deathmatch random guns, leave; and a Help page
+// with every key (ui/controls.js) for anyone who missed the hint at the start
 export class PauseMenu {
     constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
         this.graphics = profile.graphics;
@@ -55,9 +57,10 @@ export class PauseMenu {
         this.sensitivity.addEventListener('input', () => onSensitivity(Number(this.sensitivity.value)));
 
         this.title = el('h2', { text: 'GAME MENU' });
-        this.root = el('div.overlay.dim.pause.hidden', {}, [
+        this.main = el('div.pause-page', {}, [
             this.title,
             el('button.btn.primary', { type: 'button', text: 'Back to Game', onclick: () => onResume() }),
+            el('button.btn', { type: 'button', text: 'Help & Controls', onclick: () => this.showHelp(true) }),
             el('button.btn', { type: 'button', text: 'Change Character & Name', onclick: () => onEditProfile() }),
             this.cameraButton,
             el('div.setting', {}, [el('span.label', { text: 'SOUND' }), this.volume]),
@@ -69,7 +72,24 @@ export class PauseMenu {
             this.randomButton,
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
+        this.helpList = el('div');
+        this.help = el('div.pause-page.pause-help.hidden', {}, [
+            el('h2', { text: 'HELP & CONTROLS' }),
+            this.helpList,
+            el('button.btn.primary', { type: 'button', text: 'Back', onclick: () => this.showHelp(false) })
+        ]);
+        this.root = el('div.overlay.dim.pause.hidden', {}, [this.main, this.help]);
         root.append(this.root);
+    }
+
+    // The keys for this room's mode and features (ui/controls.js)
+    setHelp(groups) {
+        this.helpList.replaceChildren(renderControls(groups));
+    }
+
+    showHelp(on) {
+        this.help.classList.toggle('hidden', !on);
+        this.main.classList.toggle('hidden', on);
     }
 
     setTitle(text) {
@@ -82,6 +102,12 @@ export class PauseMenu {
 
     updateGraphicsLabel() {
         this.graphicsButton.textContent = `Graphics: ${this.graphics === 'low' ? 'LOW (fast)' : 'HIGH'}`;
+    }
+
+    // Turned on from outside (the Play Fullscreen button at the start)
+    setFullscreen(on) {
+        this.fullscreen = on;
+        this.updateFullscreenLabel();
     }
 
     updateFullscreenLabel() {
@@ -108,6 +134,7 @@ export class PauseMenu {
     }
 
     show() {
+        this.showHelp(false);
         this.root.classList.remove('hidden');
     }
 
