@@ -1,12 +1,22 @@
 import { GameRoom } from '../shared/game/GameRoom.js';
 import { createRng } from '../shared/math.js';
+import { S2C } from '../shared/protocol.js';
+
+// An emit that records into `events`; mode and feature messages (S2C.EVENT) are recorded under
+// their own name, as the client dispatches them
+export function recorder(events, now = () => 0) {
+    return (target, type, data) => {
+        if (type === S2C.EVENT) events.push({ target, type: data.name, data: data.data, time: now() });
+        else events.push({ target, type, data, time: now() });
+    };
+}
 
 // A room that records everything it emits
 export function createRoom(seed = 7) {
     const events = [];
     const room = new GameRoom({
         rng: createRng(seed),
-        emit: (target, type, data) => events.push({ target, type, data, time: room.time })
+        emit: recorder(events, () => room.time)
     });
     room.events = events;
     room.eventsOf = type => events.filter(e => e.type === type).map(e => e.data);

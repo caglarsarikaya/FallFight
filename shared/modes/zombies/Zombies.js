@@ -1,11 +1,10 @@
-import { GUN_GAME, ZOMBIES } from '../../config/modes.js';
-import { GOD_MODE, LONG_JUMP } from '../../constants.js';
+import { ZOMBIES, ZOMBIES_EVENTS } from './config.js';
 import { S2C } from '../../protocol.js';
 import { FlowField } from '../../ai/FlowField.js';
-import { ZombieBrain } from '../../ai/ZombieBrain.js';
-import { buyItem } from '../Shop.js';
+import { ZombieBrain } from './ZombieBrain.js';
+import { buyItem } from '../../features/shop/Shop.js';
 import { isGun } from '../../config/weapons.js';
-import { GameMode } from './GameMode.js';
+import { GameMode } from '../GameMode.js';
 
 const FLOW_INTERVAL = 0.5;       // seconds between flow field rebuilds
 const CORPSE_TIME = 2.5;         // a dead zombie lies there this long before it's removed
@@ -15,20 +14,12 @@ const SPAWN_INTERVAL = 0.6;      // seconds between zombies coming in during a w
 // zombies; every few waves some are runners, and every 5th wave brings giants (one more each time).
 // From wave 2, about one zombie in twenty carries a gun and shoots from range (ZOMBIES.gunner).
 // Killed zombies drop ammo, potions, armor and guns.
-// Players who die come back between waves, or sooner if a teammate holds E over the body for a
-// few seconds (ZOMBIES.revive). When everyone is down, the run is over.
+// Players who die come back between waves, or sooner if a teammate revives them during the wave
+// (the revive feature). When everyone is down, the run is over.
 // Zombie kills and cleared waves pay money; the buy menu (B) works any time, anywhere.
-// On maps with a longJumpSpot (Lava Arena), a long jump module appears there every few minutes:
-// whoever takes it can crouch-jump far until they die (LONG_JUMP).
-// Rarely (ZOMBIES.drops.godmode) a zombie drops an angel: kept in slot 8, it makes you untouchable
-// (by anything) for GOD_MODE.duration seconds. Use it early by hand, or it saves you by itself when
-// a hit would kill you. Just as rarely one drops a jetpack (GTA
-// San Andreas style): fly with Shift up and Ctrl down until you die (JETPACK).
+// Features (see ./index.js): the long jump module on maps whose overlay has a longJumpSpot (Lava
+// Arena, ./maps.js); rarely (ZOMBIES.drops) a zombie drops an angel or a jetpack.
 export class Zombies extends GameMode {
-    get id() {
-        return 'zombies';
-    }
-
     // The room's seats are for people; zombies come on their own
     get seatBots() {
         return false;
@@ -51,9 +42,6 @@ export class Zombies extends GameMode {
         this.kills = 0;
         this.bestWave = this.bestWave ?? 0;
         this.nextZombieId = this.nextZombieId ?? 1;
-        this.revives = new Map();    // reviver id -> { targetId, until }
-        this.longJumpTimer = LONG_JUMP.interval;
-        for (const pickup of this.room.pickups.removeType('longjump')) this.room.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         // Clear any zombies left over from the last run
         for (const p of [...this.room.players.values()]) if (p.isZombie) this.room.removePlayer(p.id);
     }
@@ -61,9 +49,6 @@ export class Zombies extends GameMode {
     resetPlayer(player) {
         super.resetPlayer(player);
         player.money = ZOMBIES.startMoney;
-        player.longJump = false;
-        player.jetpack = false;
-        player.godUntil = 0;
     }
 
     onJoin(player) {
@@ -75,7 +60,7 @@ export class Zombies extends GameMode {
         player.money = Math.max(0, Math.min(ZOMBIES.maxMoney, (player.money ?? 0) + amount));
     }
 
-    // Returns { ok, error?, price }; the items are in shared/game/Shop.js
+    // Returns { ok, error?, price }; the items are in shared/features/shop/Shop.js
     buy(player, item) {
         if (!player.alive || player.isZombie || this.room.matchOver) return { ok: false, error: 'not-now' };
         return buyItem(this.room, player, item);
@@ -85,25 +70,6 @@ export class Zombies extends GameMode {
         return a !== b && !!a.isZombie !== !!b.isZombie;
     }
 
-    // Under an angel nothing hurts: claws, zombie gunners, falls, your own grenades
-    shielded(player) {
-        return this.isBlessed(player);
-    }
-
-    isBlessed(player) {
-        return player.godUntil > this.room.time;
-    }
-
-    // A deadly hit on someone carrying an angel: it comes out on its own and the hit never lands
-    saveFromDeath(player) {
-        if (player.isZombie || !player.alive || !player.inventory.consume('godmode')) return false;
-        player.godUntil = this.room.time + GOD_MODE.duration;
-        this.room.notifyInventory(player);
-        this.room.emit(null, S2C.ACTION, { id: player.id, action: 'angel', item: 'godmode', auto: true });
-        this.dirty = true;
-        return true;
-    }
-
     // Humans start with a pistol and the knife, no armor
     equip(player) {
         player.inventory.reset({ weapons: ZOMBIES.loadout });
@@ -111,18 +77,19 @@ export class Zombies extends GameMode {
         player.helmet = false;
     }
 
+    // Humans on the map's 'ct' side, zombies where ./maps.js says they come in
     spawnZones(player) {
-        const spawns = this.room.map.spawns;
-        return player.isZombie ? spawns?.zombie : spawns?.ct;
+        return player.isZombie ? this.room.mapRules.spawns : this.room.map.spawns?.ct;
     }
 
-    // Zombies take nothing; a long jump, jetpack or angel carrier doesn't need a second one
-    canPickUp(player, pickup) {
-        if (player.isZombie) return false;
-        if (pickup?.type === 'longjump') return !player.longJump;
-        if (pickup?.type === 'jetpack') return !player.jetpack;
-        if (pickup?.type === 'godmode') return player.inventory.count('godmode') === 0;
-        return true;
+    // Zombies take nothing
+    canPickUp(player) {
+        return !player.isZombie;
+    }
+
+    // Fallen teammates can only be revived while a wave is on
+    allowsRevive() {
+        return this.phase === 'wave';
     }
 
     // Dead players wait for the end of the wave; dead zombies are cleared away
@@ -188,11 +155,10 @@ export class Zombies extends GameMode {
         this.normalsSpawned = 0;
         this.spawnTimer = 0;
         this.dirty = true;
-        this.room.emit(null, S2C.WAVE_START, { wave: this.wave, count, giants });
+        this.room.emitEvent(null, ZOMBIES_EVENTS.WAVE_START, { wave: this.wave, count, giants });
     }
 
     endWave() {
-        this.stopRevives();
         this.phase = 'break';
         this.phaseEndsAt = this.room.time + ZOMBIES.waveBreak;
         this.bestWave = Math.max(this.bestWave, this.wave);
@@ -203,7 +169,7 @@ export class Zombies extends GameMode {
             this.pay(p, ZOMBIES.waveBonus);
         }
         this.dirty = true;
-        this.room.emit(null, S2C.WAVE_END, { wave: this.wave, next: this.wave + 1, breakTime: ZOMBIES.waveBreak });
+        this.room.emitEvent(null, ZOMBIES_EVENTS.WAVE_END, { wave: this.wave, next: this.wave + 1, breakTime: ZOMBIES.waveBreak });
     }
 
     // Giants come spread through the wave: with 2 giants, one a third of the way in, one two thirds
@@ -232,6 +198,7 @@ export class Zombies extends GameMode {
             setup: p => {
                 p.isZombie = true;
                 p.isGiant = giant;
+                p.fallImmune = true;
                 if (gun) {
                     p.inventory.select(p.inventory.give(gun));
                     p.damageScale = ZOMBIES.gunner.damageScale;
@@ -260,10 +227,10 @@ export class Zombies extends GameMode {
 
     // A zombie's claws: armor takes some of it
     zombieAttack(zombie, victim, amount) {
-        if (this.isBlessed(victim)) return;
+        if (this.room.shielded(victim)) return;
         const health = victim.armor > 0 ? Math.round(amount * 0.6) : amount;
-        // An angel saving you keeps your armor intact too
-        if (health >= victim.health && this.saveFromDeath(victim)) return;
+        // Being saved from a deadly hit (the angel) keeps your armor intact too
+        if (health >= victim.health && this.room.saveFromDeath(victim)) return;
         if (victim.armor > 0) victim.armor = Math.max(0, victim.armor - Math.round(amount * 0.5));
         const dx = victim.x - zombie.x;
         const dz = victim.z - zombie.z;
@@ -287,7 +254,6 @@ export class Zombies extends GameMode {
             if (p.isZombie && !p.alive && now - p.diedAt > CORPSE_TIME) room.removePlayer(p.id);
         }
 
-        this.updateLongJump(dt);
         const census = this.census();
         if (this.phase === 'break') {
             if (now >= this.phaseEndsAt && census.humans) this.startWave();
@@ -295,14 +261,12 @@ export class Zombies extends GameMode {
         }
         if (this.phase === 'wave') {
             if (census.humans && census.humansAlive === 0) {
-                this.stopRevives();
                 this.phase = 'lost';
                 this.bestWave = Math.max(this.bestWave, this.wave - 1);
                 this.dirty = true;
                 room.endMatch({ title: `Overrun on wave ${this.wave}! ${this.kills} zombies down.` });
                 return;
             }
-            this.updateRevives(now);
             this.spawnTimer -= dt;
             let alive = census.zombiesAlive;
             if (this.toSpawn + this.giantsToSpawn > 0 && this.spawnTimer <= 0 && alive < ZOMBIES.maxAlive) {
@@ -314,75 +278,8 @@ export class Zombies extends GameMode {
         }
     }
 
-    // One long jump module at a time on the map's spot, every LONG_JUMP.interval seconds
-    updateLongJump(dt) {
-        const room = this.room;
-        const spot = room.map.longJumpSpot;
-        if (!spot || room.pickups.has('longjump')) return;
-        this.longJumpTimer -= dt;
-        if (this.longJumpTimer > 0) return;
-        if (!room.arena.isStandable(spot.ix, spot.y, spot.iz)) {
-            this.longJumpTimer = 1; // the plaza is blown away right now: try again soon
-            return;
-        }
-        this.longJumpTimer = LONG_JUMP.interval;
-        room.emit(null, S2C.PICKUP_SPAWNED, room.pickups.place('longjump', room.arena, spot, room.time));
-    }
-
-    // ---- revive -----------------------------------------------------------------------------
-
-    // Hold E on a fallen teammate: { id } starts, { id: null } stops
-    onRevive(player, { id } = {}) {
-        if (id == null) return this.stopRevive(player.id);
-        const target = this.room.players.get(id);
-        if (this.phase !== 'wave' || !this.canRevive(player, target) || this.revives.get(player.id)?.targetId === id) return;
-        this.stopRevive(player.id);
-        // One helper per body
-        for (const r of this.revives.values()) if (r.targetId === id) return;
-        const until = this.room.time + ZOMBIES.revive.time;
-        this.revives.set(player.id, { targetId: id, until });
-        this.room.emit(null, S2C.REVIVE, { reviverId: player.id, targetId: id, until });
-    }
-
-    canRevive(player, target) {
-        if (!player?.alive || player.isZombie || !target || target.alive || target.isZombie || target === player) return false;
-        const reach = ZOMBIES.revive.reach;
-        return Math.hypot(player.x - target.x, player.z - target.z) <= reach && Math.abs(player.y - target.y) <= reach;
-    }
-
-    stopRevive(reviverId) {
-        const r = this.revives.get(reviverId);
-        if (!r) return;
-        this.revives.delete(reviverId);
-        this.room.emit(null, S2C.REVIVE, { reviverId, targetId: r.targetId, until: null });
-    }
-
-    stopRevives() {
-        for (const id of [...this.revives.keys()]) this.stopRevive(id);
-    }
-
-    // Helpers who walked off, died or lost the body stop; those who held on long enough revive
-    updateRevives(now) {
-        for (const [reviverId, r] of this.revives) {
-            const player = this.room.players.get(reviverId);
-            const target = this.room.players.get(r.targetId);
-            if (!this.canRevive(player, target)) {
-                this.stopRevive(reviverId);
-            } else if (now >= r.until) {
-                this.stopRevive(reviverId);
-                this.room.revive(target, ZOMBIES.revive.health);
-                this.room.emit(null, S2C.REVIVED, { reviverId, targetId: target.id });
-                this.dirty = true;
-            }
-        }
-    }
-
     onKill(victim, killer) {
         this.dirty = true;
-        victim.longJump = false;     // kept until you die, even if a teammate revives you
-        victim.jetpack = false;
-        victim.jetting = false;
-        victim.godUntil = 0;
         if (victim.isZombie) {
             victim.diedAt = this.room.time;
             this.kills++;
@@ -416,7 +313,7 @@ export class Zombies extends GameMode {
         let extra = {};
         if (type === 'weapon') {
             // Better guns as the waves go on
-            const ladder = GUN_GAME.ladder;
+            const ladder = ZOMBIES.dropLadder;
             const top = Math.min(ladder.length - 1, 2 + this.wave);
             extra = { weapon: weapon || ladder[Math.floor(rng() * (top + 1))] };
         }
@@ -441,10 +338,7 @@ export class Zombies extends GameMode {
     }
 
     playerJSON(player) {
-        if (!player.isZombie) {
-            const godLeft = this.isBlessed(player) ? Math.round((player.godUntil - this.room.time) * 10) / 10 : 0;
-            return { money: player.money ?? 0, longJump: !!player.longJump, jetpack: !!player.jetpack, jetting: !!player.jetting, godLeft };
-        }
+        if (!player.isZombie) return { money: player.money ?? 0 };
         return player.isGiant ? { isZombie: true, maxHealth: player.maxHealth, scale: player.scale } : { isZombie: true, maxHealth: player.maxHealth };
     }
 

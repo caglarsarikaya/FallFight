@@ -1,16 +1,11 @@
-import { GUN_GAME } from '../../config/modes.js';
-import { S2C } from '../../protocol.js';
+import { GUN_GAME, GUN_GAME_EVENTS } from './config.js';
 import { weaponSpec } from '../../config/weapons.js';
-import { GameMode } from './GameMode.js';
+import { GameMode } from '../GameMode.js';
 
 // Gun Game (arms race): everyone starts with the first gun of the ladder; every killsPerLevel kills
 // hands you the next one at once. Finish the ladder to win. A knife kill also takes a kill of
 // progress away from the victim. No potions: it's all about the guns.
 export class GunGame extends GameMode {
-    get id() {
-        return 'gungame';
-    }
-
     get pickupTypes() {
         return ['ammo'];
     }
@@ -83,7 +78,7 @@ export class GunGame extends GameMode {
         player.gun.scoped = 0;
         player.gun.readyAt = this.room.time + (weaponSpec(id)?.deploy ?? 0.5);
         this.room.notifyInventory(player);
-        this.room.emit(null, S2C.LEVEL_UP, { id: player.id, level: player.level, weapon: id });
+        this.room.emitEvent(null, GUN_GAME_EVENTS.LEVEL_UP, { id: player.id, level: player.level, weapon: id });
     }
 
     stateJSON() {

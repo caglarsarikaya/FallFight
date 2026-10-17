@@ -1,11 +1,28 @@
 import * as THREE from 'three';
 import { getItemView } from '../items/registry.js';
 
-const COLORS = { ammo: '#ffd23f', health_potion: '#ff4f8b', armor: '#5fb0ff', weapon: '#ffffff', rpg: '#ff5a1f', longjump: '#6dff6a', godmode: '#fff2a8', jetpack: '#ff8a2a' };
-const SPOTLIT = ['rpg', 'longjump', 'godmode', 'jetpack'];
-// GTA-style power-ups turn faster and bob higher than plain loot
-const SPIN = { jetpack: 3.2 };
 const SPOTLIGHT_HEIGHT = 70;
+
+// How each pickup type looks: { color, create(): Object3D, spotlight?: true for a searchlight seen
+// from anywhere, spin?: turn speed (power-ups turn faster and bob higher) }. Features register
+// their own (registerPickupLook); anything unknown shows as a potion.
+const LOOKS = new Map();
+
+export function registerPickupLook(type, look) {
+    LOOKS.set(type, look);
+}
+
+// A gun model, held up for show
+function gunOnDisplay(id, scale) {
+    const holder = new THREE.Group();
+    const gun = getItemView(id)?.createModel();
+    if (gun) {
+        gun.scale.setScalar(scale);
+        gun.rotation.y = Math.PI / 2;
+        holder.add(gun);
+    }
+    return holder;
+}
 
 // A floating, spinning pickup with a glow ring and a light beam so it's visible from afar
 export class PickupView {
@@ -16,10 +33,11 @@ export class PickupView {
         this.group = new THREE.Group();
         this.group.position.set(data.x, data.baseY ?? 0, data.z);
 
-        this.item = this.createItem(data);
+        this.look = LOOKS.get(data.type) || LOOKS.get('health_potion');
+        this.item = this.look.create(data);
         this.group.add(this.item);
 
-        const color = COLORS[data.type] || '#ffffff';
+        const color = this.look.color;
         const ring = new THREE.Mesh(
             new THREE.RingGeometry(0.32, 0.45, 24),
             new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false })
@@ -29,7 +47,7 @@ export class PickupView {
         this.ring = ring;
         this.group.add(ring);
 
-        if (SPOTLIT.includes(data.type)) {
+        if (this.look.spotlight) {
             this.createSpotlight(color);
         } else {
             const beam = new THREE.Mesh(
@@ -44,7 +62,7 @@ export class PickupView {
         scene.add(this.group);
     }
 
-    // The RPG's marker: a searchlight beam into the sky, seen from anywhere on the map (no fog),
+    // A power-up's marker: a searchlight beam into the sky, seen from anywhere on the map (no fog),
     // with two crossed bright blades sweeping round inside it and a wide pulsing ring on the floor.
     // Plain additive meshes, no real light (that would recompile every shader).
     createSpotlight(color) {
@@ -74,159 +92,10 @@ export class PickupView {
         this.group.add(this.halo);
     }
 
-    createItem(data) {
-        if (data.type === 'ammo') return this.createAmmoBox();
-        if (data.type === 'rpg') {
-            const holder = new THREE.Group();
-            const gun = getItemView('rpg')?.createModel();
-            if (gun) {
-                gun.scale.setScalar(1.4);
-                gun.rotation.y = Math.PI / 2;
-                holder.add(gun);
-            }
-            return holder;
-        }
-        if (data.type === 'armor') return this.createVest();
-        if (data.type === 'longjump') return this.createLongJump();
-        if (data.type === 'godmode') return this.createAngel();
-        if (data.type === 'jetpack') return this.createJetpack();
-        if (data.type === 'weapon') {
-            const holder = new THREE.Group();
-            const gun = getItemView(data.weapon)?.createModel();
-            if (gun) {
-                gun.scale.setScalar(1.6);
-                gun.rotation.y = Math.PI / 2;
-                holder.add(gun);
-            }
-            return holder;
-        }
-        const potion = getItemView('health_potion').createModel();
-        potion.scale.setScalar(1.8);
-        return potion;
-    }
-
-    // A blue kevlar vest with a helmet on top
-    createVest() {
-        const group = new THREE.Group();
-        const blue = new THREE.MeshLambertMaterial({ color: '#3b6fa8' });
-        const dark = new THREE.MeshLambertMaterial({ color: '#25466b' });
-        const vest = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.16), blue);
-        vest.position.y = -0.1;
-        group.add(vest);
-        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.17), dark);
-        strap.position.y = -0.2;
-        group.add(strap);
-        const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), dark);
-        helmet.position.y = 0.18;
-        group.add(helmet);
-        group.traverse(o => {
-            if (o.isMesh) o.castShadow = true;
-        });
-        return group;
-    }
-
-    // The long jump module: a grey backpack with two thrusters and a green light strip
-    createLongJump() {
-        const group = new THREE.Group();
-        const grey = new THREE.MeshLambertMaterial({ color: '#7a828c' });
-        const dark = new THREE.MeshLambertMaterial({ color: '#33383f' });
-        const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.18), grey);
-        group.add(pack);
-        const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.01),
-            new THREE.MeshBasicMaterial({ color: '#6dff6a' }));
-        strip.position.set(0, 0.02, 0.095);
-        group.add(strip);
-        for (const side of [-1, 1]) {
-            const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.26, 10), dark);
-            thruster.position.set(side * 0.12, -0.2, -0.12);
-            group.add(thruster);
-        }
-        group.traverse(o => {
-            if (o.isMesh) o.castShadow = true;
-        });
-        group.scale.setScalar(1.3);
-        return group;
-    }
-
-    // The Zombies jetpack: a dark pack between two grey rocket tanks with red noses and fins
-    createJetpack() {
-        const group = new THREE.Group();
-        const grey = new THREE.MeshLambertMaterial({ color: '#8a9099' });
-        const dark = new THREE.MeshLambertMaterial({ color: '#3a3f46' });
-        const red = new THREE.MeshLambertMaterial({ color: '#c8322a' });
-        const box = (w, h, d, material, x, y, z) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-            mesh.position.set(x, y, z);
-            group.add(mesh);
-        };
-        box(0.3, 0.4, 0.12, dark, 0, 0, 0);
-        for (const side of [-1, 1]) {
-            const x = side * 0.17;
-            box(0.14, 0.46, 0.14, grey, x, 0, 0.08);
-            box(0.15, 0.09, 0.15, red, x, 0.27, 0.08);
-            box(0.1, 0.07, 0.1, dark, x, -0.26, 0.08);
-            box(0.04, 0.14, 0.12, red, x + side * 0.09, -0.16, 0.08);   // fin
-        }
-        box(0.06, 0.18, 0.01, new THREE.MeshBasicMaterial({ color: '#ff8a2a' }), 0, 0.04, -0.065);
-        group.traverse(o => {
-            if (o.isMesh) o.castShadow = true;
-        });
-        group.scale.setScalar(1.5);
-        return group;
-    }
-
-    // The Zombies angel: a gold halo over two small blocky white wings
-    createAngel() {
-        const group = new THREE.Group();
-        const white = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-        const gold = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
-        for (const side of [-1, 1]) {
-            for (let i = 0; i < 3; i++) {
-                const feather = new THREE.Mesh(new THREE.BoxGeometry(0.34 - i * 0.08, 0.08, 0.04), white);
-                feather.position.set(side * (0.2 + (0.34 - i * 0.08) / 2), 0.08 - i * 0.09, 0);
-                group.add(feather);
-            }
-        }
-        for (const [w, d, x, z] of [[0.32, 0.05, 0, 0.13], [0.32, 0.05, 0, -0.13], [0.05, 0.22, 0.13, 0], [0.05, 0.22, -0.13, 0]]) {
-            const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, d), gold);
-            bar.position.set(x, 0.32, z);
-            group.add(bar);
-        }
-        group.scale.setScalar(1.3);
-        return group;
-    }
-
-    // Olive ammo can with a yellow stripe and a couple of rounds on top
-    createAmmoBox() {
-        const box = new THREE.Group();
-        const olive = new THREE.MeshLambertMaterial({ color: '#4b5a32' });
-        const can = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.24), olive);
-        box.add(can);
-        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.425, 0.05, 0.245), new THREE.MeshLambertMaterial({ color: '#d8b43a' }));
-        stripe.position.y = 0.04;
-        box.add(stripe);
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.06), new THREE.MeshLambertMaterial({ color: '#2f3820' }));
-        lid.position.y = 0.15;
-        box.add(lid);
-        const brass = new THREE.MeshStandardMaterial({ color: '#c8a040', metalness: 0.8, roughness: 0.3 });
-        for (let i = 0; i < 3; i++) {
-            const round = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.035), brass);
-            round.position.set(-0.1 + i * 0.07, 0.19, 0.05);
-            box.add(round);
-        }
-        box.position.y = -0.2;
-        box.traverse(o => {
-            if (o.isMesh) o.castShadow = true;
-        });
-        const holder = new THREE.Group();
-        holder.add(box);
-        return holder;
-    }
-
     update(dt) {
         this.time += dt;
         this.scale = Math.min(1, this.scale + dt * 3);
-        const spin = SPIN[this.data.type];
+        const spin = this.look.spin;
         this.item.position.y = (spin ? 0.95 : 0.75) + Math.sin(this.time * 2.5) * (spin ? 0.18 : 0.12);
         this.item.rotation.y += dt * (spin || 1.8);
         this.ring.material.opacity = 0.45 + Math.sin(this.time * 4) * 0.25;
@@ -250,3 +119,63 @@ export class PickupView {
         }
     }
 }
+
+// A blue kevlar vest with a helmet on top
+function createVest() {
+    const group = new THREE.Group();
+    const blue = new THREE.MeshLambertMaterial({ color: '#3b6fa8' });
+    const dark = new THREE.MeshLambertMaterial({ color: '#25466b' });
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.16), blue);
+    vest.position.y = -0.1;
+    group.add(vest);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.17), dark);
+    strap.position.y = -0.2;
+    group.add(strap);
+    const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), dark);
+    helmet.position.y = 0.18;
+    group.add(helmet);
+    group.traverse(o => {
+        if (o.isMesh) o.castShadow = true;
+    });
+    return group;
+}
+
+// Olive ammo can with a yellow stripe and a couple of rounds on top
+function createAmmoBox() {
+    const box = new THREE.Group();
+    const olive = new THREE.MeshLambertMaterial({ color: '#4b5a32' });
+    const can = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.24), olive);
+    box.add(can);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.425, 0.05, 0.245), new THREE.MeshLambertMaterial({ color: '#d8b43a' }));
+    stripe.position.y = 0.04;
+    box.add(stripe);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.06), new THREE.MeshLambertMaterial({ color: '#2f3820' }));
+    lid.position.y = 0.15;
+    box.add(lid);
+    const brass = new THREE.MeshStandardMaterial({ color: '#c8a040', metalness: 0.8, roughness: 0.3 });
+    for (let i = 0; i < 3; i++) {
+        const round = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.035), brass);
+        round.position.set(-0.1 + i * 0.07, 0.19, 0.05);
+        box.add(round);
+    }
+    box.position.y = -0.2;
+    box.traverse(o => {
+        if (o.isMesh) o.castShadow = true;
+    });
+    const holder = new THREE.Group();
+    holder.add(box);
+    return holder;
+}
+
+registerPickupLook('ammo', { color: '#ffd23f', create: createAmmoBox });
+registerPickupLook('armor', { color: '#5fb0ff', create: createVest });
+registerPickupLook('weapon', { color: '#ffffff', create: data => gunOnDisplay(data.weapon, 1.6) });
+registerPickupLook('rpg', { color: '#ff5a1f', spotlight: true, create: () => gunOnDisplay('rpg', 1.4) });
+registerPickupLook('health_potion', {
+    color: '#ff4f8b',
+    create: () => {
+        const potion = getItemView('health_potion').createModel();
+        potion.scale.setScalar(1.8);
+        return potion;
+    }
+});

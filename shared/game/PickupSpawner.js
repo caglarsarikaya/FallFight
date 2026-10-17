@@ -62,7 +62,7 @@ export class PickupSpawner {
         return removed;
     }
 
-    // Loot dropped where something died (Zombies). extra: e.g. { weapon } for gun drops.
+    // Loot dropped where something died (a mode's monsters). extra: e.g. { weapon } for gun drops.
     drop(type, arena, pos, now, life, extra = {}) {
         const { ix, iz } = arena.tileAt(pos.x, pos.z);
         const y = arena.levelNear(ix, iz, Math.round(pos.y)) ?? arena.spawnLevel(ix, iz);

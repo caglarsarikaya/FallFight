@@ -1,5 +1,5 @@
 import { DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../../shared/characters/definitions.js';
-import { DEFAULT_MODE, isValidMode } from '../../shared/config/modes.js';
+import { DEFAULT_MODE, isValidMode } from '../../shared/modes/registry.js';
 
 const KEY = 'fallfight.profile.v1';
 

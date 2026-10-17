@@ -173,7 +173,7 @@ export class CharacterModel {
         this.deathTimer = 0;
     }
 
-    revive() {
+    rise() {
         this.deathTimer = null;
         this.rig.rotation.set(0, 0, 0);
         this.rig.position.set(0, 0, 0);

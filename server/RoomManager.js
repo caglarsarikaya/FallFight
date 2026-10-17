@@ -2,10 +2,9 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { NET, ROOMS } from '../shared/constants.js';
 import { C2S } from '../shared/protocol.js';
 import { sanitizeRoomName } from '../shared/characters/definitions.js';
-import { DEFAULT_MODE, getModeInfo } from '../shared/config/modes.js';
+import { DEFAULT_MODE, getModeInfo, isValidMode, modeHasMap } from '../shared/modes/registry.js';
 import { getMap } from '../shared/world/maps/index.js';
 import { GameRoom } from '../shared/game/GameRoom.js';
-import { isPlayableMode } from '../shared/game/modes/index.js';
 
 const UNJOINED_ROOM_TTL = 30_000; // a created room nobody entered closes after this (ms)
 const MAX_PASSWORD = 32;
@@ -24,10 +23,10 @@ export const ROOM_ERRORS = Object.freeze({
 
 // Messages a client in a room may send to its GameRoom (everything else is ignored)
 export const ROOM_MESSAGES = new Set([
-    C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.REVIVE, C2S.PREFS, C2S.PROFILE
+    C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.ACTION, C2S.PROFILE
 ]);
 
-const modeOrDefault = mode => (isPlayableMode(mode) ? mode : DEFAULT_MODE);
+const modeOrDefault = mode => (isValidMode(mode) ? mode : DEFAULT_MODE);
 
 function hashPassword(password, salt) {
     return createHash('sha256').update(salt).update(password).digest();
@@ -58,8 +57,8 @@ export class RoomManager {
         if ([...this.rooms.values()].some(e => e.name.toLowerCase() === name.toLowerCase())) return { error: ROOM_ERRORS.NAME_TAKEN };
         const size = Number(maxPlayers);
         if (!Number.isInteger(size) || size < 2 || size > this.maxPlayers) return { error: ROOM_ERRORS.BAD_SIZE };
-        if (!isPlayableMode(mode)) return { error: ROOM_ERRORS.BAD_MODE };
-        if (map && !getMap(map)) return { error: ROOM_ERRORS.BAD_MAP };
+        if (!isValidMode(mode)) return { error: ROOM_ERRORS.BAD_MODE };
+        if (map && (!getMap(map) || !modeHasMap(mode, map))) return { error: ROOM_ERRORS.BAD_MAP };
 
         const secret = String(password || '').slice(0, MAX_PASSWORD);
         const entry = this.createRoom({ name, kind: 'custom', bots: !!bots, maxPlayers: size, mode, map });

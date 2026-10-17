@@ -30,7 +30,8 @@ export class PlayerState {
 
         this.maxHealth = PLAYER.maxHealth;
         this.health = PLAYER.maxHealth;
-        this.isZombie = false;
+        this.isNpc = false;          // a mode's monster (GameRoom.addNpc), not a person or seat bot
+        this.fallImmune = false;
         this.armor = 0;
         this.helmet = false;
         this.alive = true;
@@ -75,11 +76,12 @@ export class PlayerState {
             ...this.toSnapshot(),
             name: this.name,
             characterId: this.characterId,
-            isBot: this.isBot
+            isBot: this.isBot,
+            isNpc: this.isNpc
         };
     }
 
-    // Monsters (zombies) only need where they are and how hurt they are, 20 times a second;
+    // Monsters (NPCs) only need where they are and how hurt they are, 20 times a second;
     // the rest is in the full description they joined with
     toNpcSnapshot() {
         return {

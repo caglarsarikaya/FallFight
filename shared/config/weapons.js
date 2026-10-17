@@ -20,7 +20,7 @@ export const WEAPON_KIND = Object.freeze({
 
 // SPECIAL: map power weapons (the Lava Arena RPG), never bought or given in a loadout.
 // HE / SMOKE: grenades, bought in the shop (keys 6 and 7)
-export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3, SPECIAL: 4, HE: 5, SMOKE: 6, ANGEL: 7 });
+export const WEAPON_SLOT = Object.freeze({ PRIMARY: 0, SECONDARY: 1, KNIFE: 2, ITEM: 3, SPECIAL: 4, HE: 5, SMOKE: 6, EXTRA: 7 });
 
 const SLOT_OF_KIND = { [WEAPON_KIND.PISTOL]: WEAPON_SLOT.SECONDARY, [WEAPON_KIND.LAUNCHER]: WEAPON_SLOT.SPECIAL };
 

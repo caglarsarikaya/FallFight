@@ -6,7 +6,7 @@ import { OnlineConnection } from './net/OnlineConnection.js';
 import { MainMenu } from './ui/MainMenu.js';
 import { Game } from './Game.js';
 import { C2S } from '../shared/protocol.js';
-import { getModeInfo } from '../shared/config/modes.js';
+import { getModeInfo } from '../shared/modes/registry.js';
 
 const container = document.getElementById('game');
 const ui = document.getElementById('ui');

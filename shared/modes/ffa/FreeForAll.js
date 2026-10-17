@@ -1,16 +1,13 @@
 import { LOADOUT } from '../../constants.js';
 import { WEAPON_SLOT, isGun } from '../../config/weapons.js';
-import { buyItem } from '../Shop.js';
-import { GameMode } from './GameMode.js';
+import { buyItem } from '../../features/shop/Shop.js';
+import { GameMode } from '../GameMode.js';
+import { FFA_ACTIONS } from './config.js';
 
 // Deathmatch: endless, everyone for themselves, a health potion for every kill. Score = kills.
 // Every life gives a random rifle and pistol, unless the player turned Random Guns off: then they
 // keep the guns they picked. B opens the buy menu any time, and everything in it is free.
 export class FreeForAll extends GameMode {
-    get id() {
-        return 'ffa';
-    }
-
     onJoin(player) {
         player.randomGuns ??= true;
         player.dmLoadout ??= null;     // [primary, pistol] for lives with Random Guns off
@@ -44,6 +41,10 @@ export class FreeForAll extends GameMode {
             this.saveLoadout(player);
         }
         return result;
+    }
+
+    onAction(player, name, data) {
+        if (name === FFA_ACTIONS.RANDOM_GUNS) this.setRandomGuns(player, data.on !== false);
     }
 
     setRandomGuns(player, on) {

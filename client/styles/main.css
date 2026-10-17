@@ -512,8 +512,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     text-shadow: 1px 1px 0 #000;
 }
 
-/* Zombies revive: a bar that fills over the revive time */
-.revive-bar {
+/* A timed action (a revive): a bar that fills over its time */
+.progress-bar {
     position: absolute;
     left: 50%; top: calc(50% + 96px);
     transform: translateX(-50%);
@@ -522,8 +522,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     border: 1px solid rgba(255, 255, 255, 0.35);
     overflow: hidden;
 }
-.revive-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #4cd964; }
-.revive-bar span {
+.progress-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #4cd964; }
+.progress-bar span {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-family: var(--font); font-size: 15px; color: #fff; text-shadow: 1px 1px 0 #000;
 }
@@ -546,11 +546,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .vignette.danger { box-shadow: inset 0 0 120px 30px rgba(255, 140, 0, 0.8); }
 .vignette.heal { box-shadow: inset 0 0 140px 40px rgba(255, 80, 160, 0.5); }
 .vignette.show { opacity: 1; transition: none; }
-/* Zombies angel: a steady gold edge while it lasts */
-.vignette.angel { box-shadow: inset 0 0 150px 36px rgba(255, 214, 90, 0.45); }
-.vignette.angel.on { opacity: 1; animation: angel-pulse 1.6s ease-in-out infinite; }
-@keyframes angel-pulse { 50% { opacity: 0.6; } }
-.angel-badge {
+/* A blessing (the angel): a steady gold edge while it lasts */
+.vignette.glow { box-shadow: inset 0 0 150px 36px rgba(255, 214, 90, 0.45); }
+.vignette.glow.on { opacity: 1; animation: glow-pulse 1.6s ease-in-out infinite; }
+@keyframes glow-pulse { 50% { opacity: 0.6; } }
+.status-badge {
     position: absolute; left: 0; bottom: 100%;
     white-space: nowrap;
     font-family: var(--font);
@@ -559,8 +559,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     text-shadow: 2px 2px 0 #3f2f00;
     margin-bottom: 4px;
 }
-.angel-badge.ending { color: #fff; animation: angel-blink 0.5s steps(1) infinite; }
-@keyframes angel-blink { 50% { opacity: 0.35; } }
+.status-badge.ending { color: #fff; animation: badge-blink 0.5s steps(1) infinite; }
+@keyframes badge-blink { 50% { opacity: 0.35; } }
 
 @media (max-width: 700px) {
     .cs-stat { font-size: 32px; }

@@ -1,4 +1,4 @@
-import { ZOMBIES } from '../../shared/config/modes.js';
+import { ZOMBIES } from '../../shared/modes/zombies/config.js';
 import { CharacterModel } from './CharacterModel.js';
 
 // A shambling zombie: grey-green skin, torn shirt, arms reaching forward, glowing eyes.

@@ -1,7 +1,7 @@
-import { PLAYER } from '../constants.js';
-import { normalize, yawTowards } from '../math.js';
-import { weaponSpec } from '../config/weapons.js';
-import { MAX_DROP } from '../world/Arena.js';
+import { PLAYER } from '../../constants.js';
+import { normalize, yawTowards } from '../../math.js';
+import { weaponSpec } from '../../config/weapons.js';
+import { MAX_DROP } from '../../world/Arena.js';
 
 const STUCK_TIME = 1.5;       // seconds without progress before it starts tearing through blocks
 const DIRECT_RANGE = 2.5;     // close enough to walk straight at the target

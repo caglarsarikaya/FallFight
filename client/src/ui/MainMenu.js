@@ -1,18 +1,20 @@
 import { CHARACTERS } from '../../shared/characters/definitions.js';
-import { MODES, getModeInfo } from '../../shared/config/modes.js';
-import { isPlayableMode } from '../../shared/game/modes/index.js';
+import { MODES, getModeInfo, isValidMode } from '../../shared/modes/registry.js';
 import { getMap } from '../../shared/world/maps/index.js';
 import { S2C } from '../../shared/protocol.js';
 import { drawDirt, textureDataUrl } from '../world/textures.js';
 import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
 import { el } from './dom.js';
+import { allClientFeatures } from '../features/registry.js';
 
 const CONTROLS = [
     ['WASD', 'Move'], ['Shift', 'Walk (silent, accurate)'], ['C / Ctrl', 'Crouch'], ['Space, wheel', 'Jump'],
     ['Left click', 'Fire / slash'], ['Right click', 'Scope / knife stab'], ['R', 'Reload'],
     ['1 / 2 / 3 / 4', 'Rifle / Pistol / Knife / Potion'], ['Q', 'Switch weapon'], ['6 / 7', 'HE grenade / smoke grenade (click to throw)'],
-    ['B', 'Buy menu (Deathmatch: free, Team Buy, Zombies)'], ['N / M', 'Quick buy: ammo / kevlar + helmet'], ['H / G', 'Quick buy: 2 potions / HE + smoke'], ['8', 'Zombies: angel (15s safe from zombies)'], ['E (hold)', 'Zombies: revive a fallen teammate'],
+    ['B', 'Buy menu (in modes that have one)'], ['N / M', 'Quick buy: ammo / kevlar + helmet'], ['H / G', 'Quick buy: 2 potions / HE + smoke'],
+    // What the features add (shared/features/, client/src/features/)
+    ...allClientFeatures().flatMap(F => F.menuControls ?? []),
     ['V', 'First / third person'],
     ['Tab', 'Scoreboard'], ['Esc', 'Close the buy menu, open / close the game menu']
 ];
@@ -88,7 +90,7 @@ export class MainMenu {
 
         this.preview = new CharacterPreview(this.previewBox);
         this.select(this.selected, false);
-        this.selectMode(isPlayableMode(profile.mode) ? profile.mode : MODES[0].id, false);
+        this.selectMode(isValidMode(profile.mode) ? profile.mode : MODES[0].id, false);
         this.setWhere(profile.playWhere, false);
         this.setAction(profile.onlineAction, false);
         this.showTab(TABS.some(([id]) => id === profile.menuTab) ? profile.menuTab : 'player', false);
@@ -127,7 +129,7 @@ export class MainMenu {
     // that choice uses (Quick Play: mode; Offline: mode + map; Create: mode, map + room; Join: rooms)
     buildGameTab() {
         this.modeButtons = MODES.map(mode => {
-            const playable = isPlayableMode(mode.id);
+            const playable = isValidMode(mode.id);
             const button = el('button.menu-row', { type: 'button', disabled: !playable, onclick: () => this.selectMode(mode.id) }, [
                 el('span.name', { text: mode.name }), playable ? null : el('span.desc', { text: 'coming soon' })
             ]);

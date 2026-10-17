@@ -1,9 +1,10 @@
-import { GOD_MODE } from '../constants.js';
-import { Consumable } from './Consumable.js';
+import { WEAPON_SLOT } from '../../config/weapons.js';
+import { Consumable } from '../../items/Consumable.js';
+import { GOD_MODE } from './config.js';
 
-// Zombies: the angel. A rare drop kept in its own slot (8) until you need it; using it gives
-// GOD_MODE.duration seconds of wings, a golden shine and no damage at all (Zombies.shielded).
-// Unused, it comes out by itself when a hit would kill you (Zombies.saveFromDeath).
+// The angel item. Kept in its own slot (8) until you need it; using it gives GOD_MODE.duration
+// seconds of wings, a golden shine and no damage at all (Angel.shielded). Unused, it comes out by
+// itself when a hit would kill you (Angel.saveFromDeath).
 export class GodMode extends Consumable {
     constructor() {
         super({
@@ -13,6 +14,7 @@ export class GodMode extends Consumable {
             description: `${GOD_MODE.duration} s untouchable, saves you from a deadly hit`
         });
         this.short = 'ANGEL';
+        this.slotWhenCarried = WEAPON_SLOT.EXTRA;
     }
 
     get usableWhenFrozen() {

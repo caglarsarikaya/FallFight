@@ -1,10 +1,11 @@
-import { ARENA, ARMOR, FALL_DAMAGE, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER, RPG } from '../constants.js';
+import { ARENA, ARMOR, GUN, KILL_CREDIT_WINDOW, MATCH, NET, PLAYER } from '../constants.js';
+import { buildRuleset } from '../ruleset.js';
 import { C2S, S2C } from '../protocol.js';
 import { normalize } from '../math.js';
 import { Arena } from '../world/Arena.js';
 import { DEFAULT_MAP, getMap } from '../world/maps/index.js';
-import { DEFAULT_MODE, getModeInfo } from '../config/modes.js';
-import { createMode } from './modes/index.js';
+import { DEFAULT_MODE, createMode, getModeInfo } from '../modes/registry.js';
+import { createFeatures, movementHooks } from '../features/registry.js';
 import { getItem } from '../items/ItemRegistry.js';
 import { weaponSpec } from '../config/weapons.js';
 import { CHARACTERS, DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../characters/definitions.js';
@@ -22,19 +23,20 @@ const round2 = v => Math.round(v * 100) / 100;
 const round4 = v => Math.round(v * 10000) / 10000;
 const MODE_STATE_INTERVAL = 1;   // seconds between MODE_STATE refreshes (timers) when nothing changed
 
-// The map a room uses: the requested one, or the mode's first choice that exists
+// The map a room uses: the requested one if the mode plays on it, or the mode's first that exists
 export function resolveMap(modeId, mapId) {
-    if (getMap(mapId)) return getMap(mapId);
-    const preferred = getModeInfo(modeId)?.maps.find(id => getMap(id));
-    return getMap(preferred) || getMap(DEFAULT_MAP);
+    const maps = (getModeInfo(modeId) || getModeInfo(DEFAULT_MODE)).maps;
+    if (maps.includes(mapId) && getMap(mapId)) return getMap(mapId);
+    return getMap(maps.find(id => getMap(id))) || getMap(DEFAULT_MAP);
 }
 
 // Authoritative arena simulation. Transport-agnostic: messages come in through handleMessage()
 // and go out through emit(targetId | null, type, data), where null means everyone in the room.
 // Runs on the Node server for online play and inside the browser for offline play.
 export class GameRoom {
-    // mode: 'ffa' | 'gungame' | 'teambuy' | 'zombies'; map: a map id (see shared/world/maps/)
-    constructor({ emit = () => {}, rng = Math.random, mode = DEFAULT_MODE, map = null } = {}) {
+    // mode: a mode id (shared/modes/registry.js); map: a map id (see shared/world/maps/)
+    // ruleset: tuning overrides replacing the mode's own (shared/ruleset.js), e.g. for tests
+    constructor({ emit = () => {}, rng = Math.random, mode = DEFAULT_MODE, map = null, ruleset = null } = {}) {
         this.emit = emit;
         this.rng = rng;
         this.time = 0;
@@ -42,10 +44,18 @@ export class GameRoom {
         this.arena = new Arena(this.map);
         this.players = new Map();
         this.bots = new Map();          // id -> BotBrain (seat bots)
-        this.npcs = new Map();          // id -> brain (monsters a mode brings, e.g. zombies)
+        this.npcs = new Map();          // id -> brain (monsters a mode brings)
         this.projectiles = new Map();
         this.smokes = [];               // smoke grenade clouds: { x, y, z, radius, until }
         this.mode = createMode(mode, this);
+        // Per-map data only this mode needs (e.g. where its monsters come in), from its descriptor
+        this.mapRules = Object.freeze(this.mode.descriptor.mapOverlay[this.map.id] ?? {});
+        // Opt-in gameplay pieces the mode lists (shared/features/), and their physics hooks
+        this.featureIds = this.mode.descriptor.features;
+        this.features = createFeatures(this.featureIds, this);
+        this.movementHooks = movementHooks(this.featureIds);
+        this.pickupHandlers = Object.assign({}, CORE_PICKUPS, ...this.features.map(f => f.pickups));
+        this.ruleset = buildRuleset(ruleset ?? this.mode.ruleset);
         this.pickups = new PickupSpawner(rng, this.mode.pickupTypes);
         this.lagComp = new LagComp();
         this.nextProjectileId = 1;
@@ -54,9 +64,8 @@ export class GameRoom {
         this.modeStateTimer = 0;
         this.humans = 0;
         this.matchOver = null;          // { restartAt, ... } between a win and the next match
-        this.rpgTimer = RPG.firstDelay;  // seconds until the map's RPG appears (maps with rpgSpots)
-        this.rpgOut = false;             // an RPG is on the map or in someone's hands
         this.mode.reset();
+        for (const f of this.features) f.reset();
     }
 
     get humanCount() {
@@ -75,7 +84,7 @@ export class GameRoom {
         });
         this.players.set(id, player);
         if (!isBot) this.humans++;
-        this.mode.resetPlayer(player);
+        this.resetPlayer(player);
         this.mode.onJoin(player);
         // The mode may keep a newcomer out until the next round (alive = false)
         if (player.alive) {
@@ -92,6 +101,8 @@ export class GameRoom {
                 mode: this.mode.id,
                 map: this.map.id,
                 modeState: this.mode.stateJSON(),
+                ruleset: this.ruleset,
+                features: this.featureIds,
                 time: this.time,
                 players: [...this.players.values()].map(p => this.playerJSON(p, true)),
                 arena: this.arena.toJSON(),
@@ -104,17 +115,31 @@ export class GameRoom {
         return player;
     }
 
-    // Snapshot (or full description) of a player, with the mode's extra fields
+    // Snapshot (or full description) of a player, with the mode's and the features' extra fields
     playerJSON(player, full = false) {
-        if (!full && player.isZombie) return player.toNpcSnapshot();
+        if (!full && player.isNpc) return player.toNpcSnapshot();
         const base = full ? player.toJSON() : player.toSnapshot();
-        const extra = this.mode.playerJSON(player);
-        return extra ? Object.assign(base, extra) : base;
+        Object.assign(base, this.mode.playerJSON(player));
+        if (!player.isNpc) for (const f of this.features) Object.assign(base, f.playerJSON(player));
+        return base;
     }
 
-    // A computer-controlled creature that isn't a seat bot (zombies). setup(player) customises it.
+    // One of the room's features by id (shared/features/registry.js), or null
+    feature(id) {
+        return this.features.find(f => f.id === id) || null;
+    }
+
+    // The mode's and the features' per-player state, for a newcomer or a new match
+    resetPlayer(player) {
+        this.mode.resetPlayer(player);
+        for (const f of this.features) f.resetPlayer(player);
+    }
+
+    // A computer-controlled creature that isn't a seat bot (a mode's monsters). setup(player)
+    // customises it.
     addNpc({ id, name, characterId, setup = () => {} }) {
         const player = new PlayerState({ id, name, characterId, isBot: true });
+        player.isNpc = true;
         player.inventory.hotbar = [null, null, null, null, null, null, null];
         player.inventory.selected = 0;
         setup(player);
@@ -171,8 +196,7 @@ export class GameRoom {
             case C2S.RELOAD: return this.reload(player);
             case C2S.SCOPE: return this.setScope(player, data.level);
             case C2S.BUY: return this.buy(player, data.item);
-            case C2S.REVIVE: return this.mode.onRevive?.(player, data);
-            case C2S.PREFS: return this.mode.setRandomGuns?.(player, data.randomGuns !== false);
+            case C2S.ACTION: return this.onAction(player, data);
             case C2S.PROFILE: return this.onProfile(player, data);
         }
     }
@@ -200,8 +224,23 @@ export class GameRoom {
         player.onGround = !!data.onGround;
         player.crouching = !!data.crouching;
         player.walking = !!data.walking;
-        player.jetting = !!data.jetting && !!player.jetpack;
+        player.flying = !!data.flying && this.features.some(f => f.canFly(player));
         this.afterMove(player);
+    }
+
+    // A request for a feature or the mode: { name, data }
+    onAction(player, { name, data = {} }) {
+        if (typeof name !== 'string' || !data || typeof data !== 'object') return;
+        for (const f of this.features) {
+            const handler = f.actions[name];
+            if (handler) return handler(player, data);
+        }
+        this.mode.onAction(player, name, data);
+    }
+
+    // A mode or feature message to clients (S2C.EVENT): the client dispatches it as `name`
+    emitEvent(target, name, data) {
+        this.emit(target, S2C.EVENT, { name, data });
     }
 
     onProfile(player, data) {
@@ -222,7 +261,7 @@ export class GameRoom {
         return true;
     }
 
-    // Consumables: potions and the angel any time you're alive (freeze time too), grenades in play
+    // Consumables: items marked usableWhenFrozen any time you're alive (freeze time too), grenades in play
     useItem(player, slot, dir) {
         if (!player.alive || this.matchOver) return false;
         if (Number.isInteger(slot) && slot !== player.inventory.selected) this.select(player, slot);
@@ -257,7 +296,7 @@ export class GameRoom {
         return fired;
     }
 
-    // Team Buy: spend money (the mode checks time, place and price)
+    // Spend money in the buy menu (the mode checks time, place and price)
     buy(player, item) {
         if (!this.mode.buy || typeof item !== 'string') return { ok: false, error: 'unknown' };
         const result = this.mode.buy(player, item);
@@ -399,7 +438,7 @@ export class GameRoom {
         }
         if (ZONE_RANK[zone] > ZONE_RANK[entry.zone]) entry.zone = zone;
         if (victim.isProtected(this.time) || !this.mode.canDamage(shooter, victim)) return;
-        raw *= shooter.damageScale ?? 1;   // zombie gunners hit softer than people
+        raw *= shooter.damageScale ?? 1;   // some NPCs hit softer than people
         const covered = victim.armor > 0 && zone !== 'legs' && (zone !== 'head' || victim.helmet);
         if (!covered) {
             entry.health += raw;
@@ -436,11 +475,11 @@ export class GameRoom {
     damage(victim, amount, attacker, weapon, knockback, info = {}) {
         if (!victim.alive || victim.isProtected(this.time) || this.matchOver) return false;
         if (attacker && !this.mode.canDamage(attacker, victim)) return false;
-        if (this.mode.shielded(victim)) return false;
-        if (amount >= victim.health && this.mode.saveFromDeath(victim)) return false;
+        if (this.shielded(victim)) return false;
+        if (amount >= victim.health && this.saveFromDeath(victim)) return false;
         victim.health = Math.max(0, victim.health - amount);
         victim.lastDamage = { by: attacker?.id ?? null, weapon, time: this.time };
-        victim.taggedUntil = this.time + PLAYER.tagTime;
+        victim.taggedUntil = this.time + this.ruleset.tagTime;
 
         let kb = null;
         if (knockback) {
@@ -450,7 +489,7 @@ export class GameRoom {
                 y: Math.min(4, knockback.strength),
                 z: (knockback.z / len) * knockback.strength
             };
-            // Zombies barely budge (a shove shouldn't knock them into a hole); giants not at all
+            // knockbackScale: some NPCs barely budge (a shove shouldn't knock them into a hole)
             const k = victim.knockbackScale ?? 1;
             if (victim.isBot && k > 0) {
                 victim.vx += kb.x * k;
@@ -474,6 +513,16 @@ export class GameRoom {
         });
         if (victim.health <= 0) this.kill(victim, attacker, weapon, !!info.headshot);
         return true;
+    }
+
+    // Is this player out of harm's way altogether right now (the mode or a feature says so)?
+    shielded(player) {
+        return this.mode.shielded(player) || this.features.some(f => f.shielded(player));
+    }
+
+    // A hit is about to kill this player: may the mode or a feature save them at the last moment?
+    saveFromDeath(player) {
+        return this.mode.saveFromDeath(player) || this.features.some(f => f.saveFromDeath(player));
     }
 
     heal(player, amount) {
@@ -593,6 +642,13 @@ export class GameRoom {
         if (!player.isBot) this.emit(player.id, S2C.INVENTORY, { ...player.inventory.toJSON(), armor: player.armor, helmet: player.helmet, money: player.money });
     }
 
+    // May this player take this pickup? The mode decides who takes pickups at all, the pickup's
+    // owner (core or feature) whether this one is wanted
+    canPickUp(player, pickup) {
+        if (!this.mode.canPickUp(player, pickup)) return false;
+        return this.pickupHandlers[pickup.type]?.canTake?.(player, pickup) ?? true;
+    }
+
     // ---- life and death ---------------------------------------------------------------
 
     afterMove(player) {
@@ -604,11 +660,11 @@ export class GameRoom {
         this.checkFallDamage(player);
     }
 
-    // Landing hard hurts: FALL_DAMAGE.perBlock for every block dropped beyond FALL_DAMAGE.safe.
+    // Landing hard hurts: fallDamage.perBlock for every block dropped beyond fallDamage.safe (ruleset).
     // Measured by the speed coming down at the last state in the air (as the height a free fall
     // needs for it) plus what was left to fall from there, so running down stairs, one small hop
-    // per step, never counts as one big fall. Water breaks the fall; zombies and jetpack carriers
-    // don't care.
+    // per step, never counts as one big fall. Water breaks the fall; players with fallImmune (or a
+    // feature that says so) don't care.
     checkFallDamage(player) {
         if (!player.onGround) {
             player.fallSpeed = this.arena.isWaterAt(player.x, player.y + 0.4, player.z) ? 0 : Math.max(0, -player.vy);
@@ -618,10 +674,12 @@ export class GameRoom {
         const speed = player.fallSpeed || 0;
         player.fallSpeed = 0;
         if (!speed) return;
-        const drop = (speed * speed) / (2 * PLAYER.gravity) + Math.max(0, player.fallFromY - player.y);
-        if (!player.alive || player.isZombie || player.jetpack || drop <= FALL_DAMAGE.safe) return;
+        const { safe, perBlock } = this.ruleset.fallDamage;
+        const drop = (speed * speed) / (2 * this.ruleset.movement.gravity) + Math.max(0, player.fallFromY - player.y);
+        if (!player.alive || player.fallImmune || drop <= safe) return;
+        if (this.features.some(f => f.fallImmune(player))) return;
         const credit = this.fallCredit(player);
-        this.damage(player, Math.round((drop - FALL_DAMAGE.safe) * FALL_DAMAGE.perBlock),
+        this.damage(player, Math.round((drop - safe) * perBlock),
             credit && this.mode.isEnemy(credit, player) ? credit : null, 'landing');
     }
 
@@ -652,6 +710,7 @@ export class GameRoom {
         const credited = killer && killer !== victim && this.mode.isEnemy(killer, victim) ? killer : null;
         if (credited) credited.kills++;
         this.emit(null, S2C.DEATH, { victimId: victim.id, killerId: credited?.id ?? null, cause, headshot });
+        for (const f of this.features) f.onDeath(victim);
         this.mode.onKill(victim, credited, cause, headshot);
     }
 
@@ -669,12 +728,10 @@ export class GameRoom {
 
     restartMatch() {
         this.matchOver = null;
-        this.rpgTimer = RPG.firstDelay;
-        this.rpgOut = false;
         this.smokes.length = 0;
-        for (const pickup of this.pickups.removeType('rpg')) this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         this.mode.reset();
-        for (const player of this.players.values()) this.mode.resetPlayer(player);
+        for (const f of this.features) f.reset();
+        for (const player of this.players.values()) this.resetPlayer(player);
         this.emit(null, S2C.MATCH_START, {});
         for (const player of this.players.values()) this.respawn(player);
     }
@@ -690,7 +747,7 @@ export class GameRoom {
         player.yaw = Math.atan2(player.x, player.z);
         player.pitch = 0;
         player.lastGroundBlock = spot ? { ix: spot.ix, iy: spot.y, iz: spot.iz } : null;
-        player.protectedUntil = this.time + PLAYER.spawnProtection;
+        player.protectedUntil = this.time + this.ruleset.spawnProtection;
         this.lagComp.reset(player.id);
     }
 
@@ -701,19 +758,6 @@ export class GameRoom {
         player.health = PLAYER.maxHealth;
         player.cooldowns = {};
         player.lastDamage = null;
-        this.emit(null, S2C.RESPAWN, { id: player.id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, health: player.health, armor: player.armor });
-        this.notifyInventory(player);
-    }
-
-    // Back on their feet where they fell, with what they carried (Zombies revive)
-    revive(player, health) {
-        player.alive = true;
-        player.health = Math.min(player.maxHealth, health);
-        player.vx = player.vy = player.vz = 0;
-        player.fallSpeed = 0;
-        player.protectedUntil = this.time + PLAYER.spawnProtection;
-        player.lastDamage = null;
-        this.lagComp.reset(player.id);
         this.emit(null, S2C.RESPAWN, { id: player.id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, health: player.health, armor: player.armor });
         this.notifyInventory(player);
     }
@@ -734,41 +778,8 @@ export class GameRoom {
     // Movement input extras for a bot: weapon weight and being slowed by hits
     botMoveInput(bot, input) {
         input.speedMul = weaponSpec(bot.inventory.selectedId)?.moveSpeed ?? 1;
-        input.slow = this.time < bot.taggedUntil ? PLAYER.tagSpeed : 1;
+        input.slow = this.time < bot.taggedUntil ? this.ruleset.tagSpeed : 1;
         return input;
-    }
-
-    // ---- the map's RPG -------------------------------------------------------------------
-
-    // One RPG at a time, on a random tower top of maps that have rpgSpots. Once it's gone (fired,
-    // its carrier died or left, its tower top was shot away) the next one comes after a cooldown.
-    updateRpg(dt) {
-        const spots = this.map.rpgSpots;
-        if (!spots?.length || this.matchOver) return;
-        if (this.rpgExists()) {
-            this.rpgOut = true;
-            return;
-        }
-        if (this.rpgOut) {
-            this.rpgOut = false;
-            this.rpgTimer = RPG.cooldown;
-        }
-        this.rpgTimer -= dt;
-        if (this.rpgTimer > 0) return;
-        const free = spots.filter(s => this.arena.isStandable(s.ix, s.y, s.iz));
-        if (!free.length) {
-            this.rpgTimer = 1; // every tower top is broken right now: try again soon
-            return;
-        }
-        const spot = free[Math.floor(this.rng() * free.length)];
-        this.rpgOut = true;
-        this.emit(null, S2C.PICKUP_SPAWNED, this.pickups.place('rpg', this.arena, spot, this.time, { spot: spot.name }));
-    }
-
-    rpgExists() {
-        if (this.pickups.has('rpg')) return true;
-        for (const p of this.players.values()) if (p.alive && p.inventory.has('rpg')) return true;
-        return false;
     }
 
     // ---- simulation -------------------------------------------------------------------
@@ -784,21 +795,22 @@ export class GameRoom {
         }
 
         this.mode.tick(dt);
+        for (const f of this.features) f.tick(dt);
         if (this.matchOver && this.time >= this.matchOver.restartAt) this.restartMatch();
 
         for (const [id, brain] of this.bots) {
             const bot = this.players.get(id);
             const input = brain.update(dt);
             if (!bot.alive || this.mode.frozen(bot)) continue;
-            stepMovement(bot, this.botMoveInput(bot, input), this.arena, dt);
+            stepMovement(bot, this.botMoveInput(bot, input), this.arena, dt, this.ruleset, this.movementHooks);
             this.afterMove(bot);
         }
         for (const [id, brain] of this.npcs) {
             const npc = this.players.get(id);
             const input = brain.update(dt);
             if (!npc || !npc.alive) continue;
-            input.slow = this.time < npc.taggedUntil ? PLAYER.tagSpeed : 1;
-            stepMovement(npc, input, this.arena, dt);
+            input.slow = this.time < npc.taggedUntil ? this.ruleset.tagSpeed : 1;
+            stepMovement(npc, input, this.arena, dt, this.ruleset, this.movementHooks);
             this.afterMove(npc);
         }
         this.updateReloads();
@@ -837,26 +849,13 @@ export class GameRoom {
         for (const pickup of this.pickups.update(dt, this.arena, this.time)) {
             this.emit(null, S2C.PICKUP_SPAWNED, pickup);
         }
-        this.updateRpg(dt);
         for (const pickup of this.pickups.expire(this.time)) {
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: null });
         }
-        for (const { pickup, player } of this.pickups.collect(this.players.values(), (p, pickup) => this.mode.canPickUp(p, pickup))) {
-            if (pickup.type === 'ammo') player.inventory.addMagazines(pickup.amount * 2);
-            else if (pickup.type === 'armor') {
-                player.armor = 100;
-                player.helmet = true;
-            } else if (pickup.type === 'rpg') {
-                this.select(player, player.inventory.give('rpg'));
-            } else if (pickup.type === 'longjump') {
-                player.longJump = true;
-            } else if (pickup.type === 'jetpack') {
-                player.jetpack = true;
-            } else if (pickup.type === 'weapon') {
-                const hadPrimary = !!player.inventory.hotbar[0];
-                const slot = player.inventory.give(pickup.weapon);
-                if (!hadPrimary && slot >= 0) this.select(player, slot);
-            } else player.inventory.add(pickup.type, pickup.amount);
+        for (const { pickup, player } of this.pickups.collect(this.players.values(), (p, pickup) => this.canPickUp(p, pickup))) {
+            const handler = this.pickupHandlers[pickup.type];
+            if (handler) handler.apply.call(this, player, pickup);
+            else player.inventory.add(pickup.type, pickup.amount);
             this.notifyInventory(player);
             this.emit(null, S2C.PICKUP_TAKEN, { id: pickup.id, by: player.id, type: pickup.type, amount: pickup.amount, weapon: pickup.weapon });
         }
@@ -885,3 +884,26 @@ export class GameRoom {
 }
 
 const clampAbs = (v, limit) => Math.max(-limit, Math.min(limit, v));
+
+// What the core pickups do (`this` is the room). Features add their own (Feature.pickups); any
+// other type is a counted item (potions...).
+const CORE_PICKUPS = {
+    ammo: {
+        apply(player, pickup) {
+            player.inventory.addMagazines(pickup.amount * 2);
+        }
+    },
+    armor: {
+        apply(player) {
+            player.armor = 100;
+            player.helmet = true;
+        }
+    },
+    weapon: {
+        apply(player, pickup) {
+            const hadPrimary = !!player.inventory.hotbar[0];
+            const slot = player.inventory.give(pickup.weapon);
+            if (!hadPrimary && slot >= 0) this.select(player, slot);
+        }
+    }
+};

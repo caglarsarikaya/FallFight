@@ -9,15 +9,12 @@ export default {
     height: 10,
     layout: ARENA_LAYOUT,
     landmarks: LANDMARKS,
-    // A one-shot RPG appears on one of these tower tops (see RPG in shared/constants.js)
+    // A one-shot RPG appears on one of these tower tops (the rpg feature, shared/features/rpg/)
     rpgSpots: RPG_SPOTS,
-    // Zombies: a long jump module appears on the plaza in the middle (see LONG_JUMP)
-    longJumpSpot: { ix: LANDMARKS.plaza.ix, iz: LANDMARKS.plaza.iz, y: 1 },
-    // Tile rectangles (inclusive): team bases on the west and east edges, zombies from north and south
+    // Tile rectangles (inclusive): team bases on the west and east edges
     spawns: {
         t: [{ x0: 1, x1: 4, z0: 24, z1: 35 }],
-        ct: [{ x0: 55, x1: 58, z0: 24, z1: 35 }],
-        zombie: [{ x0: 20, x1: 39, z0: 1, z1: 3 }, { x0: 20, x1: 39, z0: 56, z1: 58 }]
+        ct: [{ x0: 55, x1: 58, z0: 24, z1: 35 }]
     },
     theme: { sky: '#87b9e8', fog: '#b9d6f0', void: 'lava' }
 };

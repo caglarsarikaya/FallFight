@@ -1,8 +1,8 @@
-import { TEAM_BUY } from '../../config/modes.js';
+import { TEAM_BUY, TEAM_BUY_EVENTS } from './config.js';
+import { SHOP } from '../../features/shop/config.js';
 import { KNIFE, WEAPONS, WEAPON_SLOT, weaponSpec } from '../../config/weapons.js';
-import { S2C } from '../../protocol.js';
-import { buyItem } from '../Shop.js';
-import { GameMode } from './GameMode.js';
+import { buyItem } from '../../features/shop/Shop.js';
+import { GameMode } from '../GameMode.js';
 
 const TEAMS = TEAM_BUY.teams;   // ['t', 'ct']
 const other = team => (team === 't' ? 'ct' : 't');
@@ -12,10 +12,6 @@ const other = team => (team === 't' ? 'ct' : 't');
 // out or the clock runs out. Dead players watch until the next round. Kills, wins and even losses
 // pay money; guns you still hold at the end of a round carry over. First to roundsToWin wins.
 export class TeamBuy extends GameMode {
-    get id() {
-        return 'teambuy';
-    }
-
     get pickupTypes() {
         return [];
     }
@@ -119,7 +115,7 @@ export class TeamBuy extends GameMode {
             if (player.isBot) this.botBuy(player);
         }
         this.dirty = true;
-        this.room.emit(null, S2C.ROUND_START, { round: this.round, freezeTime: TEAM_BUY.freezeTime });
+        this.room.emitEvent(null, TEAM_BUY_EVENTS.ROUND_START, { round: this.round, freezeTime: TEAM_BUY.freezeTime });
     }
 
     // Keep the teams within one player of each other by moving bots across
@@ -155,7 +151,7 @@ export class TeamBuy extends GameMode {
             for (const p of this.room.players.values()) this.pay(p, TEAM_BUY.lossReward);
         }
         this.dirty = true;
-        this.room.emit(null, S2C.ROUND_END, { winner, reason, score: { ...this.score }, round: this.round });
+        this.room.emitEvent(null, TEAM_BUY_EVENTS.ROUND_END, { winner, reason, score: { ...this.score }, round: this.round });
     }
 
     pay(player, amount) {
@@ -222,7 +218,7 @@ export class TeamBuy extends GameMode {
         return zones.some(z => ix >= z.x0 - 3 && ix <= z.x1 + 3 && iz >= z.z0 - 3 && iz <= z.z1 + 3);
     }
 
-    // Returns { ok, error?, price }; the items are in shared/game/Shop.js
+    // Returns { ok, error?, price }; the items are in shared/features/shop/Shop.js
     buy(player, item) {
         if (!this.canBuy(player)) return { ok: false, error: 'not-now' };
         return buyItem(this.room, player, item);
@@ -244,15 +240,15 @@ export class TeamBuy extends GameMode {
             ].filter(Boolean);
             for (const id of choices) {
                 // Leave money for a vest
-                if (!has(id) && bot.money >= WEAPONS[id].price + TEAM_BUY.kevlar) {
+                if (!has(id) && bot.money >= WEAPONS[id].price + SHOP.kevlar) {
                     this.buy(bot, id);
                     break;
                 }
             }
             if (!bot.inventory.hotbar[WEAPON_SLOT.PRIMARY] && bot.money >= WEAPONS.deagle.price && rng() < 0.6) this.buy(bot, 'deagle');
         }
-        if (bot.money >= TEAM_BUY.kevlarHelmet) this.buy(bot, 'kevlar_helmet');
-        else if (bot.money >= TEAM_BUY.kevlar) this.buy(bot, 'kevlar');
+        if (bot.money >= SHOP.kevlarHelmet) this.buy(bot, 'kevlar_helmet');
+        else if (bot.money >= SHOP.kevlar) this.buy(bot, 'kevlar');
         if (bot.money >= 1500) this.buy(bot, 'ammo');
     }
 

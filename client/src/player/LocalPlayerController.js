@@ -1,5 +1,6 @@
 import { PLAYER } from '../../shared/constants.js';
 import { stepMovement, wishDirection } from '../../shared/physics.js';
+import { DEFAULT_RULESET } from '../../shared/ruleset.js';
 
 const STEP = 1 / 60;
 const LOOK_SPEED = 0.0022;
@@ -15,13 +16,14 @@ export class LocalPlayerController {
         this.alive = false;
         this.walking = false;
         this.accumulator = 0;
+        this.ruleset = DEFAULT_RULESET; // the room's tuning, from the welcome (same as the server's)
         this.eyeHeight = PLAYER.eyeHeight;
         this.taggedUntil = 0;
         this.jumpUntil = 0;        // a jump press waits this long for the ground (bunny hop timing)
-        this.longJump = false;     // carrying the long jump module (Zombies; set from snapshots)
-        this.jetpack = false;      // carrying the jetpack (Zombies; set from snapshots)
-        this.events = { jumped: false, longJumped: false, landed: false, fallSpeed: 0, liftOff: false };
-        this.jet = { up: false, down: false };
+        this.movementHooks = [];   // the room's feature physics hooks (from the welcome)
+        this.perks = {};           // our own latest snapshot: what the features read (what we carry...)
+        this.keys = {};            // this frame's keys after the features had them (their own input added)
+        this.events = { jumped: false, jumpKind: null, landed: false, fallSpeed: 0, liftOff: false };
     }
 
     teleport(x, y, z, yaw = this.yaw) {
@@ -45,24 +47,24 @@ export class LocalPlayerController {
 
     // Getting shot slows you down for a moment
     tag() {
-        this.taggedUntil = performance.now() / 1000 + PLAYER.tagTime;
+        this.taggedUntil = performance.now() / 1000 + this.ruleset.tagTime;
     }
 
     // Fixed-step simulation so movement feels the same at any frame rate.
     // input: { forward, strafe, jump (pressed this frame), crouch, walk }; speedMul from the weapon in hand.
-    // With the jetpack, walk (Shift) flies up and crouch (Ctrl) sinks.
+    // The room's features may turn keys into their own input (Shift to fly up...).
     update(dt, { forward, strafe, jump, crouch = false, walk = false }, arena, speedMul = 1) {
         this.events.jumped = false;
-        this.events.longJumped = false;
+        this.events.jumpKind = null;
         this.events.landed = false;
         this.events.liftOff = false;
-        this.jet.up = this.jetpack && walk;
-        this.jet.down = this.jetpack && crouch;
-        if (this.jetpack) walk = false;
-        this.walking = walk;
+        const keys = { crouch, walk };
+        for (const hook of this.movementHooks) hook.prepare?.(keys, this.perks);
+        this.keys = keys;
+        this.walking = keys.walk;
         const now = performance.now() / 1000;
-        const slow = now < this.taggedUntil ? PLAYER.tagSpeed : 1;
-        if (jump) this.jumpUntil = now + PLAYER.jumpBuffer;
+        const slow = now < this.taggedUntil ? this.ruleset.tagSpeed : 1;
+        if (jump) this.jumpUntil = now + this.ruleset.movement.jumpBuffer;
         this.accumulator = Math.min(this.accumulator + dt, 0.25);
         while (this.accumulator >= STEP) {
             this.accumulator -= STEP;
@@ -70,13 +72,13 @@ export class LocalPlayerController {
             const wasFlying = this.body.flying;
             const vy = this.body.vy;
             const input = this.alive
-                ? { ...wishDirection(forward, strafe, this.yaw), jump: now < this.jumpUntil, crouch, walk, speedMul, slow, longJump: this.longJump, jetpack: this.jetpack ? this.jet : null }
+                ? { ...wishDirection(forward, strafe, this.yaw), jump: now < this.jumpUntil, speedMul, slow, ...keys }
                 : { moveX: 0, moveZ: 0, jump: false };
-            stepMovement(this.body, input, arena, STEP);
+            stepMovement(this.body, input, arena, STEP, this.ruleset, this.movementHooks);
             if (!wasFlying && this.body.flying) this.events.liftOff = true;
             if (wasOnGround && !this.body.onGround && this.body.vy > 0 && !this.body.flying) {
                 this.events.jumped = true;
-                if (this.body.longJumped) this.events.longJumped = true;
+                this.events.jumpKind = this.body.jumpKind;
                 this.jumpUntil = 0; // one press, one jump
             }
             if (!wasOnGround && this.body.onGround) {
@@ -101,6 +103,6 @@ export class LocalPlayerController {
 
     get networkState() {
         const { x, y, z, vx, vy, vz, onGround, crouching } = this.body;
-        return { x, y, z, vx, vy, vz, onGround, crouching, walking: this.walking, jetting: !!this.body.flying, yaw: this.yaw, pitch: this.pitch };
+        return { x, y, z, vx, vy, vz, onGround, crouching, walking: this.walking, flying: !!this.body.flying, yaw: this.yaw, pitch: this.pitch };
     }
 }

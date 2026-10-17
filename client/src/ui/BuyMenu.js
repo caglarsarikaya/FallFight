@@ -1,5 +1,5 @@
 import { GRENADE } from '../../shared/constants.js';
-import { TEAM_BUY } from '../../shared/config/modes.js';
+import { SHOP } from '../../shared/features/shop/config.js';
 import { WEAPONS } from '../../shared/config/weapons.js';
 import { getItemView } from '../items/registry.js';
 import { el } from './dom.js';
@@ -22,9 +22,9 @@ const CATEGORIES = [
     {
         name: 'Equipment',
         items: [
-            { id: 'kevlar', name: 'Kevlar Vest', price: TEAM_BUY.kevlar },
-            { id: 'kevlar_helmet', name: 'Kevlar + Helmet', price: TEAM_BUY.kevlarHelmet },
-            { id: 'health_potion', name: 'Health Potion (+20 HP)', price: TEAM_BUY.potion },
+            { id: 'kevlar', name: 'Kevlar Vest', price: SHOP.kevlar },
+            { id: 'kevlar_helmet', name: 'Kevlar + Helmet', price: SHOP.kevlarHelmet },
+            { id: 'health_potion', name: 'Health Potion (+20 HP)', price: SHOP.potion },
             { id: 'hegrenade', name: 'HE Grenade', price: GRENADE.he.price, icon: true },
             { id: 'smokegrenade', name: 'Smoke Grenade', price: GRENADE.smoke.price, icon: true }
         ]
@@ -44,7 +44,7 @@ export class BuyMenu {
         this.open = false;
         this.category = null;
         this.money = 0;
-        this.team = null;
+        this.defaultItem = null;   // marked "(default)": what you get anyway (the mode says)
         this.free = false;
         this.randomGuns = null;    // Deathmatch: shown as category 9
     }
@@ -53,10 +53,11 @@ export class BuyMenu {
         return this.open;
     }
 
-    show(money, team, { free = false, randomGuns = null } = {}) {
+    // options (from the mode): { free, randomGuns, defaultItem }
+    show(money, { free = false, randomGuns = null, defaultItem = null } = {}) {
         this.open = true;
         this.money = money;
-        this.team = team;
+        this.defaultItem = defaultItem;
         this.free = free;
         this.randomGuns = randomGuns;
         this.category = null;
@@ -153,7 +154,7 @@ export class BuyMenu {
                 getItemView(item.id)?.drawIcon(ctx, 32);
             }
             const poor = !this.free && item.price > money;
-            const own = item.id === TEAM_BUY.defaultPistol[this.team];
+            const own = item.id === this.defaultItem;
             return el(`button.buy-row${poor ? '.poor' : ''}`, { type: 'button', onclick: () => this.key(i + 1) }, [
                 el('span.key', { text: String(i + 1) }),
                 icon,

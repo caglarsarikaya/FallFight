@@ -53,8 +53,7 @@ export default {
     },
     spawns: {
         t: [{ x0: 3, x1: 32, z0: 2, z1: 5 }],
-        ct: [{ x0: 3, x1: 32, z0: 30, z1: 33 }],
-        zombie: [{ x0: 2, x1: 6, z0: 15, z1: 20 }, { x0: 29, x1: 33, z0: 15, z1: 20 }]
+        ct: [{ x0: 3, x1: 32, z0: 30, z1: 33 }]
     },
     theme: { sky: '#9fb7cf', horizon: '#e4edf5', fog: '#e4edf5', fogNear: 40, fogFar: 120, void: 'abyss', weather: 'snow', sun: 1.5, wall: '#dde8f2' }
 };

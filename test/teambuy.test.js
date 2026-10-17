@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameRoom } from '../shared/game/GameRoom.js';
-import { TEAM_BUY } from '../shared/config/modes.js';
+import { TEAM_BUY } from '../shared/modes/teambuy/config.js';
+import { SHOP } from '../shared/features/shop/config.js';
 import { WEAPONS } from '../shared/config/weapons.js';
 import { createRng } from '../shared/math.js';
-import { run } from './helpers.js';
+import { run, recorder } from './helpers.js';
 
 function teamRoom(seed = 5, map = 'fy_pool_day') {
     const events = [];
-    const room = new GameRoom({ mode: 'teambuy', map, rng: createRng(seed), emit: (target, type, data) => events.push({ target, type, data }) });
+    const room = new GameRoom({ mode: 'teambuy', map, rng: createRng(seed), emit: recorder(events) });
     room.eventsOf = type => events.filter(e => e.type === type).map(e => e.data);
     return room;
 }
@@ -122,7 +123,7 @@ test('buying: only in buy time, in your base, with the money, and not twice', ()
     a.money = 1000;
     assert.ok(room.buy(a, 'kevlar').ok);
     assert.ok(room.buy(a, 'kevlar_helmet').ok);
-    assert.equal(a.money, 1000 - TEAM_BUY.kevlarHelmet);
+    assert.equal(a.money, 1000 - SHOP.kevlarHelmet);
     assert.ok(a.armor === 100 && a.helmet);
 
     // Away from the base

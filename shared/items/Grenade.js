@@ -23,7 +23,7 @@ export class Grenade extends Consumable {
             x: dir.x * speed + player.vx,
             y: dir.y * speed + speed * GRENADE.upBias + Math.max(0, player.vy),
             z: dir.z * speed + player.vz
-        }, { gravity: GRENADE.gravity, bounce: GRENADE.bounce, fuse: GRENADE.fuse, life: Infinity });
+        }, { gravity: room.ruleset.grenade.gravity, bounce: GRENADE.bounce, fuse: GRENADE.fuse, life: Infinity });
         // Out of this kind: back to the best gun
         const inv = player.inventory;
         if (inv.count(this.id) === 0 && inv.selected === this.slot) room.select(player, inv.bestSlot());

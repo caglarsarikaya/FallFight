@@ -49,12 +49,12 @@ export class Hud {
         this.latencyText = el('span');
         this.netStats = el('div.net-stats', {}, [this.fpsText, this.pingText, this.latencyText]);
         this.protection = el('div.protection.hidden', { text: 'SPAWN PROTECTION' });
-        this.angelBadge = el('div.angel-badge.hidden');
-        this.angelGlow = el('div.vignette.angel');
+        this.badge = el('div.status-badge.hidden');
+        this.glow = el('div.vignette.glow');
         this.useHint = el('div.use-hint.hidden');
-        this.reviveFill = el('div.revive-fill');
-        this.reviveLabel = el('span');
-        this.reviveBar = el('div.revive-bar.hidden', {}, [this.reviveFill, this.reviveLabel]);
+        this.progressFill = el('div.progress-fill');
+        this.progressLabel = el('span');
+        this.progressBar = el('div.progress-bar.hidden', {}, [this.progressFill, this.progressLabel]);
         this.vignettes = {
             damage: el('div.vignette.damage'),
             danger: el('div.vignette.danger'),
@@ -63,18 +63,17 @@ export class Hud {
         this.underwater = el('div.underwater.hidden');
         this.smoke = el('div.smoke-screen');
         this.smokeShown = 0;
-        this.helpHint = el('div.help-hint', {
-            text: 'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades · 8 angel (Zombies) · B buy · N ammo · M kevlar · H potions · G grenades · E revive · Ctrl+Space long jump (Zombies) · Shift up / Ctrl down with the jetpack (Zombies) · V camera · Tab scores · Esc menu'
-        });
+        this.helpHint = el('div.help-hint');
+        this.setHelp([]);
         setTimeout(() => {
             this.helpHint.style.opacity = '0';
         }, 14000);
 
         this.root = el('div.hud', {}, [
             this.underwater, this.smoke, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
-            this.useHint, this.reviveBar,
-            ...Object.values(this.vignettes), this.angelGlow,
-            el('div.hud-left', {}, [this.angelBadge, this.health, this.armor]),
+            this.useHint, this.progressBar,
+            ...Object.values(this.vignettes), this.glow,
+            el('div.hud-left', {}, [this.badge, this.health, this.armor]),
             this.ammoBox, this.slotList, this.banner,
             this.netStats, this.killfeed, this.toasts, this.modeBadge, this.helpHint
         ]);
@@ -282,12 +281,22 @@ export class Hud {
         if (text) this.useHint.textContent = text;
     }
 
-    // Zombies revive in progress: { label, progress 0..1 } or null
-    setRevive(status) {
-        this.reviveBar.classList.toggle('hidden', !status);
+    // A timed action in progress (helping someone up...): { label, progress 0..1 } or null
+    setProgress(status) {
+        this.progressBar.classList.toggle('hidden', !status);
         if (!status) return;
-        if (status.label !== this.reviveLabel.textContent) this.reviveLabel.textContent = status.label;
-        this.reviveFill.style.width = `${(Math.min(1, status.progress) * 100).toFixed(1)}%`;
+        if (status.label !== this.progressLabel.textContent) this.progressLabel.textContent = status.label;
+        this.progressFill.style.width = `${(Math.min(1, status.progress) * 100).toFixed(1)}%`;
+    }
+
+    // The controls line shown for a while at the start: the core keys plus the mode's and the
+    // features' own (["E use", ...])
+    setHelp(extra) {
+        this.helpHint.textContent = [
+            'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades',
+            ...extra,
+            'V camera · Tab scores · Esc menu'
+        ].join(' · ');
     }
 
     // Hit confirmation: a small white X, shown at full strength, then faded by update() every frame
@@ -308,12 +317,16 @@ export class Hud {
         this.hitmarker.style.transform = `translate(-50%, -50%) rotate(45deg) scale(${(1 + 0.4 * k * k).toFixed(3)})`;
     }
 
-    // Zombies angel: whole seconds left (0 = none), as a badge over the health and a soft gold edge
-    setAngel(seconds) {
-        this.angelBadge.classList.toggle('hidden', !seconds);
-        this.angelGlow.classList.toggle('on', !!seconds);
-        this.angelBadge.classList.toggle('ending', seconds > 0 && seconds <= 3);
-        if (seconds) this.angelBadge.textContent = `😇 ANGEL ${seconds}s`;
+    // A badge over the health (null hides it); ending: it blinks
+    setBadge(text, ending = false) {
+        this.badge.classList.toggle('hidden', !text);
+        this.badge.classList.toggle('ending', !!text && ending);
+        if (text) this.badge.textContent = text;
+    }
+
+    // A soft gold edge round the screen
+    setGlow(on) {
+        this.glow.classList.toggle('on', !!on);
     }
 
     flash(kind) {

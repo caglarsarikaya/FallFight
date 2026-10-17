@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ZOMBIES } from '../../shared/config/modes.js';
+import { REVIVE } from '../../../shared/features/revive/config.js';
 
 const BEAM_HEIGHT = 40;
 const SOUL_START = 12;         // how high above the body the soul starts its way down
@@ -117,7 +117,7 @@ export class ReviveEffects {
             fx.age += dt;
             const pos = positionOf(id);
             if (pos) fx.group.position.copy(pos);
-            const p = serverNow === null ? 0 : THREE.MathUtils.clamp(1 - (fx.until - serverNow) / ZOMBIES.revive.time, 0, 1);
+            const p = serverNow === null ? 0 : THREE.MathUtils.clamp(1 - (fx.until - serverNow) / REVIVE.time, 0, 1);
 
             let fade = Math.min(1, fx.age / FADE_IN);
             if (fx.ending) {

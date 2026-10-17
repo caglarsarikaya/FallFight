@@ -7,6 +7,8 @@ import { Pathfinder } from '../shared/ai/Pathfinder.js';
 import { stepMovement } from '../shared/physics.js';
 import { GameRoom } from '../shared/game/GameRoom.js';
 import { createRng } from '../shared/math.js';
+import { MODES } from '../shared/modes/registry.js';
+import { resolveMap } from '../shared/game/GameRoom.js';
 
 const reachable = (arena, ix, iz) => !!arena.reachable[iz * arena.size + ix];
 
@@ -144,4 +146,24 @@ test('de_dust_mini: bots path through the roofed tunnel', () => {
     const path = new Pathfinder(arena).find({ ix: 6, iz: 22, y: 0 }, { ix: 22, iz: 22, y: 0 }, 20000);
     assert.equal(path.at(-1).ix, 22);
     assert.ok(path.some(w => w.ix === tunnel.ix && w.y === 0), 'walks through it, not over it');
+});
+
+test('modes: every map a mode lists exists, and its overlay zones have room to spawn', () => {
+    for (const mode of MODES) {
+        for (const id of mode.maps) {
+            const map = MAPS[id];
+            assert.ok(map, `${mode.id} lists ${id}`);
+            const arena = new Arena(map);
+            for (const zone of mode.mapOverlay[id]?.spawns ?? []) {
+                assert.ok(zoneTiles(arena, zone).length >= 4, `${mode.id} on ${id}: ${JSON.stringify(zone)}`);
+            }
+        }
+    }
+    const zombies = MODES.find(m => m.id === 'zombies');
+    for (const id of zombies.maps) assert.ok(zombies.mapOverlay[id]?.spawns?.length, `zombies need spawns on ${id}`);
+});
+
+test('modes: a room only plays on a map its mode lists', () => {
+    assert.equal(resolveMap('ffa', 'fy_pool_day').id, 'fy_pool_day');
+    assert.equal(resolveMap('zombies', 'de_nowhere').id, MODES.find(m => m.id === 'zombies').maps[0]);
 });

@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameRoom } from '../shared/game/GameRoom.js';
-import { GUN_GAME, MODES } from '../shared/config/modes.js';
+import { MODES } from '../shared/modes/registry.js';
+import { GUN_GAME } from '../shared/modes/gungame/config.js';
 import { MATCH } from '../shared/constants.js';
 import { getMap } from '../shared/world/maps/index.js';
 import { createRng } from '../shared/math.js';
-import { run } from './helpers.js';
+import { run, recorder } from './helpers.js';
+import { C2S } from '../shared/protocol.js';
 
 function modeRoom(mode, seed = 7) {
     const events = [];
-    const room = new GameRoom({ mode, rng: createRng(seed), emit: (target, type, data) => events.push({ target, type, data }) });
+    const room = new GameRoom({ mode, rng: createRng(seed), emit: recorder(events) });
     room.eventsOf = type => events.filter(e => e.type === type).map(e => e.data);
     return room;
 }
@@ -44,7 +46,7 @@ test('deathmatch: the buy menu is free and a bought gun comes back every life', 
         assert.equal(a.inventory.hotbar[0], 'ak47');
     }
     // Random guns back on: spawns roll again
-    room.handleMessage('a', 'prefs', { randomGuns: true });
+    room.handleMessage('a', C2S.ACTION, { name: 'randomGuns', data: { on: true } });
     const seen = new Set();
     for (let i = 0; i < 12; i++) {
         room.kill(a, null, 'fall');
@@ -58,7 +60,7 @@ test('deathmatch: random guns off before buying keeps the current guns', () => {
     const room = modeRoom('ffa');
     const a = room.addPlayer({ id: 'a', name: 'A' });
     const guns = a.inventory.hotbar.slice(0, 2);
-    room.handleMessage('a', 'prefs', { randomGuns: false });
+    room.handleMessage('a', C2S.ACTION, { name: 'randomGuns', data: { on: false } });
     room.kill(a, null, 'fall');
     run(room, 3.5);
     assert.deepEqual(a.inventory.hotbar.slice(0, 2), guns);

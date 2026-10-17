@@ -1,6 +1,6 @@
-import { GRENADE } from '../constants.js';
-import { TEAM_BUY } from '../config/modes.js';
-import { WEAPONS, WEAPON_SLOT, isGun } from '../config/weapons.js';
+import { GRENADE } from '../../constants.js';
+import { SHOP } from './config.js';
+import { WEAPONS, WEAPON_SLOT, isGun } from '../../config/weapons.js';
 
 // What the buy menu sells, shared by the modes that have one (Team Buy, Zombies).
 // Each mode decides who may buy and when; this only handles the item, the price and the money.
@@ -41,19 +41,19 @@ export function buyItem(room, player, item, { free = false, notify = true } = {}
         };
     } else if (item === 'kevlar') {
         if (player.armor >= 100) return { ok: false, error: 'owned' };
-        price = TEAM_BUY.kevlar;
+        price = SHOP.kevlar;
         apply = () => { player.armor = 100; };
     } else if (item === 'kevlar_helmet') {
         if (player.armor >= 100 && player.helmet) return { ok: false, error: 'owned' };
         // Already wearing a full vest: just the helmet
-        price = player.armor >= 100 ? TEAM_BUY.kevlarHelmet - TEAM_BUY.kevlar : TEAM_BUY.kevlarHelmet;
+        price = player.armor >= 100 ? SHOP.kevlarHelmet - SHOP.kevlar : SHOP.kevlarHelmet;
         apply = () => {
             player.armor = 100;
             player.helmet = true;
         };
     } else if (item === 'health_potion') {
         if (inv.count('health_potion') >= 2) return { ok: false, error: 'owned' };
-        price = TEAM_BUY.potion;
+        price = SHOP.potion;
         apply = () => inv.add('health_potion', 1);
     } else if (Object.hasOwn(GRENADE_PRICES, item)) {
         if (inv.count(item) >= GRENADE.max) return { ok: false, error: 'owned' };

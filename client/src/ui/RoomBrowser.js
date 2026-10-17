@@ -1,5 +1,5 @@
 import { ROOMS } from '../../shared/constants.js';
-import { getModeInfo } from '../../shared/config/modes.js';
+import { getModeInfo } from '../../shared/modes/registry.js';
 import { getMap } from '../../shared/world/maps/index.js';
 import { el } from './dom.js';
 

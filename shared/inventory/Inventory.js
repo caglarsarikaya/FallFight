@@ -3,12 +3,10 @@ import { getItem } from '../items/ItemRegistry.js';
 
 const SLOT_COUNT = 8;
 
-// Counted items that only take up their slot while you carry at least one
-const SLOT_WHEN_CARRIED = { godmode: WEAPON_SLOT.ANGEL };
-
 // CS-style slots: 1 primary gun, 2 pistol, 3 knife, 4 health potion, 5 special (the map's RPG),
-// 6 HE grenade, 7 smoke grenade, 8 the Zombies angel (only while carried). Each gun carried has its own ammo (rounds in the magazine +
-// reserve); consumables (potions, grenades) are counted in `counts`.
+// 6 HE grenade, 7 smoke grenade, 8 extra: a counted item whose spec has slotWhenCarried only takes
+// up that slot while you carry at least one. Each gun carried has its own ammo (rounds in the
+// magazine + reserve); consumables (potions, grenades...) are counted in `counts`.
 export class Inventory {
     // loadout: { weapons: [gunId], counts: { health_potion } }
     constructor(loadout = {}) {
@@ -18,8 +16,8 @@ export class Inventory {
     reset({ weapons = [], counts = {} } = {}) {
         this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null];
         this.ammo = {};
-        this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, godmode: 0, ...counts };
-        for (const key of Object.keys(SLOT_WHEN_CARRIED)) this.updateCarriedSlot(key);
+        this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, ...counts };
+        for (const key of Object.keys(this.counts)) this.updateCarriedSlot(key);
         for (const id of weapons) this.give(id);
         this.selected = this.bestSlot();
     }
@@ -92,7 +90,7 @@ export class Inventory {
     }
 
     updateCarriedSlot(key) {
-        const slot = SLOT_WHEN_CARRIED[key];
+        const slot = getItem(key)?.slotWhenCarried;
         if (slot === undefined) return;
         this.hotbar[slot] = this.count(key) > 0 ? key : null;
         if (this.selected === slot && !this.hotbar[slot]) this.selected = this.bestSlot();

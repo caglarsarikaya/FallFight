@@ -1,17 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameRoom } from '../shared/game/GameRoom.js';
-import { ZOMBIES } from '../shared/config/modes.js';
+import { ZOMBIES } from '../shared/modes/zombies/config.js';
 import { FlowField, UNREACHED } from '../shared/ai/FlowField.js';
 import { Arena } from '../shared/world/Arena.js';
 import { MAPS } from '../shared/world/maps/index.js';
 import { createRng } from '../shared/math.js';
 import { RoomManager } from '../server/RoomManager.js';
-import { run } from './helpers.js';
+import { run, recorder } from './helpers.js';
+import { REVIVE } from '../shared/features/revive/config.js';
+import { C2S } from '../shared/protocol.js';
 
 function zombieRoom(map = 'de_dust_mini', seed = 3) {
     const events = [];
-    const room = new GameRoom({ mode: 'zombies', map, rng: createRng(seed), emit: (target, type, data) => events.push({ target, type, data }) });
+    const room = new GameRoom({ mode: 'zombies', map, rng: createRng(seed), emit: recorder(events) });
     room.eventsOf = type => events.filter(e => e.type === type).map(e => e.data);
     return room;
 }
@@ -35,7 +37,7 @@ test('waves: zombies arrive after a short delay, more and tougher every wave', (
     assert.equal(z.maxHealth, ZOMBIES.health);
     // They come from their spawn zones
     const { ix, iz } = room.arena.tileAt(z.x, z.z);
-    assert.ok(room.map.spawns.zombie.some(s => ix >= s.x0 && ix <= s.x1 && iz >= s.z0 && iz <= s.z1));
+    assert.ok(room.mapRules.spawns.some(s => ix >= s.x0 && ix <= s.x1 && iz >= s.z0 && iz <= s.z1));
 });
 
 test('zombies hunt down a player who stands still, and the run ends when everyone is down', () => {
@@ -267,21 +269,21 @@ test('revive: a teammate holding E over a fallen player for 5 s brings them back
 
     // Nobody revives from too far
     a.x -= 3;
-    room.handleMessage('a', 'revive', { id: 'b' });
+    room.handleMessage('a', C2S.ACTION, { name: 'revive', data: { id: 'b' } });
     assert.equal(room.eventsOf('revive').length, 0);
     a.x += 3;
 
     // Letting go early stops it
-    room.handleMessage('a', 'revive', { id: 'b' });
-    assert.equal(room.eventsOf('revive').at(-1).until, room.time + ZOMBIES.revive.time);
+    room.handleMessage('a', C2S.ACTION, { name: 'revive', data: { id: 'b' } });
+    assert.equal(room.eventsOf('revive').at(-1).until, room.time + REVIVE.time);
     step(2);
-    room.handleMessage('a', 'revive', { id: null });
+    room.handleMessage('a', C2S.ACTION, { name: 'revive', data: { id: null } });
     assert.equal(room.eventsOf('revive').at(-1).until, null);
-    step(ZOMBIES.revive.time);
+    step(REVIVE.time);
     assert.equal(b.alive, false);
 
     // Walking off stops it too
-    room.handleMessage('a', 'revive', { id: 'b' });
+    room.handleMessage('a', C2S.ACTION, { name: 'revive', data: { id: 'b' } });
     step(1);
     a.x -= 3;
     step(0.1);
@@ -289,12 +291,12 @@ test('revive: a teammate holding E over a fallen player for 5 s brings them back
     a.x += 3;
 
     // Held for the full time: back on their feet where they fell, with what they carried
-    room.handleMessage('a', 'revive', { id: 'b' });
-    step(ZOMBIES.revive.time - 0.5);
+    room.handleMessage('a', C2S.ACTION, { name: 'revive', data: { id: 'b' } });
+    step(REVIVE.time - 0.5);
     assert.equal(b.alive, false);
     step(0.6);
     assert.equal(b.alive, true);
-    assert.equal(b.health, ZOMBIES.revive.health);
+    assert.equal(b.health, REVIVE.health);
     assert.deepEqual({ x: b.x, y: b.y, z: b.z }, at);
     assert.ok(b.inventory.has('ak47'));
     assert.deepEqual(room.eventsOf('revived').at(-1), { reviverId: 'a', targetId: 'b' });

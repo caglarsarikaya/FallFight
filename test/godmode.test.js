@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameRoom } from '../shared/game/GameRoom.js';
-import { GOD_MODE } from '../shared/constants.js';
+import { GOD_MODE } from '../shared/features/angel/config.js';
 import { WEAPON_SLOT } from '../shared/config/weapons.js';
 import { createRng } from '../shared/math.js';
-import { run } from './helpers.js';
+import { run, recorder } from './helpers.js';
 
 function zombieRoom() {
     const events = [];
-    const room = new GameRoom({ mode: 'zombies', map: 'de_dust_mini', rng: createRng(3), emit: (target, type, data) => events.push({ type, data }) });
+    const room = new GameRoom({ mode: 'zombies', map: 'de_dust_mini', rng: createRng(3), emit: recorder(events) });
     room.eventsOf = type => events.filter(e => e.type === type).map(e => e.data);
     return room;
 }
@@ -18,12 +18,12 @@ const DOWN = { x: 0, y: -1, z: 0 };
 test('angel: a zombie drop goes into slot 8, only one carried at a time', () => {
     const room = zombieRoom();
     const a = room.addPlayer({ id: 'a', name: 'A' });
-    assert.equal(a.inventory.hotbar[WEAPON_SLOT.ANGEL], null, 'no slot until you have one');
+    assert.equal(a.inventory.hotbar[WEAPON_SLOT.EXTRA], null, 'no slot until you have one');
     const drop = room.pickups.drop('godmode', room.arena, a, room.time, 30);
     assert.ok(drop);
     room.tick(1 / 30);
     assert.equal(a.inventory.count('godmode'), 1);
-    assert.equal(a.inventory.hotbar[WEAPON_SLOT.ANGEL], 'godmode');
+    assert.equal(a.inventory.hotbar[WEAPON_SLOT.EXTRA], 'godmode');
     // A second one is left lying there
     room.pickups.drop('godmode', room.arena, a, room.time, 30);
     room.tick(1 / 30);
@@ -40,12 +40,12 @@ test('angel: used from slot 8, zombies can not hurt you for its duration, then t
     a.armor = 50;
     a.inventory.add('godmode', 1);
 
-    assert.ok(room.useItem(a, WEAPON_SLOT.ANGEL, DOWN));
+    assert.ok(room.useItem(a, WEAPON_SLOT.EXTRA, DOWN));
     assert.equal(a.inventory.count('godmode'), 0);
-    assert.equal(a.inventory.hotbar[WEAPON_SLOT.ANGEL], null, 'slot gone once used');
-    assert.notEqual(a.inventory.selected, WEAPON_SLOT.ANGEL);
+    assert.equal(a.inventory.hotbar[WEAPON_SLOT.EXTRA], null, 'slot gone once used');
+    assert.notEqual(a.inventory.selected, WEAPON_SLOT.EXTRA);
     assert.equal(room.eventsOf('action').at(-1).action, 'angel');
-    assert.ok(room.mode.playerJSON(a).godLeft > GOD_MODE.duration - 0.1);
+    assert.ok(room.playerJSON(a, true).godLeft > GOD_MODE.duration - 0.1);
 
     room.mode.zombieAttack(z, a, 30);
     assert.equal(a.health, 100);
@@ -54,7 +54,7 @@ test('angel: used from slot 8, zombies can not hurt you for its duration, then t
     assert.equal(room.damage(a, 10, null, 'landing'), false, 'falls do not hurt either');
 
     room.time += GOD_MODE.duration + 0.1;
-    assert.equal(room.mode.playerJSON(a).godLeft, 0);
+    assert.equal(room.playerJSON(a, true).godLeft, 0);
     room.mode.zombieAttack(z, a, 30);
     assert.ok(a.health < 90);
 });
@@ -88,7 +88,7 @@ test('angel: a hit that would kill you brings it out by itself, and the hit neve
     assert.equal(a.health, 5);
     assert.equal(a.armor, 40, 'armor kept too');
     assert.equal(a.inventory.count('godmode'), 0, 'used up');
-    assert.ok(room.mode.playerJSON(a).godLeft > GOD_MODE.duration - 0.1);
+    assert.ok(room.playerJSON(a, true).godLeft > GOD_MODE.duration - 0.1);
     const action = room.eventsOf('action').at(-1);
     assert.equal(action.action, 'angel');
     assert.equal(action.auto, true);

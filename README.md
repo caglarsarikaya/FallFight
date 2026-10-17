@@ -123,7 +123,7 @@ test/     node:test unit tests and bot simulations
         │          ├─ MeleeWeapon ── Knife
         │          └─ RangedWeapon (projectiles, for future grenades)
         └─ Consumable ─┬─ HealthPotion
-                       └─ GodMode (the Zombies angel)
+                       └─ GodMode (the angel, from shared/features/angel/)
   ```
 
   Each item has a matching `ItemView` on the client (`client/src/items/`): its 3D model,
@@ -137,23 +137,38 @@ test/     node:test unit tests and bot simulations
     (`shared/game/BodyZones.js`) against where the shooter saw its targets: `shared/game/LagComp.js`
     rewinds them by up to 250 ms.
   - Rate of fire, magazines, reloads and deploy times are enforced on the server too.
-- **Game modes (OOP):** `shared/game/modes/GameMode.js` holds the rules the room asks about:
-  - spawn loadout and spawn zones;
-  - who can hurt whom;
-  - what a kill is worth;
-  - when you respawn, and whether you're frozen;
-  - match end;
-  - the extra state clients see.
-
-  `FreeForAll`, `GunGame`, `TeamBuy` and `Zombies` override what they need. Tuning is in
-  `shared/config/modes.js`.
+- **Game modes are plug-ins.** Everything a mode is lives in two folders: `shared/modes/<id>/`
+  for its rules and `client/src/modes/<id>/` for how it looks. The core (`GameRoom`, physics,
+  `Game.js`, the HUD) never names a mode; `test/boundaries.test.js` fails if it does.
+  - **Descriptor** (`shared/modes/<id>/index.js`): name, description, the maps it plays on, a
+    `ruleset`, its `features` and its `Rules` class. All modes are listed in `shared/modes/registry.js`.
+  - **Rules** (a `GameMode` subclass): the hooks the room asks about, such as spawn loadout and zones,
+    who can hurt whom, what a kill is worth, when you respawn, freeze time, match end, and the extra
+    state clients see.
+  - **Ruleset** (`shared/ruleset.js`): per-room tuning like gravity, jump, speeds, fall damage and
+    respawn time. A mode overrides only what it changes, e.g. `ruleset: { movement: { gravity: 12 } }`.
+    It applies to that mode's rooms only. Bots use it, and clients get it in the welcome for their
+    own prediction.
+  - **Map overlay** (`maps.js`, optional): data only this mode needs on each map, such as where
+    zombies come in. It is read as `room.mapRules`, so map files never name a mode.
+  - **Client mode** (a `ClientMode` subclass): the top panel, scoreboard columns, buy menu rules,
+    banners, sounds and the death screen.
+- **Features are opt-in gameplay pieces** a mode lists in its descriptor: `jetpack`, `longjump`,
+  `angel`, `revive` and `rpg` (the map's RPG). Each one lives in `shared/features/<id>/`, with its
+  client half in `client/src/features/<id>/`, and owns its pickups, items, physics hooks
+  (`stepMovement` runs the room's hooks, and so does client prediction), damage hooks, player state,
+  client requests and messages. Another mode gets a jetpack by adding `'jetpack'` to its list.
+- **Messages a mode or feature defines** travel in two generic envelopes: `C2S.ACTION
+  { name, data }` and `S2C.EVENT { name, data }`. Their names live in the mode's or feature's
+  `config.js`, so adding a mode never changes `shared/protocol.js`.
 - **Maps** (`shared/world/maps/`) are lists of block boxes plus spawn zones, landmarks and a theme
   (sky, fog, what lies below). Block kinds and their properties are in `shared/world/blocks.js`:
   solid, breakable, bullet HP, grip and sound. Water isn't solid, and ice is slippery.
   - **Navigation knows about floors:** a place to stand is a column plus a height, so a house floor
-    and its roof are different places for spawns, bots (A* in `Pathfinder.js`) and zombies.
-  - **Zombies** are room NPCs. They share one flow field (`FlowField.js`, a BFS from every living
-    player), so a horde costs one pass over the map per update, however big it is.
+    and its roof are different places for spawns, bots (A* in `Pathfinder.js`) and monsters.
+  - **Monsters** are room NPCs (`GameRoom.addNpc`). Zombies share one flow field (`FlowField.js`,
+    a BFS from every living player), so a horde costs one pass over the map per update, however
+    big it is.
 - **Feel:** most of the gun feel comes from the client, all of it pooled so a spray allocates
   nothing:
   - recoil view punch, a dynamic crosshair and weapon sway;
@@ -187,17 +202,39 @@ find free (CC0 / royalty-free) gun recordings.
 
 1. Create `shared/world/maps/my_map.js`. It's a layout of `box(kind, x0, x1, z0, z1, y0, y1)`
    ranges (helpers such as `ring`, `house` and `stairs` are in `build.js`), plus `spawns` (tile
-   rectangles for `t`, `ct` and `zombie`), `landmarks.sniperPerches` and a `theme`.
-2. Register it in `shared/world/maps/index.js`, and list it under the modes that should offer it in
-   `shared/config/modes.js`.
+   rectangles for the `t` and `ct` sides), `landmarks.sniperPerches` and a `theme`.
+2. Register it in `shared/world/maps/index.js`, and add its id to `maps` in the descriptor of each
+   mode that should offer it. A mode with a map overlay needs an entry there too (Zombies: where
+   zombies come in, in `shared/modes/zombies/maps.js`).
 3. `test/maps.test.js` checks every map automatically: room to spawn, a route between the teams,
    reachable perches, unbreakable walls and a bot match.
 
 ### Adding a game mode
 
-Extend `GameMode` in `shared/game/modes/`, register it in `modes/index.js`, describe it in
-`MODES` (`shared/config/modes.js`), and give it a view in `client/src/ui/ModePanel.js` and columns
-in `Scoreboard.js`.
+Nothing outside the mode's two folders changes, apart from one line in each registry:
+
+1. `shared/modes/<id>/`:
+   - `config.js` for its tuning and message names;
+   - a `GameMode` subclass with its rules;
+   - `index.js` exporting the descriptor (`id`, `name`, `short`, `description`, `maps`, `ruleset`,
+     `features`, `Rules`, and optionally `mapOverlay`).
+2. List the descriptor in `shared/modes/registry.js`.
+3. `client/src/modes/<id>/`: a `ClientMode` subclass for its panel, scoreboard, buy menu and
+   banners. List it in `client/src/modes/registry.js`; without one, the mode gets the plain
+   free-for-all screens.
+4. To change physics or timings, set them in the descriptor's `ruleset`
+   (keys from `DEFAULT_RULESET`; a typo throws).
+
+`test/boundaries.test.js` builds a whole mode this way, with its own gravity, a feature and a single
+map, without touching the core.
+
+### Adding a feature
+
+Make a `Feature` subclass in `shared/features/<id>/` and list it in `shared/features/registry.js`.
+It can own pickups, items, `static movement` physics hooks, damage hooks, per-player state and
+client requests. Its client half is a `ClientFeature` in `client/src/features/<id>/`, listed in
+`client/src/features/registry.js`, which owns its views, sounds, HUD and pickup look. Modes opt in
+by adding its id to `features`.
 
 ### Adding a character
 
@@ -220,9 +257,10 @@ To point any copy of the page at a different server, add `?server=<url>`, e.g.
 `?server=http://localhost:3000`.
 
 Bot behaviour is tuned in `BOT_SETTINGS` (`shared/ai/BotBrain.js`): reaction time, aim error,
-burst length, headshot chance. Zombie waves are tuned in `ZOMBIES` (`shared/config/modes.js`). Bots navigate with A* (`shared/ai/Pathfinder.js`). Rules are in
-`shared/constants.js`, gun balance in `shared/config/weapons.js`, and the arena layout in
-`shared/world/layout.js`.
+burst length, headshot chance. Each mode's tuning is in its `shared/modes/<id>/config.js` (zombie
+waves: `ZOMBIES`). Bots navigate with A* (`shared/ai/Pathfinder.js`). Shared rules are in
+`shared/constants.js`, the per-room tunable ones in `shared/ruleset.js`, gun balance in
+`shared/config/weapons.js`, and the arena layout in `shared/world/layout.js`.
 
 ## Deploy
 

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { ROOMS, validateRoomLimits } from '../shared/constants.js';
 import { ROOM_MESSAGES, RoomManager, ROOM_ERRORS } from '../server/RoomManager.js';
 import { C2S } from '../shared/protocol.js';
+import { registerMode } from '../shared/modes/registry.js';
+import { GameMode } from '../shared/modes/GameMode.js';
 
 // Minimal stand-ins for socket.io
 const fakeIo = { to: () => ({ emit: () => {} }) };
@@ -120,7 +122,7 @@ test('the welcome tells the player which room they are in', () => {
 });
 
 test('every gameplay message reaches the room: firing, reloading, scoping, buying, reviving', () => {
-    for (const type of [C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.REVIVE, C2S.PROFILE]) {
+    for (const type of [C2S.STATE, C2S.SELECT, C2S.USE, C2S.FIRE, C2S.RELOAD, C2S.SCOPE, C2S.BUY, C2S.ACTION, C2S.PROFILE]) {
         assert.ok(ROOM_MESSAGES.has(type), type);
     }
     assert.ok(!ROOM_MESSAGES.has(C2S.JOIN) && !ROOM_MESSAGES.has(C2S.CREATE_ROOM));
@@ -143,6 +145,8 @@ test('custom rooms pick a mode and map; bad ones are refused', () => {
     const m = manager();
     assert.deepEqual(m.create({ roomName: 'X', mode: 'tag' }), { error: ROOM_ERRORS.BAD_MODE });
     assert.deepEqual(m.create({ roomName: 'X', map: 'de_nowhere' }), { error: ROOM_ERRORS.BAD_MAP });
+    registerMode({ id: 'icefight', name: 'Ice Fight', maps: ['fy_iceworld'], Rules: GameMode });
+    assert.deepEqual(m.create({ roomName: 'X', mode: 'icefight', map: 'fy_pool_day' }), { error: ROOM_ERRORS.BAD_MAP }, 'not one of its maps');
     const { roomId } = m.create({ roomName: 'Arms race', mode: 'gungame', map: 'fallfight_classic' });
     const entry = m.rooms.get(roomId);
     assert.equal(entry.room.mode.id, 'gungame');

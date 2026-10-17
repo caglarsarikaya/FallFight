@@ -4,12 +4,12 @@ import { Gun } from './Gun.js';
 import { RocketLauncher } from './RocketLauncher.js';
 import { Knife } from './Knife.js';
 import { HealthPotion } from './HealthPotion.js';
-import { GodMode } from './GodMode.js';
 import { Grenade } from './Grenade.js';
 
 // Items are stateless singletons; per-player state (ammo, timers) lives on the player.
 // To add a gun: add its spec to shared/config/weapons.js and a model spec in
-// client/src/items/guns/specs.js; it's registered here automatically.
+// client/src/items/guns/specs.js; it's registered here automatically. Items that belong to a
+// feature (the angel) are registered by that feature (shared/features/).
 const items = new Map();
 
 export function registerItem(item) {
@@ -31,7 +31,6 @@ for (const spec of Object.values(WEAPONS)) {
 }
 registerItem(new Knife());
 registerItem(new HealthPotion());
-registerItem(new GodMode());
 const { he, smoke } = GRENADE;
 registerItem(new Grenade({
     id: 'hegrenade', name: 'HE Grenade', short: 'HE', slot: WEAPON_SLOT.HE,

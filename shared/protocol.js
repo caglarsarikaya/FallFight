@@ -14,14 +14,14 @@ export const C2S = {
     RELOAD: 'reload',      // {}
     SCOPE: 'scope',        // { level } 0 = unscoped
     BUY: 'buy',            // { item } Team Buy: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion', 'ammo'
-    REVIVE: 'revive',      // { id } Zombies: start reviving that fallen teammate (hold E); id null stops
-    PREFS: 'prefs',        // { randomGuns } Deathmatch: random guns every life, or keep the ones you picked
+    ACTION: 'act',         // { name, data } a request for the room's mode or one of its features
+                           // (each defines its own names, in its config.js)
     PING: 'latencyCheck',  // ack: {} -> {} round-trip timing ('ping' is reserved by socket.io)
 };
 
 // Server -> client
 export const S2C = {
-    WELCOME: 'welcome',                // { selfId, room, time, players, arena, pickups, projectiles }
+    WELCOME: 'welcome',                // { selfId, room, mode, map, modeState, ruleset, features, time, players, arena, pickups, projectiles }
     JOIN_ERROR: 'joinError',           // { error } joining a room failed
     SNAPSHOT: 'snapshot',              // { time, players }
     PLAYER_JOINED: 'playerJoined',     // player
@@ -45,13 +45,8 @@ export const S2C = {
     MODE_STATE: 'modeState',           // mode-specific: scores, round, timers, wave... (see GameMode.stateJSON)
     MATCH_END: 'matchEnd',             // { winnerId, winnerTeam, title, standings, restartIn }
     MATCH_START: 'matchStart',         // {} a new match began (scores reset)
-    LEVEL_UP: 'levelUp',               // { id, level, weapon } Gun Game
-    ROUND_START: 'roundStart',         // { round, freezeTime } Team Buy
-    ROUND_END: 'roundEnd',             // { winner: 't' | 'ct' | null, reason, score, round }
     BUY_RESULT: 'buyResult',           // { ok, item, error? } to the buyer
-    WAVE_START: 'waveStart',           // { wave, count } Zombies
-    WAVE_END: 'waveEnd',               // { wave, next, breakTime }
-    REVIVE: 'revive',                  // { reviverId, targetId, until } until = server time it's done, null = stopped
-    REVIVED: 'revived',                // { reviverId, targetId } a fallen player is back on their feet
+    EVENT: 'event',                    // { name, data } a mode's or feature's own message; the client
+                                       // dispatches it as `name` (names live with the mode/feature)
     SERVER_STATS: 'serverStats',       // { players, rooms: [{ id, name, kind, players, maxPlayers, bots, botCount, locked }] }
 };

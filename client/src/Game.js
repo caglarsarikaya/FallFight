@@ -1,17 +1,20 @@
 import * as THREE from 'three';
-import { GOD_MODE, GUN, NET, PLAYER } from '../shared/constants.js';
+import { GUN, NET, PLAYER } from '../shared/constants.js';
+import { movementHooks } from '../shared/features/registry.js';
 import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../shared/config/weapons.js';
-import { ZOMBIES, getModeInfo } from '../shared/config/modes.js';
+import { getModeInfo } from '../shared/modes/registry.js';
 import { C2S, S2C } from '../shared/protocol.js';
 import { directionFromAngles, normalize } from '../shared/math.js';
 import { Arena, BLOCK_STATE } from '../shared/world/Arena.js';
 import { blockProps } from '../shared/world/blocks.js';
 import { hitTest } from '../shared/game/BodyZones.js';
+import { DEFAULT_RULESET } from '../shared/ruleset.js';
 import { getItem } from '../shared/items/ItemRegistry.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { GunEffects } from './effects/GunEffects.js';
-import { ReviveEffects } from './effects/ReviveEffects.js';
+import { createClientMode } from './modes/registry.js';
+import { createClientFeatures } from './features/registry.js';
 import { INTERPOLATION_DELAY, PlayerAvatar } from './entities/PlayerAvatar.js';
 import { ProjectileView } from './entities/ProjectileView.js';
 import { PickupView } from './entities/PickupView.js';
@@ -27,12 +30,10 @@ import { PauseMenu } from './ui/PauseMenu.js';
 import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { BuyMenu } from './ui/BuyMenu.js';
-import { TEAM_BUY } from '../shared/config/modes.js';
 import { el } from './ui/dom.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
 
-const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet', longjump: 'Long Jump', godmode: 'Angel', jetpack: 'Jetpack' };
-const ANGEL_GOLD = ['#fff2a8', '#ffd23f', '#ffffff'];
+const PICKUP_NAMES = { ammo: 'Ammo', health_potion: 'Health Potion', armor: 'Kevlar + Helmet' };
 const STATS_INTERVAL_MS = 500;
 const BASE_FOV = 75;
 const STEP_SPEED = 3.3;          // slower than this (walking with Shift, crouching) is silent, like CS
@@ -44,7 +45,6 @@ const STEP_SOUND = { grass: 'step', sand: 'stepSand', snow: 'stepSnow', stone: '
 const ZONE_HEIGHT = { head: 1.62, body: 1.15, legs: 0.5 };
 const FIRE = ['#fff3b0', '#ffc23a', '#ff7a1a', '#e2401a'];
 const SMOKE = ['#4a4a4a', '#6b6b6b', '#8a8580'];
-const DOWN = { x: 0, y: -1, z: 0 };
 const SPARKS = ['#fff6d0', '#ffd27a', '#ffffff'];
 const HARD_SURFACES = ['stone', 'ice'];
 // Per-shot camera kick by weapon kind (0..1): a short shake and FOV punch, on top of the recoil
@@ -52,12 +52,10 @@ const SHOT_KICK = { pistol: 0.35, smg: 0.3, rifle: 0.5, mg: 0.5, shotgun: 0.9, s
 const HEAVY_PISTOLS = ['deagle'];
 const SHOT_FOV = 3.5;         // degrees of FOV punch at full kick
 const SHOT_ROLL = 0.012;      // radians of camera roll and tilt jitter at full kick
-// Mode-specific player fields copied from snapshots (see GameMode.playerJSON)
-const MODE_FIELDS = ['score', 'level', 'levelKills', 'team', 'money', 'isZombie', 'maxHealth', 'godLeft', 'jetpack', 'jetting'];
-const JET_PUFF = 0.03;        // seconds between jetpack flame puffs
-const JET_SOUND = 0.085;      // seconds between overlapping thruster sounds
+// Snapshot fields the avatar or the events own; every other field (the mode's and the features'
+// own: team, money, level...) is copied onto the player info as it comes
+const SNAPSHOT_OWN = new Set(['id', 'x', 'y', 'z', 'yaw', 'pitch', 'onGround', 'crouching', 'item', 'alive', 'armor']);
 const SPECTATE_DELAY = 2;   // seconds of the death cam before following a teammate
-const SCORE_LABEL = { ffa: 'KILLS', gungame: 'PTS', teambuy: 'KILLS', zombies: 'KILLS' };
 const REBUY_NAMES = { ammo: 'ammo', kevlar_helmet: 'kevlar + helmet', kevlar: 'kevlar', health_potion: 'potion', hegrenade: 'HE', smokegrenade: 'smoke' };
 
 // What a quick buy key says when there was nothing to buy
@@ -104,7 +102,6 @@ export class Game {
         this.world = new WorldRenderer(this.scene);
         this.particles = new Particles(this.scene);
         this.effects = new GunEffects(this.scene);
-        this.reviveFx = new ReviveEffects(this.scene, this.particles);
         this.viewModel = new ViewModel();
         this.cameraController = new CameraController(this.camera, profile.cameraMode);
         // Dead and waiting for the wave or round: watch a living teammate
@@ -124,7 +121,7 @@ export class Game {
         this.buyMenu = new BuyMenu(ui, {
             sound,
             onBuy: item => this.connection.send(C2S.BUY, { item }),
-            onToggleRandom: () => this.setRandomGuns(!this.profile.randomGuns, true)
+            onToggleRandom: () => this.mode.toggleRandomGuns?.()
         });
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
@@ -177,14 +174,18 @@ export class Game {
         this.serverOffset = null;       // server time - local time, smoothed
         this.modeId = 'ffa';
         this.modeState = null;
+        // The client halves of the room's mode and features (set from the welcome), see
+        // client/src/modes/ and client/src/features/
+        this.mode = createClientMode(this.modeId, this);
+        this.features = [];
+        this.plugins = [this.mode];
+        this.ruleset = DEFAULT_RULESET;
         this.zoom = 1;
         this.armor = 0;
         this.helmet = false;
         this.look = { dx: 0, dy: 0 };
         this.shake = 0;                 // explosion camera shake, in blocks
         this.shotKick = 0;              // our own shot's camera kick, 0..1 (see SHOT_KICK)
-        this.reviveTarget = null;       // Zombies: the fallen teammate we're holding E on
-        this.revive = null;             // { label, until } a revive we're part of (server time)
         this.tmpVec = new THREE.Vector3();
 
         this.bindInput();
@@ -328,7 +329,7 @@ export class Game {
                 case 'scoreboard':
                     // The death message would sit right on top of the table
                     this.respawnOverlay.root.classList.toggle('behind', !!value);
-                    return value ? this.scoreboard.show(this.players, this.selfId, this.modeId, this.modeState) : this.scoreboard.hide();
+                    return value ? this.scoreboard.show(this.players, this.selfId, this.mode, this.modeState) : this.scoreboard.hide();
                 case 'primary':
                     if (value && this.spectating) return this.cycleSpectate(1);
                     return w.setTrigger(value && !!(w.holdingConsumable ? this.canAct : this.canShoot));
@@ -336,7 +337,7 @@ export class Game {
                     if (this.spectating) return this.cycleSpectate(-1);
                     return this.canAct && w.secondary();
                 case 'reload': return this.canAct && w.startReload();
-                case 'use': return this.setReviving(value);
+                case 'use': return this.hook('onUseKey', value);
                 case 'pause': return this.escape();
             }
         };
@@ -366,16 +367,13 @@ export class Game {
         return this.canAct && !this.frozen;
     }
 
-    // Team Buy: in buy time. Zombies and Deathmatch: any time you're alive.
+    // Alive, and the mode allows it right now (buy time...)
     get canBuy() {
-        if (!this.local.alive) return false;
-        if (this.modeId === 'zombies' || this.modeId === 'ffa') return true;
-        const s = this.modeState;
-        return this.modeId === 'teambuy' && s && (s.phase === 'freeze' || (s.phase === 'live' && s.buyLeft > 0));
+        return this.local.alive && this.mode.canBuy();
     }
 
     get frozen() {
-        return this.modeId === 'teambuy' && this.modeState?.phase === 'freeze';
+        return this.mode.frozen;
     }
 
     toggleBuyMenu() {
@@ -385,8 +383,7 @@ export class Game {
             this.hud.toast('Buy time is over');
             return;
         }
-        const free = this.modeId === 'ffa';
-        this.buyMenu.show(this.self?.money ?? 0, this.self?.team, { free, randomGuns: free ? this.profile.randomGuns : null });
+        this.buyMenu.show(this.self?.money ?? 0, this.mode.buyMenuOptions());
     }
 
     // N ammo, M armor, H potions, G grenades: one key buys that kind (the server buys what the money allows)
@@ -400,23 +397,48 @@ export class Game {
     }
 
     get hasShop() {
-        return this.modeId === 'teambuy' || this.modeId === 'zombies' || this.modeId === 'ffa';
+        return this.mode.hasShop;
     }
 
-    // Deathmatch: random guns every life, or keep the ones picked in the buy menu
-    setRandomGuns(on, announce = false) {
-        this.profile.randomGuns = on;
-        this.profile.save();
-        this.buyMenu.setRandomGuns(on);
-        this.connection.send(C2S.PREFS, { randomGuns: on });
-        if (announce) this.hud.toast(on ? 'Random guns ON: new guns every life' : 'Random guns OFF: you keep your guns');
+    // ---- the mode's and features' client halves ----------------------------------------------
+
+    // Calls a hook on the mode and every feature; true if any of them handled it
+    hook(name, ...args) {
+        let handled = false;
+        for (const plugin of this.plugins) if (plugin[name]?.(...args)) handled = true;
+        return handled;
+    }
+
+    // The first answer a plugin gives (a name, a sound...), or null
+    ask(name, ...args) {
+        for (const plugin of this.plugins) {
+            const answer = plugin[name]?.(...args);
+            if (answer != null) return answer;
+        }
+        return null;
+    }
+
+    // What a plugin says about a pickup type ({ name, spawned, taken }), or null
+    pickupInfo(type) {
+        for (const plugin of this.plugins) if (plugin.pickups[type]) return plugin.pickups[type];
+        return null;
+    }
+
+    // The room's mode and features changed (welcome): build their client halves
+    setPlugins(modeId, featureIds) {
+        for (const plugin of this.plugins) plugin.dispose?.();
+        this.mode = createClientMode(modeId, this);
+        this.features = createClientFeatures(featureIds, this);
+        // Features first: they clean up after a death before the mode decides what it means
+        this.plugins = [...this.features, this.mode];
+        this.hud.setHelp(this.plugins.flatMap(p => p.constructor.controls ?? []));
     }
 
     useConsumable(id = 'health_potion') {
         const now = performance.now();
         if (now < this.nextUseAt) return;
         const inv = this.weapons.inventory;
-        if (id === 'godmode') return this.useAngel(now);
+        if (this.hook('useItem', id, now)) return;
         if (!(inv.counts.health_potion > 0)) {
             this.sound.play('empty');
             this.hud.toast('No potions! Get a kill or find one');
@@ -435,49 +457,6 @@ export class Game {
         this.sound.play('drink');
     }
 
-    // The angel saved someone from a hit that would have killed them
-    onAngelSave(id) {
-        if (id !== this.selfId) {
-            const name = this.players.get(id)?.name;
-            if (name) this.hud.toast(`😇 ${name} was saved by an angel!`);
-            return;
-        }
-        this.viewModel.play('angel');
-        this.self?.avatar.playAction('angel');
-        this.sound.play('angel');
-        this.hud.flash('heal');
-        this.hud.toast(`😇 The angel saved you! ${GOD_MODE.duration} s untouchable`);
-    }
-
-    // Zombies angel (slot 8): GOD_MODE.duration seconds that nothing can hurt you
-    useAngel(now) {
-        this.nextUseAt = now + 600;
-        if (!(this.weapons.inventory.counts.godmode > 0)) return;
-        if (this.self.godLeft > 0) {
-            this.hud.toast('The angel is already with you');
-            return;
-        }
-        this.connection.send(C2S.USE, { slot: this.weapons.inventory.selected, dir: this.aimDirection() });
-        this.viewModel.play('angel');
-        this.self.avatar.playAction('angel');
-        this.sound.play('angel');
-        this.hud.toast(`😇 Angel! ${GOD_MODE.duration}s safe from zombies`);
-    }
-
-    // Our own angel time from the snapshots: the HUD badge, a tick for each of the last seconds,
-    // and a sound when it wears off
-    updateAngel(left) {
-        const shown = left > 0 ? Math.ceil(left) : 0;
-        if (shown === this.angelShown) return;
-        if (shown > 0 && shown <= 3 && shown < this.angelShown) this.sound.play('angelTick');
-        if (!shown && this.angelShown && this.local.alive) {
-            this.sound.play('angelEnd');
-            this.hud.toast('The angel is gone: zombies can hurt you again');
-        }
-        this.angelShown = shown;
-        this.hud.setAngel(shown);
-    }
-
     // Click with a grenade out: throw it, then back to the gun we had before (the server switches too)
     throwGrenade(id) {
         const now = performance.now();
@@ -491,65 +470,6 @@ export class Game {
         this.sound.play('pin');
         setTimeout(() => this.sound.play('throw'), 180);
         if (inv.counts[id] === 1) setTimeout(() => w.inventory?.hotbar[w.inventory.selected] === id && w.selectLast(), 450);
-    }
-
-    // ---- Zombies revive (hold E on a fallen teammate) -----------------------------------------
-
-    // The nearest fallen teammate close enough to revive, or null
-    reviveCandidate() {
-        if (this.modeId !== 'zombies' || !this.local.alive) return null;
-        const { x, y, z } = this.local.body;
-        const reach = ZOMBIES.revive.reach;
-        let best = null;
-        let bestDist = Infinity;
-        for (const info of this.players.values()) {
-            if (info.alive || info.isZombie || info.id === this.selfId) continue;
-            const p = info.avatar.group.position;
-            const d = Math.hypot(p.x - x, p.z - z);
-            if (d <= reach && Math.abs(p.y - y) <= reach && d < bestDist) {
-                best = info;
-                bestDist = d;
-            }
-        }
-        return best;
-    }
-
-    // E down: start reviving whoever is at our feet; E up: stop
-    setReviving(down) {
-        const target = down ? this.reviveCandidate() : null;
-        if ((target?.id ?? null) === this.reviveTarget) return;
-        this.reviveTarget = target?.id ?? null;
-        this.connection.send(C2S.REVIVE, { id: this.reviveTarget });
-    }
-
-    onRevive({ reviverId, targetId, until }) {
-        // Everyone sees the light come down and the soul return
-        const body = this.players.get(targetId)?.avatar.group.position;
-        if (until === null) this.reviveFx.stop(targetId);
-        else if (body) {
-            this.reviveFx.start(targetId, body, until);
-            this.sound.play('reviveStart', { at: body, range: 40 });
-        }
-        if (reviverId === this.selfId && until === null) this.reviveTarget = null;
-        if (reviverId !== this.selfId && targetId !== this.selfId) return;
-        if (until === null) {
-            this.revive = null;
-            return;
-        }
-        const other = this.players.get(reviverId === this.selfId ? targetId : reviverId)?.name || 'teammate';
-        this.revive = { label: reviverId === this.selfId ? `Reviving ${other}...` : `${other} is reviving you...`, until };
-    }
-
-    // Every frame: the hint, the progress bar, and following E (held while walking up to a body
-    // starts it; letting go or losing the mouse stops it)
-    updateRevive() {
-        const held = this.input.keys.has('KeyE') && this.local.alive;
-        if (this.reviveTarget ? !held : held && !this.revive) this.setReviving(held);
-        const candidate = !this.revive && this.input.locked ? this.reviveCandidate() : null;
-        this.hud.setUseHint(candidate ? `Hold E to revive ${candidate.name}` : null);
-        const r = this.revive;
-        const now = this.serverOffset === null ? null : performance.now() / 1000 + this.serverOffset;
-        this.hud.setRevive(r && now !== null ? { label: r.label, progress: 1 - (r.until - now) / ZOMBIES.revive.time } : null);
     }
 
     // Where the crosshair points, as a direction from the player's eye
@@ -778,7 +698,7 @@ export class Game {
             if (!info) return;
             info.avatar.dispose();
             this.players.delete(id);
-            this.reviveFx.remove(id);
+            this.hook('onPlayerLeft', id);
             this.updateModeBadge();
             if (!info.isBot) this.hud.toast(`${info.name} left`);
         });
@@ -790,19 +710,19 @@ export class Game {
             info.avatar.setCharacter(characterId);
         });
         on(S2C.INVENTORY, this.onInventory);
-        on(S2C.ACTION, ({ id, action, item, auto }) => {
-            // An angel that came out by itself to save someone from a deadly hit
-            if (auto && action === 'angel') this.onAngelSave(id);
+        on(S2C.ACTION, data => {
+            const { id, action, item } = data;
+            // The mode or a feature may have its own sound for it (and things to do, even for us)
+            const handled = this.hook('onAction', data);
             if (id === this.selfId) return; // already played locally
             const info = this.players.get(id);
             if (!info) return;
             info.avatar.playAction(action);
+            if (handled) return;
             const at = info.avatar.group.position;
-            if (item === 'claws') this.sound.play('zombieAttack', { at, range: 25 });
-            else if (action === 'swing') this.sound.play('knifeSlash', { at });
+            if (action === 'swing') this.sound.play('knifeSlash', { at });
             if (action === 'stab') this.sound.play('knifeStab', { at });
             if (action === 'drink') this.sound.play('drink', { at });
-            if (action === 'angel') this.sound.play('angel', { at, range: 40 });
             if (action === 'throw') this.sound.play('throw', { at, range: 30 });
             if (action === 'reload') this.sound.play(weaponSpec(item)?.reloadStyle === 'shell' ? 'pump' : 'clipout', { at, range: 25 });
         });
@@ -858,54 +778,26 @@ export class Game {
             }
         });
         on(S2C.DEATH, this.onDeath);
-        on(S2C.REVIVE, this.onRevive);
-        on(S2C.REVIVED, ({ reviverId, targetId }) => {
-            this.reviveFx.finish(targetId);
-            const body = this.players.get(targetId)?.avatar.group.position;
-            if (body) this.sound.play('revived', { at: body, range: 50 });
-            const name = id => this.players.get(id)?.name || 'Someone';
-            if (targetId === this.selfId) this.hud.toast(`${name(reviverId)} revived you!`);
-            else if (reviverId === this.selfId) this.hud.toast(`You revived ${name(targetId)}`);
-            else this.hud.toast(`${name(reviverId)} revived ${name(targetId)}`);
+        // The mode's and features' own messages
+        on(S2C.EVENT, ({ name, data }) => {
+            for (const plugin of this.plugins) plugin.events[name]?.(data);
         });
         on(S2C.RESPAWN, this.onRespawn);
         on(S2C.MODE_STATE, state => {
             this.modeState = state;
-            this.modePanel.render(state, this.players, this.selfId);
+            this.modePanel.render(state, this.players, this.selfId, this.mode);
         });
         on(S2C.MATCH_END, data => {
             this.respawnOverlay.hide();
             this.buyMenu.hide();
-            this.matchEnd.show(data, this.selfId, SCORE_LABEL[this.modeId]);
+            this.matchEnd.show(data, this.selfId, this.mode.scoreLabel);
             this.sound.play(data.winnerId === this.selfId || (data.winnerTeam && data.winnerTeam === this.self?.team) ? 'win' : 'lose');
         });
         on(S2C.MATCH_START, () => {
             this.matchEnd.hide();
-            this.reviveFx.clear();
-            this.revive = null;
-            this.reviveTarget = null;
+            this.hook('onMatchStart');
             for (const info of this.players.values()) Object.assign(info, { kills: 0, deaths: 0, score: 0 });
             this.hud.toast('New match!');
-        });
-        on(S2C.WAVE_START, ({ wave, count, giants = 0 }) => {
-            const giantText = giants ? ` · ${giants} GIANT${giants > 1 ? 'S' : ''}!` : '';
-            this.hud.showBanner(`Wave ${wave} · ${count} zombies${giantText}`, 'wave', giants ? 4500 : 3000);
-            this.sound.play('roundStart');
-            setTimeout(() => this.sound.play(giants ? 'giantRoar' : 'zombieGroan', { volume: giants ? 1 : 0.8, pitch: 0.8 }), 400);
-        });
-        on(S2C.WAVE_END, ({ wave, breakTime }) => {
-            this.hud.showBanner(`Wave ${wave} cleared! Next in ${breakTime}s`, 'team-ct', 3500);
-            this.sound.play('win');
-        });
-        on(S2C.ROUND_START, ({ round }) => {
-            this.hud.showBanner(`Round ${round} · Buy now (B)`, 'round', 2500);
-            this.sound.play('roundStart');
-        });
-        on(S2C.ROUND_END, ({ winner }) => {
-            const text = winner ? `${TEAM_BUY.teamNames[winner]} Win!` : 'Round Draw';
-            this.hud.showBanner(text, winner ? `team-${winner}` : '', 4000);
-            this.sound.play(winner && winner === this.self?.team ? 'win' : 'lose');
-            this.buyMenu.hide();
         });
         on(S2C.BUY_RESULT, ({ ok, item, error, bought }) => {
             const quick = item.startsWith('rebuy');
@@ -914,8 +806,7 @@ export class Game {
                 this.hud.toast(`Bought: ${rebuyText(bought)}`);
                 return;
             }
-            // Deathmatch: picking a gun turns random guns off (the server did the same)
-            if (ok && this.modeId === 'ffa' && isGun(item) && this.profile.randomGuns) this.setRandomGuns(false, true);
+            this.mode.onBuyResult(ok, item);
             if (ok) {
                 this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item.startsWith('ammo') ? 'ammoPickup'
                     : item === 'health_potion' || item.endsWith('grenade') ? 'pickup' : 'deploy');
@@ -926,37 +817,15 @@ export class Game {
             this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? owned
                 : error === 'not-now' ? 'Buy in your base during buy time' : 'Can\'t buy that');
         });
-        on(S2C.LEVEL_UP, ({ id, level, weapon }) => {
-            if (id !== this.selfId) return;
-            this.sound.play('levelUp');
-            this.hud.toast(`Level ${level + 1}: ${weaponSpec(weapon)?.name || weapon}`);
-        });
         on(S2C.PICKUP_SPAWNED, data => {
             this.pickups.set(data.id, new PickupView(this.scene, data));
-            if (data.type === 'rpg') {
-                this.sound.play('rpgSpawn');
-                this.hud.toast(`An RPG appeared on the ${data.spot || ''} tower!`);
-                return;
-            }
-            if (data.type === 'longjump') {
-                this.sound.play('rpgSpawn');
-                this.hud.toast('A Long Jump module appeared in the middle!');
-                return;
-            }
-            if (data.type === 'jetpack') {
-                this.sound.play('rpgSpawn');
-                this.hud.toast('🚀 A zombie dropped a JETPACK! Follow the light');
-                return;
-            }
-            if (data.type === 'godmode') {
-                this.sound.play('angel', { at: { x: data.x, y: data.y, z: data.z }, range: 80 });
-                this.hud.toast('😇 A zombie dropped an angel! Follow the light');
-                return;
-            }
+            const own = this.pickupInfo(data.type);
+            if (own?.spawned) return own.spawned(data);
             this.sound.play('spawnPickup', { at: { x: data.x, y: data.y, z: data.z } });
             if (data.type === 'health_potion') this.hud.toast('A health potion appeared!');
         });
-        on(S2C.PICKUP_TAKEN, ({ id, by, type, amount, weapon }) => {
+        on(S2C.PICKUP_TAKEN, data => {
+            const { id, by, type, amount, weapon } = data;
             const view = this.pickups.get(id);
             if (view) {
                 const p = view.group.position;
@@ -964,34 +833,12 @@ export class Game {
                 view.dispose();
                 this.pickups.delete(id);
             }
-            if (type === 'rpg') {
-                if (by === this.selfId) this.sound.play('deploy');
-                this.hud.toast(by === this.selfId ? 'You have the RPG! One shot, make it count'
-                    : `${this.players.get(by)?.name || 'Someone'} has the RPG!`);
-                return;
-            }
-            if (type === 'godmode' && by) {
-                if (by === this.selfId) this.sound.play('armorUp');
-                this.hud.toast(by === this.selfId ? '😇 Angel picked up! It saves you from a deadly hit, or press 8 to use it early'
-                    : `${this.players.get(by)?.name || 'Someone'} has an angel!`);
-                return;
-            }
-            if (type === 'jetpack' && by) {
-                if (by === this.selfId) this.sound.play('armorUp');
-                this.hud.toast(by === this.selfId ? '🚀 Jetpack! Shift up · Ctrl down · WASD to fly'
-                    : `${this.players.get(by)?.name || 'Someone'} has the jetpack!`);
-                return;
-            }
-            if (type === 'longjump' && by) {
-                if (by === this.selfId) this.sound.play('armorUp');
-                this.hud.toast(by === this.selfId ? 'Long Jump! Crouch + jump while running'
-                    : `${this.players.get(by)?.name || 'Someone'} has the Long Jump!`);
-                return;
-            }
+            const own = this.pickupInfo(type);
+            if (own?.taken) return own.taken(data);
             if (by && by === this.selfId) {
                 this.sound.play(type === 'ammo' ? 'ammoPickup' : type === 'armor' ? 'armorUp' : type === 'weapon' ? 'deploy' : 'pickup');
                 this.hud.toast(type === 'ammo' ? 'Ammo!' : type === 'weapon' ? `Picked up the ${weaponSpec(weapon)?.name || weapon}`
-                    : `+${amount} ${PICKUP_NAMES[type] || type}`);
+                    : `+${amount} ${PICKUP_NAMES[type] || own?.name || type}`);
             }
         });
     }
@@ -1002,21 +849,26 @@ export class Game {
         this.room = data.room || null;
         this.modeId = data.mode || 'ffa';
         this.modeState = data.modeState || null;
+        this.ruleset = data.ruleset || DEFAULT_RULESET;
+        this.local.ruleset = this.ruleset;
+        this.local.movementHooks = movementHooks(data.features || []);
+        this.local.perks = {};
+        this.setPlugins(this.modeId, data.features || []);
         this.matchEnd.hide();
         if (this.room) this.pauseMenu.setTitle(this.room.kind === 'quick' ? 'QUICK PLAY' : this.room.name);
         this.arena = Arena.fromJSON(data.arena);
         this.world.setArena(this.arena);
         this.serverOffset = data.time - performance.now() / 1000;
         for (const p of data.players) this.addPlayer(p);
-        this.modePanel.render(this.modeState, this.players, this.selfId);
+        this.modePanel.render(this.modeState, this.players, this.selfId, this.mode);
         const me = this.self;
         this.local.teleport(me.x, me.y, me.z, me.yaw);
         this.local.alive = me.alive;
         this.weapons.resetLife();
-        this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
+        this.protectedUntil = performance.now() + this.ruleset.spawnProtection * 1000;
         for (const pickup of data.pickups) this.pickups.set(pickup.id, new PickupView(this.scene, pickup));
         for (const projectile of data.projectiles) this.addProjectile(projectile);
-        if (this.modeId === 'ffa') this.connection.send(C2S.PREFS, { randomGuns: this.profile.randomGuns });
+        this.hook('onWelcome', data);
     }
 
     // "GUN GAME · FRIENDS · 2 players + 2 bots"
@@ -1026,7 +878,7 @@ export class Game {
             this.hud.setMode(`${mode} · OFFLINE · BOTS`);
             return;
         }
-        const all = [...this.players.values()].filter(p => !p.isZombie);
+        const all = [...this.players.values()].filter(p => this.mode.listed(p));
         const bots = all.filter(p => p.isBot).length;
         const people = all.length - bots;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -1054,9 +906,10 @@ export class Game {
             alive: p.alive, health: p.health, kills: p.kills, deaths: p.deaths,
             x: p.x, y: p.y, z: p.z, yaw: p.yaw, avatar, stepTimer: Math.random()
         };
-        for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
+        copyExtras(info, p);
         this.players.set(p.id, info);
         if (!p.alive) avatar.die();
+        this.hook('onPlayerAdded', info);
         this.updateModeBadge();
     }
 
@@ -1070,13 +923,11 @@ export class Game {
             info.kills = p.kills;
             info.deaths = p.deaths;
             info.health = p.health;
-            for (const field of MODE_FIELDS) if (p[field] !== undefined) info[field] = p[field];
-            info.avatar.setGod(info.alive !== false && info.godLeft > 0);
-            info.avatar.setJetpack(info.alive !== false && !!info.jetpack);
-            if (p.id === this.selfId) {
-                this.updateAngel(info.godLeft || 0);
-                this.local.longJump = !!p.longJump;
-                this.local.jetpack = !!p.jetpack;
+            copyExtras(info, p);
+            const isSelf = p.id === this.selfId;
+            if (isSelf) this.local.perks = p;
+            this.hook('onSnapshotPlayer', info, isSelf);
+            if (isSelf) {
                 this.hud.setHealth(p.health);
                 if (p.money !== undefined) {
                     this.hud.setMoney(p.money);
@@ -1093,7 +944,7 @@ export class Game {
             }
         }
         if (this.buyMenu.visible && !this.canBuy) this.buyMenu.hide();
-        this.modePanel.render(this.modeState, this.players, this.selfId);
+        this.modePanel.render(this.modeState, this.players, this.selfId, this.mode);
     }
 
     onInventory(data) {
@@ -1224,33 +1075,18 @@ export class Game {
         }
     }
 
-    onDeath({ victimId, killerId, cause, headshot }) {
+    onDeath(data) {
+        const { victimId, killerId, cause, headshot } = data;
         const victim = this.players.get(victimId);
         const killer = this.players.get(killerId);
         if (!victim) return;
         victim.alive = false;
-        victim.godLeft = 0;
-        victim.avatar.setGod(false);
-        victim.jetpack = victim.jetting = false;
-        victim.avatar.setJetpack(false);
-        if (victimId === this.selfId) {
-            this.local.jetpack = false;
-            this.angelShown = 0;
-            this.hud.setAngel(0);
-        }
+        if (victimId === this.selfId) this.local.perks = {};
+        // Features take off what dies with you; the mode may handle the death itself (monsters)
+        const handled = this.hook('onDeath', victim, data);
         victim.avatar.die();
         if (cause !== 'fall') this.bleed(victimId === this.selfId ? this.local.body : victim.avatar.group.position, victim, headshot);
-        if (victim.isZombie) {
-            // Zombie deaths stay out of the kill feed unless they're yours
-            const pos = victim.avatar.group.position;
-            const giant = victim.avatar.scale > 1;
-            this.sound.play('zombieDeath', { at: { x: pos.x, y: pos.y + 1, z: pos.z }, range: giant ? 60 : 30, pitch: giant ? 0.55 : 1, volume: giant ? 1.4 : 1 });
-            if (killerId === this.selfId) {
-                this.sound.play(headshot ? 'headshotKill' : 'kill');
-                if (giant) this.hud.toast(`Giant down! +$${ZOMBIES.giant.killMoney}`);
-            }
-            return;
-        }
+        if (handled) return;
         this.hud.kill({
             killer: killer?.name,
             victim: victim.name,
@@ -1272,14 +1108,14 @@ export class Game {
                 ? (cause === 'fall' || cause === 'landing' ? `${killer.name} made you fall`
                     : `${killer.name} killed you${gun ? ` with the ${gun}` : ''}${headshot ? ' (headshot)' : ''}`)
                 : (cause === 'fall' ? 'You fell into the void' : cause === 'landing' ? 'You fell to your death' : 'You died');
-            this.respawnOverlay.waitText = this.modeId === 'zombies' ? 'Back when this wave is cleared...' : null;
-            const waiting = this.modeId === 'teambuy' || this.modeId === 'zombies';
-            this.respawnOverlay.show(reason, waiting ? null : PLAYER.respawnDelay);
+            const { waiting, text } = this.mode.respawnWait();
+            this.respawnOverlay.waitText = text;
+            this.respawnOverlay.show(reason, waiting ? null : this.ruleset.respawnDelay);
             if (waiting) this.spectate = { id: null, view: 'chase', startAt: performance.now() + SPECTATE_DELAY * 1000 };
         }
         if (killerId === this.selfId && victimId !== this.selfId) {
             this.sound.play(headshot ? 'headshotKill' : 'kill');
-            this.hud.toast(`${headshot ? '◎ HEADSHOT · ' : ''}You killed ${victim.name}${this.modeId === 'ffa' ? ' · +1 Health Potion' : ''}`);
+            this.hud.toast(`${headshot ? '◎ HEADSHOT · ' : ''}You killed ${victim.name}${this.mode.killToastSuffix()}`);
         }
     }
 
@@ -1312,7 +1148,7 @@ export class Game {
             this.hud.setHealth(health);
             this.armor = armor ?? 0;
             this.hud.setArmor(this.armor, this.helmet);
-            this.protectedUntil = performance.now() + PLAYER.spawnProtection * 1000;
+            this.protectedUntil = performance.now() + this.ruleset.spawnProtection * 1000;
             this.sound.play('respawn');
         }
     }
@@ -1326,20 +1162,7 @@ export class Game {
         }
 
         for (const info of this.players.values()) info.avatar.update(dt, now);
-        this.angelSparkle = (this.angelSparkle || 0) + dt;
-        if (this.angelSparkle >= 0.08) {
-            this.angelSparkle = 0;
-            for (const info of this.players.values()) {
-                if (!info.avatar.god || !info.alive) continue;
-                // Our own sparkles would fill the screen in first person
-                if (info.id === this.selfId && !this.cameraController.view.showsOwnBody) continue;
-                const pos = info.avatar.group.position;
-                this.particles.burst({ x: pos.x, y: pos.y + 1.1, z: pos.z }, { count: 2, colors: ANGEL_GOLD, speed: 0.8, up: 0.6, gravity: -1.5, life: 0.9, size: 0.06, spread: 0.9, glow: true });
-            }
-        }
-        this.updateJetFlames(dt);
-        this.reviveFx.update(dt, this.serverOffset === null ? null : performance.now() / 1000 + this.serverOffset,
-            id => this.players.get(id)?.avatar.group.position);
+        this.hook('update', dt);
         for (const [id, view] of this.projectiles) {
             if (!view.update(dt)) this.projectiles.delete(id);
             else if (view.itemId === 'rpg' && (view.trail += dt) >= 0.02) {
@@ -1388,17 +1211,7 @@ export class Game {
                 this.sound.play(this.stepSound(body), { pitch: 0.9 + Math.random() * 0.2, volume: 0.6, pan: this.foot * 0.18, voiceMs: 300 });
             }
         }
-        if (this.local.events.jumped) this.sound.play(this.local.events.longJumped ? 'longJump' : 'jump');
-        if (this.local.events.liftOff) this.sound.play('longJump');
-        // Jetpack thruster: short roars overlapping into one, higher while climbing
-        if (this.local.alive && body.flying) {
-            this.jetSoundTimer = (this.jetSoundTimer || 0) - dt;
-            if (this.jetSoundTimer <= 0) {
-                this.jetSoundTimer = JET_SOUND;
-                const climb = this.local.jet.up ? 1.15 : this.local.jet.down ? 0.85 : 1;
-                this.sound.play('jetThrust', { pitch: climb, volume: 0.5, voiceMs: 300 });
-            }
-        }
+        if (this.local.events.jumped) this.sound.play(this.ask('jumpSound', this.local.events.jumpKind) || 'jump');
         if (this.local.events.landed) {
             const hard = Math.min(1, 0.3 + this.local.events.fallSpeed / 14);
             this.sound.play('land', { volume: hard });
@@ -1441,10 +1254,10 @@ export class Game {
         this.viewModel.setBolt(this.weapons.boltProgress());
         this.viewModel.update(dt, { speed, onGround: body.onGround, crouching: body.crouching, lookX: this.look.dx, lookY: this.look.dy });
         this.hud.setProtected(this.local.alive && now < this.protectedUntil);
-        this.updateRevive();
+        this.hook('updateLocal', dt);
         if (this.weapons.inventory) {
             const w = this.weapons;
-            this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : w.id === 'godmode' ? 'Angel' : ''), w.reloading);
+            this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || (w.id === 'health_potion' ? 'Health Potion' : this.ask('itemName', w.id) || ''), w.reloading);
         }
 
         // Crosshair opens up with the current inaccuracy
@@ -1469,60 +1282,13 @@ export class Game {
         return STEP_SOUND[under ? blockProps(this.arena.kindAt(under.ix, under.iy, under.iz)).surface : 'grass'] || 'step';
     }
 
-    // Jetpack flames and smoke out of the nozzles of everyone flying. In first person we can't see
-    // our own pack, so ours come from under our feet, where looking down shows them.
-    updateJetFlames(dt) {
-        this.jetPuff = (this.jetPuff || 0) + dt;
-        if (this.jetPuff < JET_PUFF) return;
-        this.jetPuff = 0;
-        const nozzles = this.nozzles || (this.nozzles = [new THREE.Vector3(), new THREE.Vector3()]);
-        for (const info of this.players.values()) {
-            const self = info.id === this.selfId;
-            const avatar = info.avatar;
-            avatar.jetting = self ? this.local.alive && !!this.local.body.flying : info.alive !== false && !!info.jetting;
-            if (!avatar.jetting) continue;
-            if (self && !this.cameraController.view.showsOwnBody) {
-                const b = this.local.body;
-                nozzles[0].set(b.x + Math.sin(this.local.yaw) * 0.25, b.y + 0.35, b.z + Math.cos(this.local.yaw) * 0.25);
-                this.jetBurst(nozzles[0]);
-                continue;
-            }
-            if (!avatar.nozzles(nozzles)) continue;
-            this.jetBurst(nozzles[0]);
-            this.jetBurst(nozzles[1]);
-        }
-    }
-
-    jetBurst(at) {
-        this.particles.burst(at, { count: 2, colors: FIRE, speed: 0.4, up: 0, gravity: 0, life: 0.16, size: 0.13, spread: 0.03, glow: true, dir: DOWN, dirSpeed: 6 });
-        this.particles.burst(at, { count: 1, colors: SMOKE, speed: 0.6, up: 0, gravity: -0.8, life: 0.9, size: 0.2, spread: 0.05, dir: DOWN, dirSpeed: 3 });
-    }
-
     // Hearing enemies run is half of CS: other players' footsteps, unless they walk or crouch.
-    // Zombies moan now and then instead.
+    // The mode or a feature may make its own noise for someone instead (a monster's moans, a thruster).
     updateRemoteFootsteps(dt) {
         for (const info of this.players.values()) {
             if (info.id === this.selfId || !info.alive) continue;
             const avatar = info.avatar;
-            if (info.isZombie) {
-                info.groanTimer = (info.groanTimer ?? 2 + Math.random() * 6) - dt;
-                if (info.groanTimer <= 0) {
-                    info.groanTimer = 4 + Math.random() * 7;
-                    const p = avatar.group.position;
-                    const giant = avatar.scale > 1;
-                    this.sound.play(giant ? 'giantRoar' : 'zombieGroan', { at: { x: p.x, y: p.y + 1.5 * avatar.scale, z: p.z }, range: giant ? 50 : 26, pitch: 0.8 + Math.random() * 0.4 });
-                }
-                continue;
-            }
-            if (info.jetting) {
-                info.jetTimer = (info.jetTimer || 0) - dt;
-                if (info.jetTimer <= 0) {
-                    info.jetTimer = JET_SOUND;
-                    const p = avatar.group.position;
-                    this.sound.play('jetThrust', { at: { x: p.x, y: p.y + 1, z: p.z }, range: 45, voiceMs: 300 });
-                }
-                continue;
-            }
+            if (this.hook('remoteSound', info, dt)) continue;
             if (!avatar.onGround || avatar.speed < STEP_SPEED || avatar.crouching) continue;
             info.stepTimer -= dt * avatar.speed;
             if (info.stepTimer > 0) continue;
@@ -1539,14 +1305,11 @@ export class Game {
         return !!this.spectate && !this.local.alive;
     }
 
-    // Living teammates: the other humans in Zombies, our own team in Team Buy
+    // Living teammates (who's a teammate is the mode's call)
     spectateTargets() {
-        const team = this.self?.team;
         const list = [];
         for (const info of this.players.values()) {
-            if (info.id === this.selfId || !info.alive || info.isZombie) continue;
-            if (this.modeId === 'teambuy' && info.team !== team) continue;
-            list.push(info);
+            if (info.id !== this.selfId && info.alive && this.mode.isTeammate(info)) list.push(info);
         }
         return list;
     }
@@ -1640,4 +1403,9 @@ export class Game {
             }
         }
     }
+}
+
+// The mode's and the features' fields of a player snapshot onto the player info
+function copyExtras(info, p) {
+    for (const key in p) if (!SNAPSHOT_OWN.has(key) && p[key] !== undefined) info[key] = p[key];
 }

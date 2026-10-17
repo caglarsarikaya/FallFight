@@ -40,11 +40,12 @@ export class PlayerAvatar {
         this.name = info.name;
         this.heldItemId = null;
         this.team = info.team ?? null;
-        this.isZombie = !!info.isZombie;
+        this.isNpc = !!info.isNpc;
         this.maxHealth = info.maxHealth ?? PLAYER.maxHealth;
-        this.scale = info.scale ?? 1;   // giant zombies
-        // Zombies go nameless, except giants: their tag carries the boss health bar
-        this.nameVisible = !this.isZombie || this.scale > 1;
+        this.scale = info.scale ?? 1;   // big monsters
+        this.attachments = new Map();   // key -> { build, made } (see attach)
+        // Monsters go nameless, except big ones: their tag carries the boss health bar
+        this.nameVisible = !this.isNpc || this.scale > 1;
         this.lastPosition = new THREE.Vector3(info.x || 0, info.y || 0, info.z || 0);
 
         this.nameTag = this.createNameTag();
@@ -61,6 +62,7 @@ export class PlayerAvatar {
         if (this.characterId === characterId && this.model) return;
         this.characterId = characterId;
         if (this.model) {
+            for (const entry of this.attachments.values()) this.clearAttachment(entry);
             this.group.remove(this.model.root);
             this.model.dispose();
         }
@@ -71,102 +73,45 @@ export class PlayerAvatar {
         this.heldItemId = null;
         if (held) this.setHeldItem(held);
         if (!this.alive) this.model.die();
-        if (this.god) {
-            this.god = false;
-            this.setGod(true);
-        }
-        if (this.jetpack) {
-            this.jetpack = null;
-            this.setJetpack(true);
-        }
+        for (const entry of this.attachments.values()) this.buildAttachment(entry);
     }
 
-    // Zombies jetpack (GTA San Andreas): a grey pack on the back with two rocket tanks; the
-    // flames come out of nozzles() as particles (Game) while jetting
-    setJetpack(on) {
-        if (on === !!this.jetpack) return;
-        if (!on) {
-            this.jetpack.parent?.remove(this.jetpack);
-            this.jetpack.traverse(o => o.isMesh && o.geometry.dispose());
-            this.jetpack = this.nozzleAnchors = null;
-            this.jetting = false;
-            return;
+    // Extras a feature hangs on the character (a backpack, wings). build(model) adds its parts
+    // to the model and returns { parts: [Object3D], glow?, animate?(now), ...whatever the feature
+    // wants to keep }; it runs again if the character changes. Returns what build made.
+    attach(key, build) {
+        if (!this.attachments.has(key)) {
+            const entry = { build, made: null };
+            this.attachments.set(key, entry);
+            this.buildAttachment(entry);
         }
-        const { torsoH, torsoD } = this.model.dims;
-        const grey = new THREE.MeshLambertMaterial({ color: '#8a9099' });
-        const dark = new THREE.MeshLambertMaterial({ color: '#3a3f46' });
-        const red = new THREE.MeshLambertMaterial({ color: '#c8322a' });
-        const box = (w, h, d, material, x, y, z, parent) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-            mesh.position.set(x, y, z);
-            mesh.castShadow = true;
-            parent.add(mesh);
-            return mesh;
-        };
-        const pack = new THREE.Group();
-        pack.position.set(0, torsoH * 0.55, torsoD / 2 + 0.07);
-        box(0.36, 0.46, 0.12, dark, 0, 0, 0, pack);
-        this.nozzleAnchors = [-1, 1].map(side => {
-            const x = side * 0.17;
-            box(0.15, 0.5, 0.15, grey, x, 0.02, 0.1, pack);
-            box(0.16, 0.1, 0.16, red, x, 0.3, 0.1, pack);        // nose cap
-            box(0.11, 0.08, 0.11, dark, x, -0.27, 0.1, pack);    // nozzle
-            const anchor = new THREE.Object3D();
-            anchor.position.set(x, -0.33, 0.1);
-            pack.add(anchor);
-            return anchor;
-        });
-        this.model.body.add(pack);
-        this.jetpack = pack;
+        return this.attachments.get(key).made;
     }
 
-    // World positions of the two jetpack nozzles, written into out (two Vector3s)
-    nozzles(out) {
-        if (!this.nozzleAnchors) return false;
-        this.group.updateWorldMatrix(true, true);
-        this.nozzleAnchors[0].getWorldPosition(out[0]);
-        this.nozzleAnchors[1].getWorldPosition(out[1]);
-        return true;
+    detach(key) {
+        const entry = this.attachments.get(key);
+        if (!entry) return;
+        this.clearAttachment(entry);
+        this.attachments.delete(key);
     }
 
-    // Zombies angel: blocky white wings on the back, a gold halo and a golden shine while it lasts
-    setGod(on) {
-        if (on === !!this.god) return;
-        this.god = on;
-        this.model.setGlow(on);
-        if (!on) {
-            for (const part of [...(this.wings || []), this.halo]) {
-                part?.parent?.remove(part);
-                part?.traverse(o => o.isMesh && o.geometry.dispose());
-            }
-            this.wings = this.halo = null;
-            return;
+    // What attach(key) built, or null
+    attachment(key) {
+        return this.attachments.get(key)?.made ?? null;
+    }
+
+    buildAttachment(entry) {
+        entry.made = entry.build(this.model);
+        if (entry.made.glow) this.model.setGlow(true);
+    }
+
+    clearAttachment(entry) {
+        for (const part of entry.made?.parts ?? []) {
+            part.parent?.remove(part);
+            part.traverse(o => o.isMesh && o.geometry.dispose());
         }
-        const { torsoH, torsoD, head } = this.model.dims;
-        const white = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#d6e2ff', emissiveIntensity: 0.5 });
-        const gold = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
-        this.wings = [-1, 1].map(side => {
-            const wing = new THREE.Group();
-            wing.position.set(side * 0.08, torsoH * 0.82, torsoD / 2 + 0.04);
-            wing.userData.side = side;
-            // Feathers in tiers: long on top, shorter below, all sweeping outwards
-            for (let i = 0; i < 4; i++) {
-                const length = 0.62 - i * 0.12;
-                const feather = new THREE.Mesh(new THREE.BoxGeometry(length, 0.1, 0.05), white);
-                feather.position.set(side * (length / 2), 0.08 - i * 0.11, 0);
-                wing.add(feather);
-            }
-            this.model.body.add(wing);
-            return wing;
-        });
-        this.halo = new THREE.Group();
-        for (const [w, d, x, z] of [[0.4, 0.06, 0, 0.17], [0.4, 0.06, 0, -0.17], [0.06, 0.28, 0.17, 0], [0.06, 0.28, -0.17, 0]]) {
-            const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), gold);
-            bar.position.set(x, 0, z);
-            this.halo.add(bar);
-        }
-        this.halo.position.y = head + 0.16;
-        this.model.head.add(this.halo);
+        if (entry.made?.glow && ![...this.attachments.values()].some(e => e !== entry && e.made?.glow)) this.model.setGlow(false);
+        entry.made = null;
     }
 
     setHeldItem(itemId) {
@@ -320,7 +265,7 @@ export class PlayerAvatar {
 
     respawn(x, y, z, yaw) {
         this.alive = true;
-        this.model.revive();
+        this.model.rise();
         this.snapTo(x, y, z, yaw);
         this.nameTag.visible = !this.isSelf && this.nameVisible;
         this.setHealth(this.maxHealth);
@@ -338,12 +283,7 @@ export class PlayerAvatar {
         this.speed += (instant - this.speed) * Math.min(1, dt * 12);
         this.lastPosition.copy(pos);
 
-        if (this.wings) {
-            // Slow beat, the wings swing back and forth around the spine
-            const beat = Math.sin(now / 1000 * 7);
-            for (const wing of this.wings) wing.rotation.y = wing.userData.side * (-0.5 + beat * 0.35);
-            this.halo.position.y = this.model.dims.head + 0.16 + Math.sin(now / 1000 * 3) * 0.03;
-        }
+        for (const entry of this.attachments.values()) entry.made?.animate?.(now);
         this.model.animate(dt, {
             speed: this.alive ? this.speed : 0,
             onGround: this.onGround,
