@@ -3,6 +3,7 @@ import { WEAPON_KIND, WEAPONS } from '../../../shared/config/weapons.js';
 import { ItemView } from '../ItemView.js';
 import { FLASH_TEXTURE } from '../../effects/GunEffects.js';
 import { GUN_MODELS, MATERIALS } from './specs.js';
+import { SIGHT_MODELS } from './sights.js';
 
 const GLOVE = '#2a2522';
 const SLEEVE = '#3b4756';
@@ -19,6 +20,10 @@ function material(key) {
     return materialCache.get(key);
 }
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
+let glassMaterial = null;   // the optics' window: a faint tint you see through
+
+// Aiming down sights: how far in front of the eye the rear sight (or the back of the optic) sits
+const ADS_EYE = { pistol: 0.24, iron: 0.09, optic: 0.05 };
 
 function addBox(group, w, h, d, x, y, z, mat, rx = 0) {
     const mesh = new THREE.Mesh(unitBox, material(mat));
@@ -93,13 +98,65 @@ export class GunView extends ItemView {
         flash.visible = false;
         model.add(flash);
         holder.userData.flash = flash;
+        if (this.spec.sights) this.mountSight(holder, null);
         return holder;
     }
 
-    // state: { action, t, kick, reload (0..1 or null), pump (0..1 or null) }
+    // Puts an optic on the rail (null: iron sights only) and works out the aim-down-sights pose
+    // that puts its line of sight on the screen centre
+    mountSight(holder, sightId) {
+        const model = holder.userData.model;
+        if (holder.userData.sight) model.remove(holder.userData.sight);
+        holder.userData.sight = null;
+        const optic = SIGHT_MODELS[sightId];
+        let sightY = this.model.iron[0];
+        let rearZ = this.model.iron[1];
+        if (optic) {
+            const [railY, railZ] = this.model.rail;
+            const group = new THREE.Group();
+            group.position.set(0, railY, railZ);
+            for (const [w, h, d, x, y, z, mat] of optic.parts) addBox(group, w, h, d, x, y, z, mat);
+            glassMaterial ??= new THREE.MeshBasicMaterial({ color: '#9fd8ff', transparent: true, opacity: 0.07, depthWrite: false });
+            const [gw, gh, , gy, gz] = optic.glass;
+            const glass = new THREE.Mesh(unitBox, glassMaterial);
+            glass.scale.set(gw, gh, 0.002);
+            glass.position.set(0, gy, gz);
+            glass.userData.shared = true;
+            group.add(glass);
+            model.add(group);
+            holder.userData.sight = group;
+            sightY = railY + optic.eye;
+            rearZ = railZ + optic.rear;
+        }
+        const k = holder.userData.pose.scale;
+        const eye = this.isPistol ? ADS_EYE.pistol : optic ? ADS_EYE.optic : ADS_EYE.iron;
+        holder.userData.adsPosition = [0, -k * sightY, -eye - k * rearZ];
+        holder.userData.sightId = optic ? sightId : null;
+    }
+
+    // state.aim 0..1 blends the hip pose into the aim-down-sights pose
+    animateFirstPerson(holder, state) {
+        const aim = state.aim || 0;
+        const ads = holder.userData.adsPosition;
+        if (!ads || aim <= 0) return super.animateFirstPerson(holder, state);
+        const model = holder.userData.model;
+        const { position, rotation } = holder.userData.pose;
+        const e = aim * aim * (3 - 2 * aim);
+        model.position.set(
+            position[0] + (ads[0] - position[0]) * e,
+            position[1] + (ads[1] - position[1]) * e,
+            position[2] + (ads[2] - position[2]) * e
+        );
+        model.rotation.set(rotation[0] * (1 - e), rotation[1] * (1 - e), rotation[2] * (1 - e));
+        this.applyFirstPersonAnimation(model, state);
+    }
+
+    // state: { action, t, kick, reload (0..1 or null), pump (0..1 or null), aim (0..1) }
     // kick: the recoil spring (ViewModel), past 0 on the overshoot; roll: this shot's twist, -1..1
-    applyFirstPersonAnimation(model, { kick = 0, roll = 0, reload = null, bolt = null }) {
+    applyFirstPersonAnimation(model, { kick = 0, roll = 0, reload = null, bolt = null, aim = 0 }) {
         const tags = model.userData.tags;
+        // Down the sights the gun kicks less, so the sight stays near the target
+        kick *= 1 - aim * 0.55;
         // Recoil: back, up and a little twist, more for heavy guns
         const heavy = this.spec.damage / 40;
         model.position.z += kick * 0.06 * (0.6 + heavy * 0.6);

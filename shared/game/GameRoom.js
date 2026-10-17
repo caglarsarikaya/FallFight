@@ -8,6 +8,7 @@ import { DEFAULT_MODE, createMode, getModeInfo } from '../modes/registry.js';
 import { createFeatures, movementHooks } from '../features/registry.js';
 import { getItem } from '../items/ItemRegistry.js';
 import { weaponSpec } from '../config/weapons.js';
+import { hasSights } from '../config/sights.js';
 import { CHARACTERS, DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../characters/definitions.js';
 import { stepMovement } from '../physics.js';
 import { BotBrain } from '../ai/BotBrain.js';
@@ -197,6 +198,7 @@ export class GameRoom {
             case C2S.FIRE: return this.fire(player, data);
             case C2S.RELOAD: return this.reload(player);
             case C2S.SCOPE: return this.setScope(player, data.level);
+            case C2S.AIM: return this.setAim(player, data.on);
             case C2S.BUY: return this.buy(player, data.item);
             case C2S.ACTION: return this.onAction(player, data);
             case C2S.PROFILE: return this.onProfile(player, data);
@@ -258,6 +260,7 @@ export class GameRoom {
         const spec = weaponSpec(player.inventory.selectedId);
         player.gun.reload = null;
         player.gun.scoped = 0;
+        player.gun.aiming = false;
         player.gun.readyAt = this.time + (spec?.deploy ?? 0.3);
         this.notifyInventory(player);
         return true;
@@ -316,6 +319,7 @@ export class GameRoom {
         const first = spec.reloadStyle === 'shell' ? spec.reloadTime + 0.35 : spec.reloadTime;
         g.reload = { id, at: this.time + first };
         g.scoped = 0;
+        g.aiming = false;
         this.emit(null, S2C.ACTION, { id: player.id, action: 'reload', item: id });
         return true;
     }
@@ -324,6 +328,12 @@ export class GameRoom {
         const spec = weaponSpec(player.inventory.selectedId);
         if (!spec?.scope || !Number.isInteger(level)) return;
         player.gun.scoped = Math.max(0, Math.min(spec.scope.zooms.length, level));
+    }
+
+    // Aiming down sights (hold right click): only guns that opt in to sights, not while reloading
+    setAim(player, on) {
+        const spec = weaponSpec(player.inventory.selectedId);
+        player.gun.aiming = !!on && player.alive && hasSights(spec) && !player.gun.reload;
     }
 
     updateReloads() {
@@ -706,6 +716,7 @@ export class GameRoom {
         victim.health = 0;
         victim.gun.reload = null;
         victim.gun.scoped = 0;
+        victim.gun.aiming = false;
         victim.deaths++;
         const delay = this.mode.respawnDelay(victim);
         victim.respawnAt = delay === null ? Infinity : this.time + delay;

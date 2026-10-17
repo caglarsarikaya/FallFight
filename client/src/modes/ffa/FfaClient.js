@@ -14,10 +14,11 @@ export class FfaClient extends ClientMode {
     }
 
     buyMenuOptions() {
-        return { free: true, randomGuns: this.game.profile.randomGuns };
+        return { free: true };
     }
 
     onWelcome() {
+        this.game.pauseMenu.setRandomGuns(this.game.profile.randomGuns);
         this.sendRandomGuns(this.game.profile.randomGuns);
     }
 
@@ -34,7 +35,7 @@ export class FfaClient extends ClientMode {
         const game = this.game;
         game.profile.randomGuns = on;
         game.profile.save();
-        game.buyMenu.setRandomGuns(on);
+        game.pauseMenu.setRandomGuns(on);
         this.sendRandomGuns(on);
         if (announce) game.hud.toast(on ? 'Random guns ON: new guns every life' : 'Random guns OFF: you keep your guns');
     }

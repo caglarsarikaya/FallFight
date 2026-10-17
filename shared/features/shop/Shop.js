@@ -1,6 +1,7 @@
 import { GRENADE } from '../../constants.js';
 import { SHOP } from './config.js';
 import { WEAPONS, WEAPON_SLOT, isGun } from '../../config/weapons.js';
+import { OPTIC_IDS, SIGHTS, canMount } from '../../config/sights.js';
 
 // What the buy menu sells, shared by the modes that have one (Team Buy, Zombies).
 // Each mode decides who may buy and when; this only handles the item, the price and the money.
@@ -17,9 +18,13 @@ const AMMO_FILTERS = {
 
 const GRENADE_PRICES = { hegrenade: GRENADE.he.price, smokegrenade: GRENADE.smoke.price };
 
+// 'sight_<sight>_<slot>': an optic for the gun in the primary (0) or pistol (1) slot
+const SIGHT_ITEM = new RegExp(`^sight_(${OPTIC_IDS.join('|')})_([01])$`);
+export const sightItem = (sightId, slot) => `sight_${sightId}_${slot}`;
+
 // Returns { ok, error?, price }. item: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion',
-// 'hegrenade', 'smokegrenade', 'ammo' (every gun), 'ammo_primary', 'ammo_secondary', 'rebuy' or one
-// of the quick buys 'rebuy_ammo', 'rebuy_armor', 'rebuy_potion', 'rebuy_grenades' (see rebuy below).
+// 'hegrenade', 'smokegrenade', 'ammo' (every gun), 'ammo_primary', 'ammo_secondary', a sight for a
+// gun carried ('sight_holo_0': see sightItem), 'rebuy' or one of the quick buys 'rebuy_ammo', 'rebuy_armor', 'rebuy_potion', 'rebuy_grenades' (see rebuy below).
 // free: Deathmatch, nothing costs money and buying a gun you carry refills it.
 // notify: false leaves telling the client to the caller (rebuy sends one update for everything).
 export function buyItem(room, player, item, { free = false, notify = true } = {}) {
@@ -27,7 +32,16 @@ export function buyItem(room, player, item, { free = false, notify = true } = {}
     const inv = player.inventory;
     let price;
     let apply;
-    if (isGun(item)) {
+    const sight = SIGHT_ITEM.exec(item);
+    if (sight) {
+        const [, sightId, slot] = sight;
+        const gunId = inv.hotbar[Number(slot)];
+        if (!isGun(gunId)) return { ok: false, error: 'nogun' };
+        if (!canMount(WEAPONS[gunId], sightId)) return { ok: false, error: 'unfit' };
+        if (inv.sights[gunId] === sightId) return { ok: false, error: 'owned' };
+        price = SIGHTS[sightId].price;
+        apply = () => { inv.sights[gunId] = sightId; };
+    } else if (isGun(item)) {
         const spec = WEAPONS[item];
         if (spec.special) return { ok: false, error: 'unknown' };
         if (inv.has(item) && !free) return { ok: false, error: 'owned' };

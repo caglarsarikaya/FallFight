@@ -4,7 +4,7 @@ import { bodyHeight } from './BodyZones.js';
 
 // Per-player weapon timers (server time): deploy, rate of fire, spray heat, reload, scope
 export function freshGunState() {
-    return { readyAt: 0, nextFireAt: 0, heat: 0, lastShotAt: -Infinity, reload: null, scoped: 0 };
+    return { readyAt: 0, nextFireAt: 0, heat: 0, lastShotAt: -Infinity, reload: null, scoped: 0, aiming: false };
 }
 
 // Authoritative per-player state held by a GameRoom

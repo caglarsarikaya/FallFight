@@ -35,7 +35,7 @@ export class TeamBuyClient extends ClientMode {
 
     // Your team's pistol is what you get anyway
     buyMenuOptions() {
-        return { free: false, randomGuns: null, defaultItem: TEAM_BUY.defaultPistol[this.game.self?.team] ?? null };
+        return { free: false, defaultItem: TEAM_BUY.defaultPistol[this.game.self?.team] ?? null };
     }
 
     // In buy time only

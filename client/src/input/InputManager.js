@@ -2,7 +2,7 @@ import { enterGameFullscreen } from './fullscreen.js';
 
 // Keyboard/mouse state with pointer lock. Game code reads movement each frame and reacts to
 // discrete actions via the onAction callback: ('slot', n) ('camera') ('scoreboard', down)
-// ('primary', down) ('secondary') ('reload') ('last') ('buy') ('quickbuy', kind) ('use', down) ('pause').
+// ('primary', down) ('secondary', down) ('reload') ('last') ('buy') ('quickbuy', kind) ('use', down) ('pause').
 // Crouch is C or Ctrl, walk is Shift, like CS. With the Zombies jetpack, Shift flies up and
 // Ctrl/C sinks instead. Jump is Space or the mouse wheel (either way), one
 // jump per press so bunny hops need timing. Ctrl+W can't be blocked by a web page outside
@@ -18,6 +18,7 @@ export class InputManager {
         this.keys = new Set();
         this.mouse = { dx: 0, dy: 0 };
         this.primaryDown = false;
+        this.secondaryDown = false;   // right mouse held: aim down sights
         this.enabled = false;
         this.onAction = () => {};
         this.onLockChange = () => {};
@@ -42,7 +43,8 @@ export class InputManager {
                 this.primaryDown = true;
                 this.onAction('primary', true);
             } else if (e.button === 2) {
-                this.onAction('secondary');
+                this.secondaryDown = true;
+                this.onAction('secondary', true);
             }
         });
         element.addEventListener('contextmenu', e => e.preventDefault());
@@ -50,6 +52,9 @@ export class InputManager {
             if (e.button === 0 && this.primaryDown) {
                 this.primaryDown = false;
                 this.onAction('primary', false);
+            } else if (e.button === 2 && this.secondaryDown) {
+                this.secondaryDown = false;
+                this.onAction('secondary', false);
             }
         });
         document.addEventListener('wheel', e => {
@@ -67,6 +72,10 @@ export class InputManager {
                 if (this.primaryDown) {
                     this.primaryDown = false;
                     this.onAction('primary', false);
+                }
+                if (this.secondaryDown) {
+                    this.secondaryDown = false;
+                    this.onAction('secondary', false);
                 }
             }
             if (wasLocked !== this.locked) this.onLockChange(this.locked);

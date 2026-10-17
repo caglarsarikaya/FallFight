@@ -13,6 +13,7 @@ export const C2S = {
                            // the shooter was seeing other players at (lag compensation)
     RELOAD: 'reload',      // {}
     SCOPE: 'scope',        // { level } 0 = unscoped
+    AIM: 'aim',            // { on } aiming down sights (guns with sights)
     BUY: 'buy',            // { item } Team Buy: a gun id, 'kevlar', 'kevlar_helmet', 'health_potion', 'ammo'
     ACTION: 'act',         // { name, data } a request for the room's mode or one of its features
                            // (each defines its own names, in its config.js)

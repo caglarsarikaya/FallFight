@@ -6,7 +6,8 @@ const SLOT_COUNT = 8;
 // CS-style slots: 1 primary gun, 2 pistol, 3 knife, 4 health potion, 5 special (the map's RPG),
 // 6 HE grenade, 7 smoke grenade, 8 extra: a counted item whose spec has slotWhenCarried only takes
 // up that slot while you carry at least one. Each gun carried has its own ammo (rounds in the
-// magazine + reserve); consumables (potions, grenades...) are counted in `counts`.
+// magazine + reserve) and maybe a sight bought for it (`sights`: gun id -> sight id, see
+// shared/config/sights.js); consumables (potions, grenades...) are counted in `counts`.
 export class Inventory {
     // loadout: { weapons: [gunId], counts: { health_potion } }
     constructor(loadout = {}) {
@@ -16,6 +17,7 @@ export class Inventory {
     reset({ weapons = [], counts = {} } = {}) {
         this.hotbar = [null, null, 'knife', 'health_potion', null, 'hegrenade', 'smokegrenade', null];
         this.ammo = {};
+        this.sights = {};
         this.counts = { health_potion: 0, hegrenade: 0, smokegrenade: 0, ...counts };
         for (const key of Object.keys(this.counts)) this.updateCarriedSlot(key);
         for (const id of weapons) this.give(id);
@@ -27,7 +29,10 @@ export class Inventory {
         if (!isGun(id)) return -1;
         const spec = weaponSpec(id);
         const old = this.hotbar[spec.slot];
-        if (old && old !== id) delete this.ammo[old];
+        if (old && old !== id) {
+            delete this.ammo[old];
+            delete this.sights[old];
+        }
         this.hotbar[spec.slot] = id;
         this.ammo[id] = { mag: spec.mag, reserve: spec.reserve };
         return spec.slot;
@@ -37,6 +42,7 @@ export class Inventory {
         const id = this.hotbar[slot];
         if (!isGun(id)) return;
         delete this.ammo[id];
+        delete this.sights[id];
         this.hotbar[slot] = null;
         if (this.selected === slot) this.selected = this.bestSlot();
     }
@@ -119,6 +125,6 @@ export class Inventory {
     toJSON() {
         const ammo = {};
         for (const [id, a] of Object.entries(this.ammo)) ammo[id] = { mag: a.mag, reserve: a.reserve };
-        return { hotbar: [...this.hotbar], ammo, counts: { ...this.counts }, selected: this.selected };
+        return { hotbar: [...this.hotbar], ammo, sights: { ...this.sights }, counts: { ...this.counts }, selected: this.selected };
     }
 }

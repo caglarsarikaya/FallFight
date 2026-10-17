@@ -13,6 +13,8 @@
 //   spread         inaccuracy cone (radians): stance base + moving + in the air + per-shot bloom
 //   recoil         view kick in degrees: up per shot (capped), side sway after sideFrom shots
 //   scope          sniper zoom levels (fov divisor); unscoped spread is huge, like a no-scope
+//   sights         opts the gun in to aiming down sights (hold right click): the optics it accepts
+//                  (shared/config/sights.js); [] is iron sights only, leaving it out means no ADS
 export const WEAPON_KIND = Object.freeze({
     KNIFE: 'knife', PISTOL: 'pistol', SMG: 'smg', SHOTGUN: 'shotgun', RIFLE: 'rifle', SNIPER: 'sniper',
     MG: 'mg', LAUNCHER: 'launcher'
@@ -44,7 +46,7 @@ export const WEAPONS = Object.freeze({
         mag: 20, reserve: 120, reloadTime: 1.55, deploy: 0.6, moveSpeed: 1,
         spread: { stand: 0.005, crouch: 0.0035, move: 0.030, air: 0.12, perShot: 0.010, maxShot: 0.05, recover: 7 },
         recoil: { up: 1.4, upMax: 6, side: 0.3, sideFrom: 3, recover: 14 },
-        price: 400, killReward: 300
+        price: 400, sights: ['reddot', 'reflex'], killReward: 300
     }),
     usp: gun({
         id: 'usp', name: 'USP .45', short: 'USP', kind: WEAPON_KIND.PISTOL,
@@ -52,7 +54,7 @@ export const WEAPONS = Object.freeze({
         mag: 12, reserve: 100, reloadTime: 1.9, deploy: 0.6, moveSpeed: 1,
         spread: { stand: 0.004, crouch: 0.0025, move: 0.030, air: 0.12, perShot: 0.011, maxShot: 0.05, recover: 6 },
         recoil: { up: 1.8, upMax: 7, side: 0.3, sideFrom: 3, recover: 13 },
-        price: 500, killReward: 300
+        price: 500, sights: ['reddot', 'reflex'], killReward: 300
     }),
     deagle: gun({
         id: 'deagle', name: 'Desert Eagle', short: 'DEAGLE', kind: WEAPON_KIND.PISTOL,
@@ -60,7 +62,7 @@ export const WEAPONS = Object.freeze({
         mag: 7, reserve: 35, reloadTime: 1.55, deploy: 0.75, moveSpeed: 1,
         spread: { stand: 0.0045, crouch: 0.003, move: 0.045, air: 0.16, perShot: 0.030, maxShot: 0.09, recover: 3.5 },
         recoil: { up: 4.2, upMax: 10, side: 0.8, sideFrom: 1, recover: 11 },
-        price: 650, killReward: 300, knockback: 1.5
+        price: 650, sights: ['reddot', 'reflex'], killReward: 300, knockback: 1.5
     }),
     // ---- SMGs and shotgun ----------------------------------------------------------------
     mp5: gun({
@@ -69,7 +71,7 @@ export const WEAPONS = Object.freeze({
         mag: 30, reserve: 120, reloadTime: 1.8, deploy: 0.75, moveSpeed: 0.98,
         spread: { stand: 0.012, crouch: 0.009, move: 0.025, air: 0.10, perShot: 0.0035, maxShot: 0.035, recover: 9 },
         recoil: { up: 0.55, upMax: 5, side: 0.35, sideFrom: 6, recover: 12 },
-        price: 1500, killReward: 600
+        price: 1500, sights: ['reddot', 'reflex', 'holo'], killReward: 600
     }),
     p90: gun({
         id: 'p90', name: 'ES P90', short: 'P90', kind: WEAPON_KIND.SMG, auto: true,
@@ -77,7 +79,7 @@ export const WEAPONS = Object.freeze({
         mag: 50, reserve: 100, reloadTime: 2.4, deploy: 0.8, moveSpeed: 0.98,
         spread: { stand: 0.014, crouch: 0.011, move: 0.024, air: 0.10, perShot: 0.003, maxShot: 0.035, recover: 10 },
         recoil: { up: 0.5, upMax: 5, side: 0.4, sideFrom: 6, recover: 12 },
-        price: 2350, killReward: 300
+        price: 2350, sights: ['reddot', 'reflex', 'holo'], killReward: 300
     }),
     m3: gun({
         id: 'm3', name: 'M3 Super 90', short: 'M3', kind: WEAPON_KIND.SHOTGUN,
@@ -86,7 +88,7 @@ export const WEAPONS = Object.freeze({
         // Like CS, a shotgun's spread barely changes on the move
         spread: { stand: 0.060, crouch: 0.055, move: 0.010, air: 0.030, perShot: 0, maxShot: 0, recover: 4 },
         recoil: { up: 5.5, upMax: 12, side: 0.6, sideFrom: 1, recover: 9 },
-        price: 1700, killReward: 900, knockback: 2.5
+        price: 1700, sights: [], killReward: 900, knockback: 2.5
     }),
     // ---- rifles --------------------------------------------------------------------------
     ak47: gun({
@@ -95,7 +97,7 @@ export const WEAPONS = Object.freeze({
         mag: 30, reserve: 90, reloadTime: 1.7, deploy: 0.85, moveSpeed: 0.88,
         spread: { stand: 0.004, crouch: 0.002, move: 0.060, air: 0.16, perShot: 0.0065, maxShot: 0.05, recover: 6 },
         recoil: { up: 1.15, upMax: 9, side: 0.75, sideFrom: 5, recover: 10 },
-        price: 2500, killReward: 300
+        price: 2500, sights: ['reddot', 'reflex', 'holo'], killReward: 300
     }),
     m4a1: gun({
         id: 'm4a1', name: 'M4A1', short: 'M4A1', kind: WEAPON_KIND.RIFLE, auto: true,
@@ -103,7 +105,7 @@ export const WEAPONS = Object.freeze({
         mag: 30, reserve: 90, reloadTime: 2.15, deploy: 0.85, moveSpeed: 0.92,
         spread: { stand: 0.0035, crouch: 0.002, move: 0.050, air: 0.15, perShot: 0.005, maxShot: 0.04, recover: 6.5 },
         recoil: { up: 0.9, upMax: 7.5, side: 0.55, sideFrom: 6, recover: 11 },
-        price: 3100, killReward: 300
+        price: 3100, sights: ['reddot', 'reflex', 'holo'], killReward: 300
     }),
     // ---- machine gun ----------------------------------------------------------------------
     // ammoPrice: refilling its 200 spare rounds (the usual formula would ask $2300)
@@ -113,7 +115,7 @@ export const WEAPONS = Object.freeze({
         mag: 100, reserve: 200, reloadTime: 3.3, deploy: 1.0, moveSpeed: 0.85,
         spread: { stand: 0.009, crouch: 0.006, move: 0.075, air: 0.18, perShot: 0.0045, maxShot: 0.06, recover: 5 },
         recoil: { up: 0.85, upMax: 8, side: 0.6, sideFrom: 8, recover: 9 },
-        price: 5750, ammoPrice: 600, killReward: 300
+        price: 5750, ammoPrice: 600, sights: ['reddot', 'reflex', 'holo'], killReward: 300
     }),
     // ---- snipers -------------------------------------------------------------------------
     scout: gun({

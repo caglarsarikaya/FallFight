@@ -356,6 +356,22 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .scope-h { left: 0; right: 0; top: 50%; height: 1px; }
 .scope-v { top: 0; bottom: 0; left: 50%; width: 1px; }
 
+/* Optic reticles while aiming down sights: square, blocky, glowing a little */
+.reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.reticle.hidden { display: none; }
+.reticle i { position: absolute; display: none; background: #ff2a2a; box-shadow: 0 0 3px rgba(255, 40, 40, 0.8); }
+.reticle.reddot i:first-child,
+.reticle.holo i:first-child { display: block; left: -2px; top: -2px; width: 4px; height: 4px; }
+.reticle.holo i:nth-child(2) {
+    display: block; left: -22px; top: -22px; width: 40px; height: 40px;
+    background: transparent; border: 2px solid #ff2a2a; box-shadow: 0 0 3px rgba(255, 40, 40, 0.6);
+}
+/* Reflex: a chevron, its tip on the aim point */
+.reticle.reflex i { display: block; background: #ff3b1f; width: 2px; height: 11px; top: 0; transform-origin: top center; }
+.reticle.reflex i:nth-child(1) { left: -1px; transform: rotate(40deg); }
+.reticle.reflex i:nth-child(2) { left: -1px; transform: rotate(-40deg); }
+.reticle.reflex i:nth-child(3) { display: none; }
+
 .damage-layer { position: absolute; left: 50%; top: 50%; }
 .damage-arc {
     position: absolute; left: 0; top: 0;

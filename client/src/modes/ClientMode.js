@@ -22,9 +22,9 @@ export class ClientMode extends ClientFeature {
         return true;
     }
 
-    // { free, randomGuns, defaultItem } for the buy menu
+    // { free, defaultItem } for the buy menu
     buyMenuOptions() {
-        return { free: false, randomGuns: null, defaultItem: null };
+        return { free: false, defaultItem: null };
     }
 
     onBuyResult(_ok, _item) {}

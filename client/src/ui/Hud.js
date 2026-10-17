@@ -17,6 +17,9 @@ export class Hud {
         this.crosshair = el('div.crosshair', {}, [...['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)), this.reloadRing]);
         this.hitmarker = el('div.hitmarker');
         this.scope = el('div.scope.hidden', {}, [el('div.scope-h'), el('div.scope-v')]);
+        // Aiming down an optic: its reticle on the screen centre (iron sights need none)
+        this.reticle = el('div.reticle.hidden', {}, [el('i'), el('i'), el('i')]);
+        this.reticleShown = null;
         this.damageArcs = [];
         this.damageLayer = el('div.damage-layer');
         for (let i = 0; i < MAX_DAMAGE_ARCS; i++) {
@@ -70,7 +73,7 @@ export class Hud {
         }, 14000);
 
         this.root = el('div.hud', {}, [
-            this.underwater, this.smoke, this.scope, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
+            this.underwater, this.smoke, this.scope, this.reticle, this.crosshair, this.hitmarker, this.damageLayer, this.protection,
             this.useHint, this.progressBar,
             ...Object.values(this.vignettes), this.glow,
             el('div.hud-left', {}, [this.badge, this.health, this.armor]),
@@ -269,6 +272,13 @@ export class Hud {
         this.scope.classList.toggle('hidden', !on);
     }
 
+    // 'reddot' | 'reflex' | 'holo' or null
+    setReticle(sightId) {
+        if (sightId === this.reticleShown) return;
+        this.reticleShown = sightId;
+        this.reticle.className = sightId ? `reticle ${sightId}` : 'reticle hidden';
+    }
+
     setProtected(on) {
         this.protection.classList.toggle('hidden', !on);
     }
@@ -293,7 +303,7 @@ export class Hud {
     // features' own (["E use", ...])
     setHelp(extra) {
         this.helpHint.textContent = [
-            'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab · R reload · 1-5 / Q weapons · 6 / 7 grenades',
+            'WASD move · Shift walk · C / Ctrl crouch · Space / wheel jump · Click fire · Right click scope/stab/hold to aim · R reload · 1-5 / Q weapons · 6 / 7 grenades',
             ...extra,
             'V camera · Tab scores · Esc menu'
         ].join(' · ');

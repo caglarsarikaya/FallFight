@@ -1,11 +1,13 @@
 import { PLAYER } from './constants.js';
+import { ADS } from './config/sights.js';
 
 // Bullet spread and recoil, shared so the shooter's client can predict exactly where its bullets
 // land (tracers, impact marks) while the server stays the judge of hits.
 
 // Cone half-angle (radians) for the next shot.
-// state: { speed, onGround, crouching, scoped, heat } where heat counts recent shots (decays)
-export function inaccuracy(spec, { speed = 0, onGround = true, crouching = false, scoped = false, heat = 0 }) {
+// state: { speed, onGround, crouching, scoped, aiming (down sights), heat } where heat counts
+// recent shots (decays)
+export function inaccuracy(spec, { speed = 0, onGround = true, crouching = false, scoped = false, aiming = false, heat = 0 }) {
     const s = spec.spread;
     const moving = Math.max(0, Math.min(1, (speed - 0.6) / (PLAYER.walkSpeed * 0.75)));
     if (spec.scope) {
@@ -14,8 +16,9 @@ export function inaccuracy(spec, { speed = 0, onGround = true, crouching = false
         if (!scoped) return s.stand + moving * s.move;
         return spec.scope.spread + moving * spec.scope.moveSpread;
     }
-    let cone = crouching && onGround ? s.crouch : s.stand;
-    cone += moving * s.move;
+    const ads = aiming && Array.isArray(spec.sights);
+    let cone = (crouching && onGround ? s.crouch : s.stand) * (ads ? ADS.spreadMul : 1);
+    cone += moving * s.move * (ads ? ADS.moveSpreadMul : 1);
     if (!onGround) cone += s.air;
     cone += Math.min(s.maxShot, heat * s.perShot);
     return cone;

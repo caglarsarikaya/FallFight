@@ -10,6 +10,7 @@ import { blockProps } from '../shared/world/blocks.js';
 import { hitTest } from '../shared/game/BodyZones.js';
 import { DEFAULT_RULESET } from '../shared/ruleset.js';
 import { getItem } from '../shared/items/ItemRegistry.js';
+import { SIGHTS, sightSpec } from '../shared/config/sights.js';
 import { DEBRIS_COLORS, WorldRenderer } from './world/WorldRenderer.js';
 import { Particles } from './effects/Particles.js';
 import { GunEffects } from './effects/GunEffects.js';
@@ -124,8 +125,7 @@ export class Game {
         this.matchEnd = new MatchEndOverlay(ui);
         this.buyMenu = new BuyMenu(ui, {
             sound,
-            onBuy: item => this.connection.send(C2S.BUY, { item }),
-            onToggleRandom: () => this.mode.toggleRandomGuns?.()
+            onBuy: item => this.connection.send(C2S.BUY, { item })
         });
         this.respawnOverlay = new RespawnOverlay(ui);
         this.pauseMenu = new PauseMenu(ui, {
@@ -145,6 +145,11 @@ export class Game {
                 profile.sensitivity = v;
                 profile.save();
             },
+            onSights: v => {
+                profile.sights = v;
+                profile.save();
+            },
+            onToggleRandom: () => this.mode.toggleRandomGuns?.(),
             onShowStats: v => {
                 profile.showStats = v;
                 profile.save();
@@ -191,6 +196,7 @@ export class Game {
         this.plugins = [this.mode];
         this.ruleset = DEFAULT_RULESET;
         this.zoom = 1;
+        this.aimZoom = 1;   // down the sights (WeaponController.aimT)
         this.armor = 0;
         this.helmet = false;
         this.look = { dx: 0, dy: 0 };
@@ -344,8 +350,8 @@ export class Game {
                     if (value && this.spectating) return this.cycleSpectate(1);
                     return w.setTrigger(value && !!(w.holdingConsumable ? this.canAct : this.canShoot));
                 case 'secondary':
-                    if (this.spectating) return this.cycleSpectate(-1);
-                    return this.canAct && w.secondary();
+                    if (this.spectating) return value && this.cycleSpectate(-1);
+                    return w.secondary(!!value, this.canAct);
                 case 'reload': return this.canAct && w.startReload();
                 case 'use': return this.hook('onUseKey', value);
                 case 'pause': return this.escape();
@@ -393,7 +399,7 @@ export class Game {
             this.hud.toast('Buy time is over');
             return;
         }
-        this.buyMenu.show(this.self?.money ?? 0, this.mode.buyMenuOptions());
+        this.buyMenu.show(this.self?.money ?? 0, this.mode.buyMenuOptions(), this.weapons.inventory);
     }
 
     // N ammo, M armor, H potions, G grenades: one key buys that kind (the server buys what the money allows)
@@ -437,6 +443,7 @@ export class Game {
     // The room's mode and features changed (welcome): build their client halves
     setPlugins(modeId, featureIds) {
         for (const plugin of this.plugins) plugin.dispose?.();
+        this.pauseMenu.setRandomGuns(null);   // Deathmatch shows it again
         this.mode = createClientMode(modeId, this);
         this.features = createClientFeatures(featureIds, this);
         // Features first: they clean up after a death before the mode decides what it means
@@ -502,6 +509,8 @@ export class Game {
         this.hud.setInventory(w.inventory);
         this.hud.setAmmo(isGun(w.id) ? w.ammo : null, weaponSpec(w.id)?.name || getItem(w.id)?.name || '', w.reloading);
         this.viewModel.setItem(w.id);
+        this.viewModel.setSight(w.sightId);
+        this.buyMenu.setInventory(w.inventory);
         this.self?.avatar.setHeldItem(w.id);
     }
 
@@ -817,6 +826,12 @@ export class Game {
                 return;
             }
             this.mode.onBuyResult(ok, item);
+            const sight = /^sight_([a-z]+)_\d$/.exec(item);
+            if (ok && sight) {
+                this.sound.play('deploy');
+                this.hud.toast(`${SIGHTS[sight[1]]?.name ?? 'Sight'} mounted`);
+                return;
+            }
             if (ok) {
                 this.sound.play(item === 'kevlar' || item === 'kevlar_helmet' ? 'armorUp' : item.startsWith('ammo') ? 'ammoPickup'
                     : item === 'health_potion' || item.endsWith('grenade') ? 'pickup' : 'deploy');
@@ -825,6 +840,7 @@ export class Game {
             this.sound.play('empty');
             const owned = QUICK_FULL[item] || 'You already have that';
             this.hud.toast(error === 'money' ? 'Not enough money' : error === 'owned' ? owned
+                : error === 'nogun' ? 'No gun in that slot' : error === 'unfit' ? 'That sight doesn\'t fit this gun'
                 : error === 'not-now' ? 'Buy in your base during buy time' : 'Can\'t buy that');
         });
         on(S2C.PICKUP_SPAWNED, data => {
@@ -1194,8 +1210,8 @@ export class Game {
     updateLocalPlayer(dt, now) {
         const active = this.input.locked && !this.pauseMenu.visible;
         const { dx, dy } = this.input.consumeMouse();
-        // Scoped: slower mouse so aiming stays precise
-        if (active) this.local.look(dx, dy, this.profile.sensitivity / this.zoom);
+        // Scoped or down the sights: slower mouse so aiming stays precise
+        if (active) this.local.look(dx, dy, this.profile.sensitivity / (this.zoom * this.aimZoom));
         // Freeze time: look around, buy, but don't move
         const canMove = active && !this.frozen;
         const move = canMove ? this.input.movement : { forward: 0, strafe: 0 };
@@ -1262,6 +1278,10 @@ export class Game {
         this.look.dy = active ? dy : 0;
         this.viewModel.setReload(this.weapons.reloadProgress());
         this.viewModel.setBolt(this.weapons.boltProgress());
+        // Down the sights: the gun comes up to the eye and the view narrows a little
+        const aimT = this.local.alive ? this.weapons.aimT : 0;
+        this.viewModel.setAim(aimT);
+        this.aimZoom = 1 + (sightSpec(this.weapons.sightId ?? 'iron').zoom - 1) * aimT;
         this.viewModel.update(dt, { speed, onGround: body.onGround, crouching: body.crouching, lookX: this.look.dx, lookY: this.look.dy });
         this.hud.setProtected(this.local.alive && now < this.protectedUntil);
         this.hook('updateLocal', dt);
@@ -1273,7 +1293,9 @@ export class Game {
         // Crosshair opens up with the current inaccuracy
         const halfFov = (this.camera.fov * Math.PI) / 360;
         const gap = 4 + (Math.tan(this.weapons.currentCone()) / Math.tan(halfFov)) * (window.innerHeight / 2);
-        this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1, this.weapons.canFireNow);
+        const sighted = this.cameraController.view.showsViewModel && aimT > 0.5;
+        this.hud.setCrosshair(gap, this.local.alive && this.zoom === 1 && !sighted, this.weapons.canFireNow);
+        this.hud.setReticle(sighted && aimT > 0.9 ? this.weapons.sightId : null);
         this.hud.setReload(this.local.alive ? this.weapons.reloadStatus() : null);
         this.hud.update();
 
@@ -1407,8 +1429,12 @@ export class Game {
             this.camera.rotateZ((Math.random() - 0.5) * SHOT_ROLL * 2 * k);
             this.camera.rotateX((Math.random() - 0.3) * SHOT_ROLL * k);
             this.shotKick = Math.max(0, k - dt * 9);
-            if (this.zoom === 1) {
-                this.camera.fov = BASE_FOV + SHOT_FOV * this.shotKick * this.shotKick;
+        }
+        // FOV: the shot punch and the sights' zoom (the sniper scope sets its own)
+        if (this.zoom === 1) {
+            const fov = BASE_FOV / this.aimZoom + SHOT_FOV * this.shotKick * this.shotKick;
+            if (fov !== this.camera.fov) {
+                this.camera.fov = fov;
                 this.camera.updateProjectionMatrix();
             }
         }

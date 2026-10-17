@@ -20,6 +20,7 @@ const DEFAULTS = {
     menuTab: 'player',      // last open main menu tab
     sensitivity: 1,
     showStats: true,    // FPS / ping / latency readout in the corner
+    sights: true,       // hold right click to aim down sights (guns that have them)
     graphics: 'high',   // 'high' (shadows, sharper) or 'low' (for slow computers)
     fullscreen: canLockKeys,   // play fullscreen with the keyboard locked, so Ctrl+W can't close the tab
     randomGuns: true    // Deathmatch: random guns every life, or keep the ones picked in the buy menu
@@ -58,6 +59,7 @@ export class Profile {
                 volume: this.volume,
                 sensitivity: this.sensitivity,
                 showStats: this.showStats,
+                sights: this.sights,
                 graphics: this.graphics,
                 fullscreen: this.fullscreen,
                 randomGuns: this.randomGuns,

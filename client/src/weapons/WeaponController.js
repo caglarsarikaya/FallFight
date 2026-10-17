@@ -2,6 +2,7 @@ import { KNIFE, WEAPON_KIND, isGun, weaponSpec } from '../../shared/config/weapo
 import { C2S } from '../../shared/protocol.js';
 import { directionFromAngles } from '../../shared/math.js';
 import { heatAfter, inaccuracy, pelletDirections, recoilKick, shotSeed } from '../../shared/spread.js';
+import { ADS } from '../../shared/config/sights.js';
 
 const DEG = Math.PI / 180;
 const BOLT_TIME = 0.55;      // bolt / pump animation after a sniper or shotgun shot
@@ -10,7 +11,8 @@ const GRENADES = { hegrenade: 'HE grenades', smokegrenade: 'smoke grenades' };
 const CONSUMABLES = ['health_potion', 'godmode'];
 
 // The local player's weapon handling, predicted on the client so shooting feels instant:
-// rate of fire, magazine and reload, deploy time, recoil (view punch), spread and scopes.
+// rate of fire, magazine and reload, deploy time, recoil (view punch), spread, scopes and
+// aiming down sights (hold right click on a gun with `sights`, if the Sights setting is on).
 // The server runs the same rules (shared/items/Gun.js) and stays the judge of hits.
 export class WeaponController {
     constructor(game) {
@@ -27,6 +29,9 @@ export class WeaponController {
         this.boltUntil = 0;
         this.scope = 0;
         this.resumeScope = null;   // { level, at } snipers re-zoom after the bolt cycles
+        this.aiming = false;       // down the sights (the server knows too: tighter spread)
+        this.aimHeld = false;      // right mouse held: aim again once reloading / switching is done
+        this.aimT = 0;             // 0 hip .. 1 fully down the sights (the animation)
         this.punch = { pitch: 0, yaw: 0 }; // radians, added to the view
         this.lastSlot = 2;
         this.dirs = [];
@@ -46,6 +51,15 @@ export class WeaponController {
 
     get ammo() {
         return this.inventory?.ammo[this.id] || null;
+    }
+
+    // The optic on the gun in hand, or null (iron sights, or no sights at all)
+    get sightId() {
+        return this.inventory?.sights?.[this.id] ?? null;
+    }
+
+    get canAim() {
+        return !!this.spec?.sights && this.game.profile.sights;
     }
 
     get reloading() {
@@ -94,6 +108,9 @@ export class WeaponController {
         this.readyAt = 0;
         this.boltUntil = 0;
         this.setScope(0);
+        this.aimHeld = false;
+        this.setAim(false);
+        this.aimT = 0;
         this.punch.pitch = this.punch.yaw = 0;
         this.trigger = false;
     }
@@ -128,6 +145,7 @@ export class WeaponController {
         const spec = this.spec;
         this.reload = null;
         this.setScope(0);
+        this.setAim(false);
         this.resumeScope = null;
         this.readyAt = this.now + (spec?.deploy ?? 0.3);
         this.triggerUsed = this.trigger;
@@ -140,11 +158,20 @@ export class WeaponController {
         if (down) this.tryFire();
     }
 
-    // Right mouse: scope (snipers), stab (knife)
-    secondary() {
+    // Right mouse: scope (snipers) and stab (knife) on the press; guns with sights aim while it's
+    // held. allowed: false when we can't act (the release always goes through).
+    secondary(down, allowed = true) {
+        if (!down) {
+            this.aimHeld = false;
+            this.setAim(false);
+            return;
+        }
         const spec = this.spec;
-        if (!spec) return;
-        if (spec.kind === WEAPON_KIND.KNIFE) {
+        if (!spec || !allowed) return;
+        if (this.canAim) {
+            this.aimHeld = true;
+            this.tryAim();
+        } else if (spec.kind === WEAPON_KIND.KNIFE) {
             this.knife(true);
         } else if (spec.scope && !this.reload && this.now >= this.readyAt) {
             this.resumeScope = null;
@@ -160,6 +187,18 @@ export class WeaponController {
         this.game.onScopeChanged(level ? this.spec.scope.zooms[level - 1] : 1);
     }
 
+    // Down the sights if the gun is ready (not reloading or still coming up)
+    tryAim() {
+        if (this.canAim && !this.reload && this.now >= this.readyAt) this.setAim(true);
+    }
+
+    setAim(on) {
+        if (on === this.aiming) return;
+        this.aiming = on;
+        this.game.connection.send(C2S.AIM, { on });
+        if (on) this.game.sound.play('zoom', { volume: 0.35, pitch: 0.7 });
+    }
+
     startReload() {
         const spec = this.spec;
         const ammo = this.ammo;
@@ -170,6 +209,7 @@ export class WeaponController {
         const first = shell ? spec.reloadTime + 0.35 : spec.reloadTime;
         this.reload = { id: this.id, start: now, end: now + first, shell };
         this.setScope(0);
+        this.setAim(false);
         this.resumeScope = null;
         this.game.connection.send(C2S.RELOAD, {});
         this.game.sound.play(shell ? 'pump' : 'clipout');
@@ -241,6 +281,7 @@ export class WeaponController {
             onGround: local.body.onGround,
             crouching: local.body.crouching,
             scoped: this.scope > 0,
+            aiming: this.aiming,
             heat: heatBefore
         });
         this.heat = heatBefore + 1;
@@ -337,6 +378,12 @@ export class WeaponController {
             this.game.onWeaponChanged();
         }
 
+        // Sights: still held after a reload or switch: back down them; setting turned off: stop
+        if (this.aiming && !this.canAim) this.setAim(false);
+        else if (this.aimHeld && !this.aiming) this.tryAim();
+        const aimTarget = this.aiming ? 1 : 0;
+        this.aimT = approach(this.aimT, aimTarget, dt / ADS.enterTime);
+
         if (this.resumeScope && now >= this.resumeScope.at) {
             if (this.trigger === false && this.id && this.spec?.scope && !this.reload) this.setScope(this.resumeScope.level);
             this.resumeScope = null;
@@ -361,6 +408,7 @@ export class WeaponController {
             onGround: local.body.onGround,
             crouching: local.body.crouching,
             scoped: this.scope > 0,
+            aiming: this.aiming,
             heat
         });
     }
@@ -397,9 +445,9 @@ export class WeaponController {
         return 1 - (this.boltUntil - this.now) / length;
     }
 
-    // Movement speed multiplier for the gun in hand
+    // Movement speed multiplier for the gun in hand (slower down the sights)
     get speedMul() {
-        return this.spec?.moveSpeed ?? 1;
+        return (this.spec?.moveSpeed ?? 1) * (this.aiming ? ADS.speedMul : 1);
     }
 }
 

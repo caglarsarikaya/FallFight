@@ -9,7 +9,8 @@ const KICK_STIFFNESS = 340;
 const KICK_DAMPING = 2 * Math.sqrt(KICK_STIFFNESS) * 0.55;
 const KICK_IMPULSE = 28;    // a rifle shot peaks near 0.8
 
-// The item held in first person, with bob, sway, switch, recoil and reload animations. It lives in
+// The item held in first person, with bob, sway, switch, recoil, reload and aim-down-sights
+// animations (aim 0..1 moves the gun up to the eye, see GunView.mountSight). It lives in
 // its own scene, rendered after the world with a cleared depth buffer, so it never clips into blocks.
 export class ViewModel {
     constructor() {
@@ -39,6 +40,7 @@ export class ViewModel {
         this.sway = { x: 0, y: 0 };
         this.flashTime = 0;
         this.crouch = 0;
+        this.aim = 0;
 
         // Spent casings flying out of the ejection port
         this.shells = [];
@@ -67,6 +69,17 @@ export class ViewModel {
         this.bolt = null;
         this.kickAmount = 0;
         this.kickVelocity = 0;
+    }
+
+    // The optic on the gun in hand (null: iron sights)
+    setSight(sightId) {
+        if (!this.holder || !this.view?.mountSight || (this.holder.userData.sightId ?? null) === (sightId ?? null)) return;
+        this.view.mountSight(this.holder, sightId);
+    }
+
+    // 0 hip, 1 fully down the sights
+    setAim(t) {
+        this.aim = t;
     }
 
     play(action) {
@@ -157,7 +170,8 @@ export class ViewModel {
             kick: this.kickAmount,
             roll: this.kickRoll,
             reload: this.reload,
-            bolt: this.bolt
+            bolt: this.bolt,
+            aim: this.aim
         });
         if (this.action && this.action.t >= 1) this.action = null;
 
@@ -167,16 +181,17 @@ export class ViewModel {
         this.sway.y += (Math.max(-1, Math.min(1, lookY * 0.01)) - this.sway.y) * k;
         this.crouch += ((crouching ? 1 : 0) - this.crouch) * k;
 
-        // Walking bob and the raise animation after switching items
-        const moving = onGround ? Math.min(speed / 4.6, 1) : 0;
+        // Walking bob and the raise animation after switching items (barely any down the sights)
+        const steady = 1 - this.aim * 0.8;
+        const moving = (onGround ? Math.min(speed / 4.6, 1) : 0) * steady;
         this.bobPhase += dt * 9 * moving;
         const raise = 1 - this.switchT;
         this.group.position.set(
-            Math.sin(this.bobPhase) * 0.012 * moving + this.sway.x * 0.025,
-            -Math.abs(Math.cos(this.bobPhase)) * 0.014 * moving - raise * raise * 0.35 + this.sway.y * 0.02 - this.crouch * 0.01,
+            Math.sin(this.bobPhase) * 0.012 * moving + this.sway.x * 0.025 * steady,
+            -Math.abs(Math.cos(this.bobPhase)) * 0.014 * moving - raise * raise * 0.35 + (this.sway.y * 0.02 - this.crouch * 0.01) * steady,
             0
         );
-        this.group.rotation.set(raise * 0.6, this.sway.x * 0.05, -this.crouch * 0.04);
+        this.group.rotation.set(raise * 0.6, this.sway.x * 0.05 * steady, -this.crouch * 0.04 * steady);
     }
 
     updateShells(dt) {

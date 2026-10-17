@@ -2,9 +2,9 @@ import { el } from './dom.js';
 import { canLockKeys } from '../input/fullscreen.js';
 
 // Esc menu: resume, change character/name, camera, volume, sensitivity, graphics, fullscreen,
-// stats overlay, leave
+// stats overlay, sights (hold right click to aim), Deathmatch random guns, leave
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onGraphics, onFullscreen, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
         this.graphics = profile.graphics;
         this.graphicsButton = el('button.btn', {
             type: 'button',
@@ -36,6 +36,19 @@ export class PauseMenu {
             }
         });
         this.updateStatsLabel();
+        this.sights = profile.sights;
+        this.sightsButton = el('button.btn', {
+            type: 'button',
+            onclick: () => {
+                this.sights = !this.sights;
+                this.updateSightsLabel();
+                onSights(this.sights);
+            }
+        });
+        this.updateSightsLabel();
+        // Deathmatch only (setRandomGuns): new guns every life, or keep the ones bought
+        this.randomGuns = null;
+        this.randomButton = el('button.btn.hidden', { type: 'button', onclick: () => onToggleRandom() });
         this.volume = el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: profile.volume });
         this.volume.addEventListener('input', () => onVolume(Number(this.volume.value)));
         this.sensitivity = el('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: profile.sensitivity });
@@ -52,6 +65,8 @@ export class PauseMenu {
             this.graphicsButton,
             this.fullscreenButton,
             this.statsButton,
+            this.sightsButton,
+            this.randomButton,
             el('button.btn', { type: 'button', text: 'Leave Game', onclick: () => onLeave() })
         ]);
         root.append(this.root);
@@ -75,6 +90,17 @@ export class PauseMenu {
 
     updateStatsLabel() {
         this.statsButton.textContent = `FPS & Ping: ${this.showStats ? 'ON' : 'OFF'}`;
+    }
+
+    updateSightsLabel() {
+        this.sightsButton.textContent = `Sights (hold right click): ${this.sights ? 'ON' : 'OFF'}`;
+    }
+
+    // true / false, or null to hide the switch (not Deathmatch)
+    setRandomGuns(on) {
+        this.randomGuns = on;
+        this.randomButton.classList.toggle('hidden', on === null);
+        if (on !== null) this.randomButton.textContent = `Random guns: ${on ? 'ON' : 'OFF'}`;
     }
 
     get visible() {

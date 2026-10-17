@@ -44,13 +44,14 @@ export class Gun extends Weapon {
         player.inventory.ammo[this.id].mag--;
         g.nextFireAt = Math.max(now, g.nextFireAt) + spec.interval;
 
-        // Accuracy depends on movement, stance, scope and how long we've been spraying
+        // Accuracy depends on movement, stance, scope or sights and how long we've been spraying
         const heat = Math.max(0, heatAfter(spec, g.heat, now - g.lastShotAt) - 1);
         const cone = inaccuracy(spec, {
             speed: Math.hypot(player.vx, player.vz),
             onGround: player.onGround,
             crouching: player.crouching,
             scoped: g.scoped > 0,
+            aiming: g.aiming,
             heat
         });
         g.heat = heat + 1;
