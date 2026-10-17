@@ -168,6 +168,27 @@ test('flow field: distance shrinks towards the target, through doors and up stai
     assert.deepEqual([at.ix, at.iz, at.y], [perch.ix, perch.iz, perch.y], 'arrived on the roof');
 });
 
+test('zombies climb the tower stairs instead of clawing them down', () => {
+    const room = zombieRoom('fallfight_classic', 5);
+    const a = room.addPlayer({ id: 'a', name: 'A' });
+    const perch = room.map.landmarks.sniperPerches[2];
+    const c = room.arena.tileCenter(perch.ix, perch.iz);
+    const broken = [];
+    const breakBlock = room.breakBlock.bind(room);
+    room.breakBlock = (ix, iy, iz, by) => {
+        if (by?.isZombie) broken.push([ix, iy, iz]);
+        return breakBlock(ix, iy, iz, by);
+    };
+    for (let t = 0; t < 45; t += 1 / 30) {
+        Object.assign(a, { x: c.x, y: perch.y, z: c.z, vx: 0, vy: 0, vz: 0, onGround: true, health: 100, alive: true });
+        room.tick(1 / 30);
+    }
+    assert.deepEqual(broken, [], 'no blocks torn out while there is a road up');
+    const zs = zombiesOf(room).filter(z => z.alive);
+    const up = zs.filter(z => Math.abs(z.y - perch.y) < 0.6 && Math.hypot(z.x - c.x, z.z - c.z) < 4);
+    assert.ok(zs.length > 0 && up.length >= zs.length - 1, `${up.length} of ${zs.length} on the tower top`);
+});
+
 test('giants: one on wave 5, two on wave 10, three on wave 15, on top of the usual zombies', () => {
     const room = zombieRoom();
     room.addPlayer({ id: 'a', name: 'A' });

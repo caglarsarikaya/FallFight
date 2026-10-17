@@ -16,7 +16,7 @@ const idle = () => ({ moveX: 0, moveZ: 0, jump: false, speedMul: 0 });
 // roads by how busy they are, which side it likes and where others just fell, so a wave spreads
 // out instead of walking single file into one trap. A share are flankers, who path round the side
 // or behind. Close in, each comes from its own angle, keeps off the others, weaves when shot at and
-// leaps the last few blocks. In reach it claws; stuck, it claws through blocks; a target standing
+// leaps the last few blocks. In reach it claws; stuck with no road to the target, it claws through blocks (never a road's own); a target standing
 // just above it gets the floor clawed out from under them. Every move is checked against the ground
 // just ahead, so it never walks off into a hole. Cheap on purpose: dozens of these run at once.
 // A gunner (gunner: ZOMBIES.gunner) shoots at its target when it can see it in range, in short badly
@@ -91,8 +91,12 @@ export class ZombieBrain extends Brain {
             return this.go(nx * 0.3, nz * 0.3, speedMul, 0.3) || idle();
         }
 
-        // Track progress so a zombie walled in starts breaking through
-        if (dist < this.lastDistance - 0.3) {
+        // Track progress so a zombie walled in starts breaking through. On the flow field there is a
+        // road (round a tower to its stairs, say), so it just walks it: never stuck, never clawing
+        if (this.onRoad()) {
+            this.lastDistance = dist;
+            this.lastProgressAt = this.now;
+        } else if (dist < this.lastDistance - 0.3) {
             this.lastDistance = dist;
             this.lastProgressAt = this.now;
         }
@@ -316,16 +320,26 @@ export class ZombieBrain extends Brain {
         this.shoot(target, dist);
     }
 
-    // Claw at the block in front (at chest height, then feet height)
+    // Somewhere the flow field reaches from where it stands: there is a road to the target
+    onRoad() {
+        const z = this.player;
+        const flow = this.mode.flow;
+        const { ix, iz } = this.arena.tileAt(z.x, z.z);
+        return flow.distanceAt(ix, iz, flow.levelNear(ix, iz, Math.round(z.y))) !== UNREACHED;
+    }
+
+    // Claw at the block in front (at chest height, then feet height), but never one that is part
+    // of a road (a stair step, a roof) the others are walking
     breakThrough(nx, nz) {
         if (this.now < this.nextBreakAt) return;
         this.nextBreakAt = this.now + 0.8;
         const z = this.player;
         const arena = this.arena;
+        const flow = this.mode.flow;
         for (const height of [1.2, 0.4]) {
             const origin = { x: z.x, y: z.y + height, z: z.z };
             const block = arena.raycast(origin, { x: nx, y: 0, z: nz }, BREAK_REACH);
-            if (block && arena.isBreakable(block.ix, block.iy, block.iz)) {
+            if (block && arena.isBreakable(block.ix, block.iy, block.iz) && flow.distanceAt(block.ix, block.iz, block.iy) === UNREACHED) {
                 this.room.breakBlock(block.ix, block.iy, block.iz, z);
                 this.lastProgressAt = this.now;
                 return;
@@ -337,11 +351,9 @@ export class ZombieBrain extends Brain {
     // claw out the block they stand on, so they come down to us
     clawFloorUnder(target, dist, dy) {
         if (dy < 1.5 || dy > 3.5 || dist > 2.2 || this.now < this.nextBreakAt) return;
+        if (this.onRoad()) return;
         const z = this.player;
         const arena = this.arena;
-        const here = arena.tileAt(z.x, z.z);
-        const flow = this.mode.flow;
-        if (flow.distanceAt(here.ix, here.iz, flow.levelNear(here.ix, here.iz, Math.round(z.y))) !== UNREACHED) return;
         const under = arena.supportBlock(target.x, target.y, target.z, 0);
         if (!under || !arena.isBreakable(under.ix, under.iy, under.iz)) return;
         const c = arena.blockCenter(under.ix, under.iy, under.iz);
