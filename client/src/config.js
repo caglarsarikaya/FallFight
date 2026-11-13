@@ -11,11 +11,12 @@ export const OFFLINE_BOTS = ROOMS.maxPlayersPerRoom - 1;
 
 // Which server to use:
 // - ?server=<url> in the page URL overrides everything (e.g. ?server=http://localhost:3000)
-// - a page served by the local dev server (npm run dev) uses that server
+// - a page served by a game server itself (npm run dev, npm run lan) uses that server: it marks
+//   the page with <meta name="fallfight-server" content="same-origin">
 // - otherwise SERVER_URL
 export function resolveServerUrl() {
     const override = new URLSearchParams(location.search).get('server');
     if (override) return override;
-    const local = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') && location.port === '3000';
-    return local ? location.origin : SERVER_URL;
+    const served = document.querySelector('meta[name="fallfight-server"]')?.content === 'same-origin';
+    return served ? location.origin : SERVER_URL;
 }

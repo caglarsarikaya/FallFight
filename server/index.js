@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -43,6 +45,14 @@ if (SERVE_CLIENT) {
     // Make the browser re-check every file (a quick 304 when unchanged), so after an update it never
     // runs a mix of old and new game modules from its cache
     const fresh = { setHeaders: res => res.setHeader('Cache-Control', 'no-cache') };
+    // Tell the page it was served by this server, so it plays here (a LAN game) and not on SERVER_URL
+    const sendPage = async (_req, res) => {
+        const html = await readFile(path.join(root, 'client', 'index.html'), 'utf8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.type('html').send(html.replace('<head>', '<head>\n    <meta name="fallfight-server" content="same-origin">'));
+    };
+    app.get('/', sendPage);
+    app.get('/index.html', sendPage);
     app.use('/shared', express.static(path.join(root, 'shared'), fresh));
     app.use(express.static(path.join(root, 'client'), fresh));
 } else {
@@ -96,5 +106,9 @@ io.on('connection', socket => {
 
 server.listen(PORT, () => {
     console.log(`FallFight server on port ${PORT} (up to ${ROOMS.maxRooms} rooms of ${ROOMS.maxPlayersPerRoom})`);
-    if (SERVE_CLIENT) console.log(`Game page: http://localhost:${PORT}/`);
+    if (!SERVE_CLIENT) return;
+    console.log(`Game page: http://localhost:${PORT}/`);
+    // LAN game: friends on the same network open one of these in their browser
+    const lan = Object.values(os.networkInterfaces()).flat().filter(a => a.family === 'IPv4' && !a.internal);
+    for (const { address } of lan) console.log(`On your network: http://${address}:${PORT}/`);
 });

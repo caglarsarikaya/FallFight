@@ -15,6 +15,19 @@ them into the lava.
   map**, and a choice to **fill empty seats with bots** or play **friends only**. Friends see it in the
   room list and join it (entering the password if there is one).
 
+## LAN game
+
+Playing with friends on the same Wi-Fi or cable? Host the game on one computer and the ping drops
+to a few milliseconds, because nothing leaves your network:
+
+1. On the host computer (needs [Node.js](https://nodejs.org) 22+): `npm install`, then `npm run lan`.
+2. It prints an address like `http://192.168.1.23:3000/`. Everyone, the host included, opens it in
+   their browser and plays as usual: Quick Play, or create a room.
+
+If friends can't open the address, allow Node.js through the host's firewall (Windows asks the first
+time: tick "Private networks"). The page still loads three.js and socket.io from a CDN, so the
+computers need internet access to open it.
+
 ## Game modes
 
 | Mode | How it works |

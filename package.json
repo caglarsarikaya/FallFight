@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js --serve-client",
+    "lan": "node server/index.js --serve-client",
     "test": "node --test test/*.test.js",
     "build:pages": "node scripts/build-pages.js"
   },
