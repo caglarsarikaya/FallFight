@@ -26,6 +26,7 @@ export class InputManager {
         this.lockLostAt = -Infinity;
         this.jumpPressed = false;
         this.fullscreen = () => false;   // go fullscreen (keys locked) when taking the mouse
+        this.rawMouse = () => true;      // take the mouse without the system's pointer acceleration
 
         document.addEventListener('keydown', e => this.handleKey(e, true));
         document.addEventListener('keyup', e => this.handleKey(e, false));
@@ -86,9 +87,26 @@ export class InputManager {
 
     requestLock() {
         if (this.fullscreen()) enterGameFullscreen();
-        const request = this.element.requestPointerLock?.();
+        // Raw input: the same hand movement always turns the same angle, however fast it was
+        // (Windows "enhance pointer precision" and macOS acceleration otherwise bend every flick).
+        // Browsers or systems without it reject with NotSupportedError: take the plain lock then
+        const lock = options => {
+            try {
+                return this.element.requestPointerLock?.(options);
+            } catch {
+                return null;
+            }
+        };
+        const raw = this.rawMouse();
+        const request = lock(raw ? { unadjustedMovement: true } : undefined);
         // Newer browsers return a promise that rejects if the user exited lock very recently
-        if (request?.catch) request.catch(() => {});
+        if (request?.catch) {
+            request.catch(error => {
+                if (!raw || error?.name !== 'NotSupportedError') return;
+                const retry = lock();
+                if (retry?.catch) retry.catch(() => {});
+            });
+        }
     }
 
     exitLock() {

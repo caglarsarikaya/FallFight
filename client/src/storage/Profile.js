@@ -1,6 +1,7 @@
 import { DEFAULT_CHARACTER, isValidCharacter, sanitizeName } from '../../shared/characters/definitions.js';
 import { DEFAULT_MODE, isValidMode } from '../../shared/modes/registry.js';
 import { canLockKeys } from '../input/keyLock.js';
+import { clampSensitivity } from '../../shared/look.js';
 
 const KEY = 'fallfight.profile.v1';
 
@@ -19,6 +20,7 @@ const DEFAULTS = {
     onlineAction: 'quick',  // and online: 'quick', 'join' or 'create'
     menuTab: 'player',      // last open main menu tab
     sensitivity: 1,
+    rawMouse: true,     // mouse without the system's pointer acceleration (where the browser can)
     showStats: true,    // FPS / ping / latency readout in the corner
     sights: true,       // hold right click to aim down sights (guns that have them)
     graphics: 'high',   // 'high' (shadows, sharper) or 'low' (for slow computers)
@@ -32,6 +34,7 @@ export class Profile {
         Object.assign(this, DEFAULTS, data);
         if (!isValidCharacter(this.characterId)) this.characterId = DEFAULT_CHARACTER;
         if (!isValidMode(this.mode)) this.mode = DEFAULT_MODE;
+        this.sensitivity = clampSensitivity(this.sensitivity);
     }
 
     static load() {
@@ -58,6 +61,7 @@ export class Profile {
                 cameraMode: this.cameraMode,
                 volume: this.volume,
                 sensitivity: this.sensitivity,
+                rawMouse: this.rawMouse,
                 showStats: this.showStats,
                 sights: this.sights,
                 graphics: this.graphics,

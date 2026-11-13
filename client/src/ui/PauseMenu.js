@@ -1,4 +1,4 @@
-import { el, choice } from './dom.js';
+import { el, choice, sensitivityControl } from './dom.js';
 import { canLockKeys } from '../input/keyLock.js';
 import { renderControls } from './controls.js';
 
@@ -9,7 +9,7 @@ const onOff = on => (on ? 'on' : 'off');
 // grouped into Audio & Mouse / Video / Gameplay (camera, sights, Deathmatch random guns), and
 // Help with every key (ui/controls.js) for anyone who missed the hint at the start
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onRawMouse, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
         this.graphicsChoice = choice([['high', 'High'], ['low', 'Low (fast)']], v => {
             this.graphicsChoice.set(v);
             onGraphics(v);
@@ -39,8 +39,13 @@ export class PauseMenu {
         });
         this.volume = el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: profile.volume });
         this.volume.addEventListener('input', () => onVolume(Number(this.volume.value)));
-        this.sensitivity = el('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: profile.sensitivity });
-        this.sensitivity.addEventListener('input', () => onSensitivity(Number(this.sensitivity.value)));
+        this.sensitivity = sensitivityControl(profile.sensitivity, v => onSensitivity(v));
+        // Takes effect the next time the game takes the mouse (resuming does)
+        this.rawChoice = choice(ON_OFF, v => {
+            this.rawChoice.set(v);
+            onRawMouse(v === 'on');
+        });
+        this.rawChoice.set(onOff(profile.rawMouse));
 
         const row = (label, control) => el('div.menu-setting', {}, [el('span.menu-label', { text: label }), control]);
         const section = (title, rows) => el('div.pause-section', {}, [el('h3', { text: title }), ...rows]);
@@ -61,7 +66,7 @@ export class PauseMenu {
                 el('h2', { text: 'OPTIONS' }),
                 el('div.pause-options', {}, [
                     el('div.pause-column', {}, [
-                        section('Audio & Mouse', [row('Sound volume', this.volume), row('Mouse sensitivity', this.sensitivity)]),
+                        section('Audio & Mouse', [row('Sound volume', this.volume), row('Mouse sensitivity', this.sensitivity.node), row('Raw mouse input', this.rawChoice.node)]),
                         section('Video', [
                             row('Graphics', this.graphicsChoice.node),
                             row('Fullscreen', this.fullscreenChoice.node),

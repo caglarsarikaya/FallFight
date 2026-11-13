@@ -53,7 +53,7 @@ Inside each map's outer wall, everything can be shot down or knifed through.
 | 8 | Zombies: the angel (if you picked one up), then click to use it |
 | V (or F5) | Switch between first and third person |
 | Tab | Scoreboard |
-| Esc | Closes the buy menu first; otherwise opens (and closes) the game menu: change character or nickname, camera, sound, mouse sensitivity, graphics (LOW for slow computers: no shadows) |
+| Esc | Closes the buy menu first; otherwise opens (and closes) the game menu: change character or nickname, camera, sound, mouse sensitivity (slider or exact number; raw input without pointer acceleration), graphics (LOW for slow computers: no shadows) |
 
 **Characters:** Robot, Squirrel, Mario, Dr Octopus, Dr Helix and Byte. They all have the same stats;
 only the looks differ. Your nickname, character and settings are remembered in the browser.

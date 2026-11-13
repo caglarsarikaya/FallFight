@@ -32,6 +32,7 @@ import { ModePanel } from './ui/ModePanel.js';
 import { MatchEndOverlay } from './ui/MatchEndOverlay.js';
 import { BuyMenu } from './ui/BuyMenu.js';
 import { el } from './ui/dom.js';
+import { zoomLookScale } from '../shared/look.js';
 import { canLockKeys, exitGameFullscreen } from './input/keyLock.js';
 import { controlGroups } from './ui/controls.js';
 import { roomErrorText } from './ui/RoomBrowser.js';
@@ -119,6 +120,7 @@ export class Game {
         this.spectateEye = { x: 0, y: 0, z: 0 };
         this.input = new InputManager(this.renderer.domElement);
         this.input.fullscreen = () => profile.fullscreen;
+        this.input.rawMouse = () => profile.rawMouse;
         this.local = new LocalPlayerController();
         this.weapons = new WeaponController(this);
 
@@ -148,6 +150,10 @@ export class Game {
             },
             onSensitivity: v => {
                 profile.sensitivity = v;
+                profile.save();
+            },
+            onRawMouse: v => {
+                profile.rawMouse = v;
                 profile.save();
             },
             onSights: v => {
@@ -1274,8 +1280,9 @@ export class Game {
     updateLocalPlayer(dt, now) {
         const active = this.input.locked && !this.pauseMenu.visible;
         const { dx, dy } = this.input.consumeMouse();
-        // Scoped or down the sights: slower mouse so aiming stays precise
-        if (active) this.local.look(dx, dy, this.profile.sensitivity / (this.zoom * this.aimZoom));
+        // Scoped or down the sights: slower mouse, by how much the picture is magnified (not by
+        // the FOV ratio), so a target the same distance off the crosshair takes the same flick
+        if (active) this.local.look(dx, dy, this.profile.sensitivity * zoomLookScale(BASE_FOV, this.zoom * this.aimZoom));
         // Freeze time: look around, buy, but don't move
         const canMove = active && !this.frozen;
         const move = canMove ? this.input.movement : { forward: 0, strafe: 0 };

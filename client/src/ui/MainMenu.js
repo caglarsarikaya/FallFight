@@ -5,7 +5,7 @@ import { S2C } from '../../shared/protocol.js';
 import { drawDirt, textureDataUrl } from '../world/textures.js';
 import { CharacterPreview } from './CharacterPreview.js';
 import { RoomBrowser } from './RoomBrowser.js';
-import { el, choice } from './dom.js';
+import { el, choice, sensitivityControl } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
 import { canLockKeys } from '../input/keyLock.js';
 import { SHOP_CONTROLS, controlGroups } from './controls.js';
@@ -193,7 +193,11 @@ export class MainMenu {
             this.sound.play('click');
         });
         this.volumeInput = slider(0, 1, 0.05, 'volume', v => this.sound.setVolume(v));
-        this.sensitivityInput = slider(0.3, 2.5, 0.1, 'sensitivity');
+        this.sensitivityInput = sensitivityControl(this.profile.sensitivity, v => {
+            this.profile.sensitivity = v;
+            this.profile.save();
+        });
+        this.rawMouseChoice = setting('rawMouse', [['on', 'On'], ['off', 'Off']]);
         this.graphicsChoice = setting('graphics', [['high', 'High'], ['low', 'Low (fast)']]);
         this.cameraChoice = setting('cameraMode', [['first', 'First person'], ['third', 'Third person']]);
         this.statsChoice = setting('showStats', [['on', 'On'], ['off', 'Off']]);
@@ -204,7 +208,8 @@ export class MainMenu {
         return el('div.menu-panel.options-tab', {}, [
             el('div.menu-column', {}, [
                 row('Sound volume', this.volumeInput),
-                row('Mouse sensitivity', this.sensitivityInput),
+                row('Mouse sensitivity', this.sensitivityInput.node),
+                row('Raw mouse input', this.rawMouseChoice.node),
                 row('Graphics', this.graphicsChoice.node),
                 row('Camera', this.cameraChoice.node),
                 row('FPS & ping', this.statsChoice.node),
@@ -220,7 +225,8 @@ export class MainMenu {
     // Settings can also change in the pause menu, so redraw from the profile
     refreshOptions() {
         this.volumeInput.value = this.profile.volume;
-        this.sensitivityInput.value = this.profile.sensitivity;
+        this.sensitivityInput.set(this.profile.sensitivity);
+        this.rawMouseChoice.set(this.profile.rawMouse ? 'on' : 'off');
         this.graphicsChoice.set(this.profile.graphics);
         this.cameraChoice.set(this.profile.cameraMode);
         this.statsChoice.set(this.profile.showStats ? 'on' : 'off');
