@@ -3,6 +3,7 @@ import { weaponSpec } from '../../shared/config/weapons.js';
 import { getItem } from '../../shared/items/ItemRegistry.js';
 import { getItemView } from '../items/registry.js';
 import { el, flash } from './dom.js';
+import { applyCrosshair, crosshairNode } from './crosshairs.js';
 import { renderControls } from './controls.js';
 
 const MAX_DAMAGE_ARCS = 4;
@@ -16,7 +17,8 @@ export class Hud {
     constructor(root) {
         this.reloadText = el('span');
         this.reloadRing = el('div.reload-ring', {}, [this.reloadText]);
-        this.crosshair = el('div.crosshair', {}, [...['t', 'b', 'l', 'r'].map(side => el(`div.ch.ch-${side}`)), this.reloadRing]);
+        this.crosshair = crosshairNode([this.reloadRing]);
+        this.crosshairFixedGap = null;   // static styles keep their own gap
         this.hitmarker = el('div.hitmarker');
         this.scope = el('div.scope.hidden', {}, [el('div.scope-h'), el('div.scope-v')]);
         // Aiming down an optic: its reticle on the screen centre (iron sights: a small dot)
@@ -213,7 +215,14 @@ export class Hud {
         this.smoke.style.opacity = String(v * 0.92);
     }
 
-    // gap in pixels from the centre to each crosshair line; ready: the gun can shoot right now
+    // The player's pick (ui/crosshairs.js): shape and colour
+    setCrosshairStyle(id, color) {
+        this.crosshairFixedGap = applyCrosshair(this.crosshair, id, color).gap;
+        this.crosshairGap = -1;
+    }
+
+    // gap in pixels from the centre to each crosshair line (dynamic styles only); ready: the gun
+    // can shoot right now
     setCrosshair(gap, visible = true, ready = true) {
         this.crosshair.classList.toggle('hidden', !visible);
         if (ready !== this.crosshairReady) {
@@ -221,7 +230,7 @@ export class Hud {
             this.crosshair.classList.toggle('busy', !ready);
         }
         const g = Math.round(Math.min(120, gap));
-        if (g === this.crosshairGap) return;
+        if (this.crosshairFixedGap !== null || g === this.crosshairGap) return;
         this.crosshairGap = g;
         this.crosshair.style.setProperty('--gap', `${g}px`);
     }

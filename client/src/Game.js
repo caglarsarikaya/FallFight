@@ -125,6 +125,7 @@ export class Game {
         this.weapons = new WeaponController(this);
 
         this.hud = new Hud(ui);
+        this.hud.setCrosshairStyle(profile.crosshair, profile.crosshairColor);
         this.hud.setMode(connection.isOnline ? 'ONLINE' : 'OFFLINE · BOTS');
         this.hud.setStatsVisible(profile.showStats);
         this.scoreboard = new Scoreboard(ui);
@@ -151,6 +152,12 @@ export class Game {
             onSensitivity: v => {
                 profile.sensitivity = v;
                 profile.save();
+            },
+            onCrosshair: (id, color) => {
+                profile.crosshair = id;
+                profile.crosshairColor = color;
+                profile.save();
+                this.hud.setCrosshairStyle(id, color);
             },
             onRawMouse: v => {
                 profile.rawMouse = v;

@@ -109,6 +109,21 @@ input[type=text]:focus { border-color: #fff; }
 
 input[type=range] { width: 100%; accent-color: var(--accent); }
 
+/* Crosshair options: preview on a mid-grey patch, style buttons, colour swatches */
+.crosshair-picker { display: flex; gap: 10px; align-items: stretch; }
+.crosshair-preview {
+    position: relative; flex: 0 0 72px; min-height: 72px;
+    background: linear-gradient(135deg, #7d8a6a, #4a5560);
+    border: 3px solid #000;
+}
+.crosshair-picks { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.crosshair-picks .menu-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.crosshair-picks .btn.menu-choice { min-width: 0; padding: 6px 4px; font-size: 16px; white-space: nowrap; }
+.crosshair-colors { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.crosshair-swatch { width: 28px; height: 28px; padding: 0; border: 3px solid #000; cursor: pointer; }
+.crosshair-swatch.selected { border-color: #fff; outline: 2px solid #000; }
+.crosshair-custom { width: 40px; height: 28px; padding: 0; border: 3px solid #000; background: #000; cursor: pointer; }
+
 /* A slider with its exact value next to it (mouse sensitivity) */
 .menu-slider-number { display: flex; align-items: center; gap: 10px; }
 .menu-slider-number input[type=range] { flex: 1; min-width: 0; }
@@ -375,8 +390,9 @@ input.menu-number:focus { border-color: #fff; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; }
 
-/* Dynamic crosshair: four lines pushed out by --gap */
-.crosshair { position: absolute; left: 50%; top: 50%; --gap: 6px; --len: 9px; --thick: 2px; --ch: #5dff5d; }
+/* Crosshair: four lines pushed out by --gap and a centre dot; the style and colour picked in the
+   options set the variables (ui/crosshairs.js) */
+.crosshair { position: absolute; left: 50%; top: 50%; --gap: 6px; --len: 9px; --thick: 2px; --dot: 0px; --ch: var(--ch-color, #5dff5d); }
 .crosshair.hidden { display: none; }
 /* Can't shoot right now (reloading, switching, bolt): grey and faint */
 .crosshair.busy { --ch: #9a9a9a; opacity: 0.55; }
@@ -387,6 +403,8 @@ input.menu-number:focus { border-color: #fff; }
 .ch-b { top: var(--gap); }
 .ch-l { right: var(--gap); }
 .ch-r { left: var(--gap); }
+.ch-dot { width: var(--dot); height: var(--dot); left: calc(var(--dot) / -2); top: calc(var(--dot) / -2); }
+.crosshair.no-top .ch-t, .crosshair.no-dot .ch-dot, .crosshair.no-lines .ch:not(.ch-dot) { display: none; }
 /* Reloading: a ring that fills clockwise, seconds left in the middle */
 .reload-ring { display: none; }
 .crosshair.reloading { opacity: 1; }

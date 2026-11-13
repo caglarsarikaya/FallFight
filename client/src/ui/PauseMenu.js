@@ -1,5 +1,6 @@
 import { el, choice, sensitivityControl } from './dom.js';
 import { canLockKeys } from '../input/keyLock.js';
+import { crosshairPicker } from './crosshairs.js';
 import { renderControls } from './controls.js';
 
 const ON_OFF = [['on', 'On'], ['off', 'Off']];
@@ -9,7 +10,7 @@ const onOff = on => (on ? 'on' : 'off');
 // grouped into Audio & Mouse / Video / Gameplay (camera, sights, Deathmatch random guns), and
 // Help with every key (ui/controls.js) for anyone who missed the hint at the start
 export class PauseMenu {
-    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onRawMouse, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
+    constructor(root, { profile, onResume, onEditProfile, onToggleCamera, onVolume, onSensitivity, onRawMouse, onCrosshair, onShowStats, onSights, onToggleRandom, onGraphics, onFullscreen, onLeave }) {
         this.graphicsChoice = choice([['high', 'High'], ['low', 'Low (fast)']], v => {
             this.graphicsChoice.set(v);
             onGraphics(v);
@@ -46,6 +47,7 @@ export class PauseMenu {
             onRawMouse(v === 'on');
         });
         this.rawChoice.set(onOff(profile.rawMouse));
+        this.crosshairPicker = crosshairPicker(profile, onCrosshair);
 
         const row = (label, control) => el('div.menu-setting', {}, [el('span.menu-label', { text: label }), control]);
         const section = (title, rows) => el('div.pause-section', {}, [el('h3', { text: title }), ...rows]);
@@ -78,7 +80,8 @@ export class PauseMenu {
                             row('Camera', this.cameraButton),
                             row('Sights (hold right click)', this.sightsChoice.node),
                             this.randomRow
-                        ])
+                        ]),
+                        section('Crosshair', [this.crosshairPicker.node])
                     ])
                 ]),
                 el('button.btn.primary', { type: 'button', text: 'Back', onclick: () => this.showPage('main') })

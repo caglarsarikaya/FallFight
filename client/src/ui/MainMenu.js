@@ -8,6 +8,7 @@ import { RoomBrowser } from './RoomBrowser.js';
 import { el, choice, sensitivityControl } from './dom.js';
 import { allClientFeatures } from '../features/registry.js';
 import { canLockKeys } from '../input/keyLock.js';
+import { crosshairPicker } from './crosshairs.js';
 import { SHOP_CONTROLS, controlGroups } from './controls.js';
 
 // All the keys, the shop's and every feature's too (ui/controls.js)
@@ -197,6 +198,11 @@ export class MainMenu {
             this.profile.sensitivity = v;
             this.profile.save();
         });
+        this.crosshairInput = crosshairPicker(this.profile, (id, color) => {
+            this.profile.crosshair = id;
+            this.profile.crosshairColor = color;
+            this.profile.save();
+        });
         this.rawMouseChoice = setting('rawMouse', [['on', 'On'], ['off', 'Off']]);
         this.graphicsChoice = setting('graphics', [['high', 'High'], ['low', 'Low (fast)']]);
         this.cameraChoice = setting('cameraMode', [['first', 'First person'], ['third', 'Third person']]);
@@ -210,6 +216,7 @@ export class MainMenu {
                 row('Sound volume', this.volumeInput),
                 row('Mouse sensitivity', this.sensitivityInput.node),
                 row('Raw mouse input', this.rawMouseChoice.node),
+                row('Crosshair', this.crosshairInput.node),
                 row('Graphics', this.graphicsChoice.node),
                 row('Camera', this.cameraChoice.node),
                 row('FPS & ping', this.statsChoice.node),
@@ -227,6 +234,7 @@ export class MainMenu {
         this.volumeInput.value = this.profile.volume;
         this.sensitivityInput.set(this.profile.sensitivity);
         this.rawMouseChoice.set(this.profile.rawMouse ? 'on' : 'off');
+        this.crosshairInput.set(this.profile.crosshair, this.profile.crosshairColor);
         this.graphicsChoice.set(this.profile.graphics);
         this.cameraChoice.set(this.profile.cameraMode);
         this.statsChoice.set(this.profile.showStats ? 'on' : 'off');
